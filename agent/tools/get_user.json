@@ -1,0 +1,30 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "get_user",
+    "description": "Call this first in every conversation, before saying anything about money. Identifies the caller from their phone number and returns their name, language, market, auto-save setting and whether a PIN is set. If known is false, the caller is not a Plus user yet: offer to set them up.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/get_user",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          }
+        },
+        "required": [
+          "caller_id"
+        ]
+      }
+    }
+  }
+}

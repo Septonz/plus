@@ -1,0 +1,30 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "what_arrived",
+    "description": "Use when the user asks what money came in, whether a payment or transfer arrived, or what is new. Returns recent incoming money (state transfer, wages, family abroad, cash, deposits) and any cash a helper recorded that is waiting for the user to confirm. Read the text field aloud in the user's language.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/what_arrived",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          }
+        },
+        "required": [
+          "caller_id"
+        ]
+      }
+    }
+  }
+}
