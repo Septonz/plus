@@ -145,16 +145,12 @@ async function submitRow(server: InstanceType<typeof rpc.Server>, kp: InstanceTy
   }
 }
 
-Deno.serve(async (req) => {
-  if (!(await mayRunJob(req, db))) return json({ error: "unauthorized" }, 401);
-  const secret = Deno.env.get("PARTNER_SECRET");
-  if (!secret || !CONTRACT_ID) return json({ error: "not_configured" }, 503);
+// Provided by the Supabase Edge Runtime.
+declare const EdgeRuntime: { waitUntil(p: PromiseLike<unknown>): void };
 
-  const holder = crypto.randomUUID();
-  const { data: leased, error: leaseErr } = await db.rpc("chain_lease", { p_signer: SIGNER, p_holder: holder, p_secs: 150 });
-  if (leaseErr) return json({ error: leaseErr.message }, 500);
-  if (!leased) return json({ ok: true, skipped: "another worker holds the lease" });
+const LEASE_SECS = 60; // extended after every row; a killed run blocks the signer for at most this long
 
+async function drain(holder: string, secret: string) {
   const started = Date.now();
   const server = new rpc.Server(RPC_URL);
   const kp = Keypair.fromSecret(secret);
@@ -165,7 +161,7 @@ Deno.serve(async (req) => {
     for (const row of (inFlight ?? []) as Row[]) {
       if (!(await resolveSubmitted(server, row))) {
         stats.waiting = true;
-        return json({ ok: true, ...stats });
+        return stats;
       }
       stats.resolved++;
     }
@@ -182,13 +178,30 @@ Deno.serve(async (req) => {
       if (after?.status === "done") stats.done++;
       else if (after?.status === "failed") stats.failed++;
       else break; // outcome unknown: stop until the next run looks it up
-      await db.rpc("chain_lease", { p_signer: SIGNER, p_holder: holder, p_secs: 150 }); // extend
+      await db.rpc("chain_lease", { p_signer: SIGNER, p_holder: holder, p_secs: LEASE_SECS }); // extend
     }
-    return json({ ok: true, ...stats, ms: Date.now() - started });
+    return stats;
   } catch (err) {
     console.error("chain-worker failed", err instanceof Error ? err.message : err);
-    return json({ ok: false, error: "internal", ...stats }, 500);
+    return stats;
   } finally {
     await db.rpc("chain_release", { p_signer: SIGNER, p_holder: holder });
+    console.log(`chain-worker run: ${JSON.stringify(stats)} in ${Date.now() - started} ms`);
   }
+}
+
+Deno.serve(async (req) => {
+  if (!(await mayRunJob(req, db))) return json({ error: "unauthorized" }, 401);
+  const secret = Deno.env.get("PARTNER_SECRET");
+  if (!secret || !CONTRACT_ID) return json({ error: "not_configured" }, 503);
+
+  const holder = crypto.randomUUID();
+  const { data: leased, error: leaseErr } = await db.rpc("chain_lease", { p_signer: SIGNER, p_holder: holder, p_secs: LEASE_SECS });
+  if (leaseErr) return json({ error: leaseErr.message }, 500);
+  if (!leased) return json({ ok: true, skipped: "another worker holds the lease" });
+
+  // Callers (cron via pg_net, the outbox trigger, agent-tools) don't wait: answer now and drain
+  // in the background, so a caller hanging up never stops a run halfway.
+  EdgeRuntime.waitUntil(drain(holder, secret));
+  return json({ ok: true, started: true }, 202);
 });
