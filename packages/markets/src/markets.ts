@@ -14,7 +14,12 @@ export interface Market {
   custody: "partner_bank" | "stellar_account";
   usdBalance: boolean;
   domesticRail: "upi_sim" | "stellar";
-  cashOut: "agent_guidance" | "claimable_code";
+  /** How cash becomes money in Plus. helper_record: a helper records cash handed over (India, the bank holds the money); agent_float: an agent swaps cash for on-chain naira from their float. */
+  cashIn: ("helper_record" | "agent_float" | "bank_transfer")[];
+  /** How money becomes cash. agent_guidance: Plus guides the user to a bank correspondent; claimable_code: a Stellar claimable balance an agent redeems. */
+  cashOut: ("agent_guidance" | "claimable_code")[];
+  /** Most a single helper may handle per day, in major units (rupees or naira), like advance and pinThreshold. */
+  helperFloatLimit: number;
   incomingSources: string[];
   inboundCorridors: string[];
   autoSave: { enabled: boolean; defaultBps: number };
@@ -23,7 +28,10 @@ export interface Market {
   record: "attested" | "native";
   pinThreshold: number;
   idCheck: "partner_kyc_mock" | "nin_mock";
+  /** Voice-agent tools. */
   services: string[];
+  /** Services used by helpers (group leaders, correspondents, agents), never by the voice agent. */
+  helperServices: string[];
 }
 
 export const SERVICES: readonly string[] = [
@@ -45,6 +53,8 @@ export const SERVICES: readonly string[] = [
   "share_record",
 ];
 
+export const HELPER_SERVICES: readonly string[] = ["record_cash_in"];
+
 export const MARKETS: Record<MarketId, Market> = {
   in: {
     id: "in",
@@ -54,8 +64,10 @@ export const MARKETS: Record<MarketId, Market> = {
     custody: "partner_bank",
     usdBalance: false,
     domesticRail: "upi_sim",
-    cashOut: "agent_guidance",
-    incomingSources: ["state_transfer", "wages", "family_abroad"],
+    cashIn: ["helper_record"],
+    cashOut: ["agent_guidance"],
+    helperFloatLimit: 20000,
+    incomingSources: ["state_transfer", "wages", "family_abroad", "cash"],
     inboundCorridors: ["CA"],
     autoSave: { enabled: true, defaultBps: 1000 },
     groupSavings: { mode: "record", localName: "seettu" },
@@ -64,6 +76,7 @@ export const MARKETS: Record<MarketId, Market> = {
     pinThreshold: 2000,
     idCheck: "partner_kyc_mock",
     services: [...SERVICES],
+    helperServices: [...HELPER_SERVICES],
   },
   ng: {
     id: "ng",
@@ -74,8 +87,10 @@ export const MARKETS: Record<MarketId, Market> = {
     custody: "stellar_account",
     usdBalance: true,
     domesticRail: "stellar",
-    cashOut: "claimable_code",
-    incomingSources: ["deposit"],
+    cashIn: ["agent_float", "bank_transfer"],
+    cashOut: ["claimable_code"],
+    helperFloatLimit: 500000,
+    incomingSources: ["deposit", "cash"],
     inboundCorridors: [],
     autoSave: { enabled: true, defaultBps: 1000 },
     groupSavings: { mode: "pooled", localName: "ajo" },
@@ -84,6 +99,7 @@ export const MARKETS: Record<MarketId, Market> = {
     pinThreshold: 20000,
     idCheck: "nin_mock",
     services: [...SERVICES],
+    helperServices: [...HELPER_SERVICES],
   },
 };
 

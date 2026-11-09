@@ -27,15 +27,17 @@ See [docs/markets.md](docs/markets.md).
 ├── contracts/plus/        Soroban contract (Rust)
 ├── supabase/
 │   ├── config.toml
+│   ├── migrations/        One migration per table (applied through the Supabase MCP server)
+│   ├── tests/             SQL tests (money functions)
 │   └── functions/
-│       ├── _shared/       auth.ts, stellar.ts (+ stellar-retry.ts), user_ref.ts, markets.ts (generated)
+│       ├── _shared/       auth.ts, caller.ts, pin.ts, stellar.ts (+ stellar-retry.ts), user_ref.ts, markets.ts (generated)
 │       ├── agent-tools/   Voice agent tool endpoint (shared-secret auth)
 │       ├── payout-sim/    Simulated bank / UPI payouts
 │       ├── sender-api/    Family abroad (SEP-31, family pots)
 │       ├── sync-events/   Contract events -> Postgres
 │       └── scheduler/     Periodic jobs
-├── agent/                 Voice agent prompts (in/, ng/) and tool definitions (tools/)
-├── scripts/               sync-markets.mjs, seed.ts, bindings.mjs, spikes/ (throwaway reference code)
+├── agent/                 Voice agent prompts (in/, ng/) and ElevenLabs tool definitions (tools/, see tools/README.md)
+├── scripts/               sync-markets.mjs, seed.ts, seed-db.ts, create-staff.ts, bindings.mjs, spikes/ (throwaway reference code)
 ├── docs/                  deployments.md, markets.md, spikes/ (spike write-ups)
 ├── Cargo.toml             Rust workspace
 └── package.json           pnpm workspace
@@ -100,9 +102,14 @@ This is a Testnet prototype. Where it cuts corners, it does so in ways that do n
 - **Demo user refs are public.** The seeded Indian users (Selvi and her neighbours) use `user_ref = sha256("plus-demo:<name>")`. Anyone can recompute those, which is fine for fictional demo people only.
 - **Real users get keyed refs.** A real user's `user_ref` is `HMAC-SHA256(USER_REF_SECRET, phone number in E.164)`, computed server-side by `userRef(phone)` in `supabase/functions/_shared/user_ref.ts`. Without the server secret, nobody can link an on-chain hash to a person or brute-force phone numbers against it. The phone number and the secret never go on-chain or into logs. `USER_REF_SECRET` lives only in Supabase secrets (`npx supabase secrets set USER_REF_SECRET=<random 32 bytes>`); rotating it changes every ref, so treat it as permanent.
 - **Testnet only.** Accounts, assets (test NGNT, Circle testnet USDC) and the contract are on Stellar Testnet; see `docs/deployments.md`. `pnpm seed` refuses any other network, and `pnpm seed --fresh` redeploys the contract before reseeding.
-- **Bank, UPI and KYC are simulated** (`payout-sim`, `partner_kyc_mock`, `nin_mock`).
+- **Bank, UPI and KYC are simulated** (`payout-sim`, `partner_kyc_mock`, `nin_mock`). Simulated bank balances (`sim_bank_accounts`) change only through the `sim_*` Postgres functions, which are atomic and idempotent on `ref`.
+- **PINs** live in `user_credentials` (RLS on, no policies): `HMAC-SHA256(PIN_PEPPER, salt || pin)`, locked for 15 minutes after 3 wrong tries (`supabase/functions/_shared/pin.ts`).
+- **Caller identity** for the voice agent is ElevenLabs' `system__caller_id` (phone number on calls, WhatsApp user ID on WhatsApp), checked against `users.wa_phone`. Caller ID can be spoofed on phone calls, so money actions also need a PIN above the market's threshold.
 
 ### Scripts
 
 - `pnpm seed`: re-runnable Testnet demo data (state in `scripts/.seed-state.json`). `pnpm seed --fresh` redeploys `plus`, regenerates bindings, updates the `PLUS_CONTRACT_ID` secret and `apps/web/.env.local`, then reseeds.
+- `pnpm seed:db`: re-runnable demo rows in the dev Supabase project. Needs `DEMO_SELVI_PHONE` (your WhatsApp number, so you can play Selvi). Balances are built only through `sim_credit` / `sim_debit` / `sim_move_to_savings` with fixed refs, so reruns never apply money twice.
+- `pnpm staff:create`: creates the staff dashboard user (`DEMO_STAFF_EMAIL`) with `app_metadata.role = staff`, and prints how to log in.
+- `pnpm test:functions`: Deno tests for `supabase/functions/_shared` (PINs, caller ids). SQL tests for the money functions are in `supabase/tests/` (run in a rolled-back transaction).
 - `pnpm bindings`: regenerates `packages/plus-client` from the deployed contract and re-applies the `@plus/client` name and the TypeScript 7 `rootDir` fix.

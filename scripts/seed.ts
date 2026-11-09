@@ -76,7 +76,7 @@ function stellar(args: string[]): string {
   return execFileSync("stellar", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
-const NAMES = ["admin", "partner", "sender_ca", "issuer", "mm", "amaka", "ng_member2", "ng_member3"] as const;
+const NAMES = ["admin", "partner", "sender_ca", "issuer", "mm", "amaka", "ng_member2", "ng_member3", "agent_ng"] as const;
 type Name = (typeof NAMES)[number];
 
 const pub: Record<string, string> = {};
@@ -296,6 +296,7 @@ async function main() {
     ["amaka", [NGNT]],
     ["ng_member2", [NGNT]],
     ["ng_member3", [NGNT]],
+    ["agent_ng", [NGNT]],
   ];
   for (const [name, assets] of needs) {
     const missing: Asset[] = [];
@@ -444,6 +445,10 @@ async function main() {
       "issuer",
       grants.map(([name, amount]) => Operation.payment({ destination: pub[name], asset: NGNT, amount: String(amount) })),
     ),
+  );
+  // Cash agent float: agent_ng swaps cash for NGNT (cashIn agent_float), up to helperFloatLimit per day.
+  await step("ngnt:float:agent_ng", "issuer pays agent_ng a 200,000 NGNT float", () =>
+    classicTx("issuer", [Operation.payment({ destination: pub.agent_ng, asset: NGNT, amount: "200000" })]),
   );
 
   console.log("\nNigeria: market maker offers (1 USDC = 1,500 NGNT mid)");
@@ -595,6 +600,7 @@ function writeDocs(d: {
     amaka: "Nigeria demo user, ajo organizer",
     ng_member2: "Ajo member",
     ng_member3: "Ajo member",
+    agent_ng: "Nigeria cash agent (helper), 200,000 NGNT float",
   };
   const date = state.createdAt.slice(0, 10);
   const lines = [

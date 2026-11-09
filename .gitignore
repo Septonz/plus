@@ -11,3 +11,4 @@ supabase/.branches
 *.log
 .mcp.json
 scripts/.seed-state.json
+/deno.lock
