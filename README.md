@@ -95,6 +95,34 @@ npx @stellar/stellar-sdk generate --network testnet --contract-id <CONTRACT_ID> 
 
 The old command still works, so we have not switched yet. When we do, change only `scripts/bindings.mjs` (it keeps re-applying the `@plus/client` name and the `rootDir` fix). Pass the contract ID from `docs/deployments.md`; the stellar CLI alias `plus` is CLI config that the SDK generator is not expected to read.
 
+## The Plus app
+
+`pnpm --filter web dev`, then:
+
+- **http://localhost:5173/app**: the Plus app, Selvi's home. Mobile-first PWA (installable; manifest, icons, a service worker that never caches money data). Tamil labels with English underneath, a Tamil/English toggle, nothing smaller than 16px, and the big mic **பேசுங்க** on every screen. Screens: Home, Pay, Seettu, Advance, My record, Add money, Settings.
+- **http://localhost:5173/helper**: the helper page, where Meena records cash a member handed her. It keeps its own login, so both pages can be open side by side.
+
+**Logins.** The demo uses two Supabase Auth users created by `pnpm seed:db`: "Continue as Selvi" (`demo-selvi@example.com`) and "Continue as Meena" (`demo-meena@example.com`), password generated into `VITE_DEMO_LOGIN_PASSWORD` in the root `.env.local`. They are linked through `users.auth_user_id` and `helpers.auth_user_id`. **Production login is phone OTP plus a PIN**, not these demo buttons.
+
+**One code path.** Taps and voice call the same `agent-tools` functions. Money always moves in two steps: a `prepare_*` tool creates a pending action, the confirm screen opens by itself (Realtime on her own `pending_actions`, `transactions` and `cash_events`, filtered by RLS), and she taps Yes, or types her PIN above ₹2,000. The PIN goes from the app straight to `agent-tools`; it never passes through the voice agent. A cash-in from a helper only counts after her Yes.
+
+**Voice.** The mic calls `voice-session` (checks her login, gets a signed URL for the private ElevenLabs agent, mints a 15-minute `plus_session` token) and starts the official React SDK with `plus_session` as a dynamic variable. Setup steps: `agent/tools/README.md`.
+
+### Background jobs (Supabase Cron, one-time setup)
+
+`chain-worker` (writes the `chain_outbox` to Stellar, one transaction at a time per signer) and `sync-events` run every minute, and `expire_stale_actions` every 5 minutes. Cron and the after-insert kick read two Vault secrets. Create them once in the SQL editor of the dev project (the second value is generated inside the database and never shown):
+
+```sql
+select vault.create_secret('https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1', 'plus_functions_url');
+select vault.create_secret(encode(extensions.gen_random_bytes(32), 'hex'), 'plus_cron_secret');
+```
+
+Until they exist, the jobs log a notice and do nothing; the functions still kick `chain-worker` after each confirm.
+
+### Testnet RPC
+
+Each attest takes about 10 to 15 seconds on the public `https://soroban-testnet.stellar.org`. If it stays slow, free testnet RPC providers listed in the Stellar docs (RPC providers page) include Validation Cloud, QuickNode, Blockdaemon, Ankr and NOWNodes. Most need a free account; we have not signed up for any. Switch by setting `STELLAR_RPC_URL`.
+
 ## Prototype simplifications
 
 This is a Testnet prototype. Where it cuts corners, it does so in ways that do not carry over to production:
@@ -112,4 +140,5 @@ This is a Testnet prototype. Where it cuts corners, it does so in ways that do n
 - `pnpm seed:db`: re-runnable demo rows in the dev Supabase project. Needs `DEMO_SELVI_PHONE` (your WhatsApp number, so you can play Selvi). Balances are built only through `sim_credit` / `sim_debit` / `sim_move_to_savings` with fixed refs, so reruns never apply money twice.
 - `pnpm staff:create`: creates the staff dashboard user (`DEMO_STAFF_EMAIL`) with `app_metadata.role = staff`, and prints how to log in.
 - `pnpm test:functions`: Deno tests for `supabase/functions/_shared` (PINs, caller ids). SQL tests for the money functions are in `supabase/tests/` (run in a rolled-back transaction).
+- `pnpm e2e` (by hand, not CI): runs the India flow against the dev project by voice session and app: state transfer, auto-save, what arrived, pay the flower wholesaler ₹300, seettu, helper cash-in confirmed, my record. Then waits for the chain outbox and checks each contract event on Stellar, printing confirm → on-chain times.
 - `pnpm bindings`: regenerates `packages/plus-client` from the deployed contract and re-applies the `@plus/client` name and the TypeScript 7 `rootDir` fix.
