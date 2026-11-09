@@ -23,6 +23,7 @@ import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { type OutboxRow, operationFor, railOf } from "../_shared/chain-ops.ts";
 import { mayRunJob } from "../_shared/cron.ts";
+import { refreshBalances } from "../_shared/ng-chain.ts";
 import { json } from "../_shared/http.ts";
 import { isNetworkError, OutcomeUnknownError, StellarSdk, SubmitRejectedError, submitTransaction, txHashHex, withRetry } from "../_shared/stellar.ts";
 
@@ -30,7 +31,7 @@ const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SE
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const { rpc, TransactionBuilder, Keypair, Account } = StellarSdk;
+const { rpc, TransactionBuilder, Keypair, Account, Operation } = StellarSdk;
 const DEFAULT_RPC = "https://soroban-testnet.stellar.org";
 const RPC_URLS = [...new Set([Deno.env.get("STELLAR_RPC_URL") || DEFAULT_RPC, DEFAULT_RPC])];
 const HORIZON_URL = Deno.env.get("STELLAR_HORIZON_URL") || "https://horizon-testnet.stellar.org";
@@ -50,6 +51,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** The secret key for a signing account: Supabase secret PARTNER_SECRET or STELLAR_SECRET_<NAME>. */
 function secretFor(signer: string): string | undefined {
   return signer === "partner" ? Deno.env.get("PARTNER_SECRET") : Deno.env.get(`STELLAR_SECRET_${signer.toUpperCase()}`);
+}
+
+let partnerKp: InstanceType<typeof Keypair> | null = null;
+function partnerKey() {
+  const secret = secretFor("partner");
+  if (!secret) throw new Error("PARTNER_SECRET is not set (partner pays fees and sponsors reserves)");
+  partnerKp ??= Keypair.fromSecret(secret);
+  return partnerKp;
 }
 
 /** Run an RPC read against the primary, falling back to the next URL on network errors only. */
@@ -82,7 +91,7 @@ async function horizonGet(hash: string): Promise<HorizonTx> {
 }
 
 /** Async submit + poll every second. Same rules as the RPC helper: never resend before a lookup. */
-async function horizonSubmit(tx: InstanceType<typeof StellarSdk.Transaction>): Promise<HorizonTx> {
+async function horizonSubmit(tx: { toXDR(): string; hash(): Uint8Array }): Promise<HorizonTx> {
   const hash = txHashHex(tx);
   const xdrB64 = tx.toXDR();
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -143,8 +152,28 @@ const backoffMs = (attempts: number) => Math.min(30 * 60_000, 15_000 * 2 ** Math
 
 async function markDone(row: OutboxRow, hash: string) {
   await update(row.id, { status: "done", tx_hash: hash, done_at: new Date().toISOString(), last_error: null });
-  if (row.args.transaction_id) {
-    await db.from("transactions").update({ chain_tx_hash: hash }).eq("id", String(row.args.transaction_id));
+  const txId = row.args.transaction_id ? String(row.args.transaction_id) : null;
+  const refresh = new Set<string>(Array.isArray(row.args.refresh_user_ids) ? (row.args.refresh_user_ids as string[]) : []);
+  let stellarTx = false;
+  if (txId) {
+    const { data: t } = await db.from("transactions").select("user_id, rail").eq("id", txId).maybeSingle();
+    if (t?.rail === "stellar") {
+      stellarTx = true;
+      refresh.add(t.user_id as string);
+    }
+  }
+  // Nigeria: the balance cache first, then the tick (so "available" never counts money twice).
+  if (refresh.size > 0) {
+    try {
+      const ms = await refreshBalances(db, [...refresh]);
+      console.log(`balances refreshed for ${refresh.size} user(s), horizon ${ms.join("/")} ms`);
+    } catch (err) {
+      console.error("balance refresh failed (scheduler retries every minute)", err instanceof Error ? err.message : err);
+    }
+  }
+  if (txId) {
+    await db.from("transactions").update(stellarTx ? { chain_tx_hash: hash, tx_hash: hash, status: "completed" } : { chain_tx_hash: hash })
+      .eq("id", txId);
   }
   // Rows waiting on this one (possibly on other accounts) can start now.
   const { data: next } = await db.from("chain_outbox").select("signer").eq("after_id", row.id).neq("status", "done");
@@ -159,6 +188,10 @@ async function markFailed(row: OutboxRow, attempts: number, message: string, has
     next_attempt_at: new Date(Date.now() + backoffMs(attempts)).toISOString(),
     ...(hash ? { tx_hash: hash } : {}),
   });
+  // Out of retries: the money never moved. The Stellar transaction row says so (no tick, no spend).
+  if (attempts >= MAX_ATTEMPTS && row.args.transaction_id) {
+    await db.from("transactions").update({ status: "failed" }).eq("id", String(row.args.transaction_id)).eq("rail", "stellar").eq("status", "pending");
+  }
 }
 
 async function lookup(row: OutboxRow): Promise<HorizonTx> {
@@ -201,20 +234,35 @@ async function submitRow(kp: InstanceType<typeof Keypair>, seq: { next: bigint |
         ? await horizonSequence(kp.publicKey())
         : BigInt((await onRpc((s) => s.getAccount(kp.publicKey()))).sequenceNumber());
     }
-    const built = new TransactionBuilder(new Account(kp.publicKey(), seq.next.toString()), { fee: FEE, networkPassphrase: PASSPHRASE })
-      .addOperation(operationFor(row, CONTRACT_ID))
-      .setTimeout(TX_TIMEOUT_SECS)
-      .build();
-    const tx = rail === "rpc" ? await onRpc((s) => s.prepareTransaction(built)) : built; // simulation: contract errors throw here
-    tx.sign(kp);
+    const partner = row.signer === "partner" ? kp : partnerKey();
+    // A claimable balance needs a reserve; accounts without XLM (Funmi) get it sponsored by partner.
+    const sponsor = row.kind === "claimable_create" && row.signer !== "partner";
+    const b = new TransactionBuilder(new Account(kp.publicKey(), seq.next.toString()), { fee: FEE, networkPassphrase: PASSPHRASE })
+      .setTimeout(TX_TIMEOUT_SECS);
+    if (sponsor) b.addOperation(Operation.beginSponsoringFutureReserves({ sponsoredId: kp.publicKey(), source: partner.publicKey() }));
+    b.addOperation(operationFor(row, CONTRACT_ID));
+    if (sponsor) b.addOperation(Operation.endSponsoringFutureReserves({}));
+    const built = b.build();
+    const inner = rail === "rpc" ? await onRpc((s) => s.prepareTransaction(built)) : built; // simulation: contract errors throw here
+    inner.sign(kp);
+    if (sponsor) inner.sign(partner);
+    // Plus pays the network fee for every account other than partner (fee bump). The fee source's
+    // sequence number is not used, so this never interferes with partner's own queue.
+    const tx = row.signer === "partner"
+      ? inner
+      : (() => {
+        const fb = TransactionBuilder.buildFeeBumpTransaction(partner, (BigInt(inner.fee) + 1000n).toString(), inner, PASSPHRASE);
+        fb.sign(partner);
+        return fb;
+      })();
     hash = txHashHex(tx);
-    const result = row.kind === "claimable_create" ? { balance_id: tx.getClaimableBalanceId(0) } : null;
+    const result = row.kind === "claimable_create" ? { balance_id: inner.getClaimableBalanceId(sponsor ? 1 : 0) } : null;
     // Save the hash (and anything the transaction will produce) BEFORE sending.
     await update(row.id, {
       status: "submitted",
       attempts,
       tx_hash: hash,
-      tx_valid_until: new Date(Number(tx.timeBounds?.maxTime ?? 0) * 1000).toISOString(),
+      tx_valid_until: new Date(Number(inner.timeBounds?.maxTime ?? 0) * 1000).toISOString(),
       submitted_at: new Date().toISOString(),
       last_error: null,
       ...(result ? { result } : {}),
