@@ -6,7 +6,7 @@ import { DEMO_SELVI_EMAIL, supabase } from '../lib/supabase'
 import { DemoLogin, useSession } from './auth'
 import { ConfirmSheet } from './confirm'
 import { tool } from './api'
-import { usePlusData } from './data'
+import { usePlusData, type PendingAction } from './data'
 import type { Lang } from './i18n'
 import { AddMoney, Advance, Home, Pay, Record, Seettu, Settings, type Screen } from './screens'
 import { Icon, L, LangContext, Notice, useLang as useLangContext } from './ui'
@@ -59,11 +59,15 @@ function Signed({ authUserId }: { authUserId: string }) {
   const { lang, setLang } = useLangSync(data.me?.language)
 
   // Open the confirm screen for the newest action she started (voice or taps). Cash-ins from a
-  // helper show on Home instead, so she is not interrupted by someone else's action.
-  const open = useMemo(
+  // helper show on Home instead, so she is not interrupted by someone else's action. The sheet
+  // keeps its action after it executes (Realtime drops it from pending) so she sees "Done".
+  const next = useMemo(
     () => data.pending.find((a) => a.created_by === 'user' && !dismissed.has(a.id)) ?? null,
     [data.pending, dismissed],
   )
+  const [held, setHeld] = useState<PendingAction | null>(null)
+  if (next && !held) setHeld(next)
+  const open = held
 
   const go = (s: Screen) => {
     setScreen(s)
@@ -140,6 +144,7 @@ function Signed({ authUserId }: { authUserId: string }) {
           action={open}
           onClose={() => {
             setDismissed((d) => new Set(d).add(open.id))
+            setHeld(null)
             void data.refresh()
           }}
         />
