@@ -1,1 +1,78 @@
 @import "tailwindcss";
+
+/* Plus: warm, high-contrast. Nothing smaller than 16px. */
+@theme {
+  --font-sans: "Noto Sans Tamil", "Noto Sans", system-ui, sans-serif;
+
+  --color-cream: #fff7ec;
+  --color-sand: #f6e7d2;
+  --color-sand-deep: #ead3b3;
+  --color-ink: #2a160c;
+  --color-ink-soft: #5c3b28;
+  --color-brick: #7a2e14;
+  --color-brick-deep: #5a1f0b;
+  --color-saffron: #e8891c;
+  --color-turmeric: #f4b62a;
+  --color-leaf: #1f6b3a;
+  --color-leaf-soft: #dff0e3;
+  --color-chili: #b3261e;
+  --color-chili-soft: #fbe3e0;
+  --color-sky: #1d4e89;
+
+  /* Type scale: the floor is 16px. */
+  --text-xs: 1rem;
+  --text-xs--line-height: 1.4;
+  --text-sm: 1rem;
+  --text-sm--line-height: 1.45;
+  --text-base: 1.125rem;
+  --text-base--line-height: 1.5;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 1.125rem;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 3px solid var(--color-saffron);
+  outline-offset: 3px;
+}
+
+@keyframes plus-pulse {
+  0% { box-shadow: 0 0 0 0 rgb(232 137 28 / 0.55); }
+  70% { box-shadow: 0 0 0 22px rgb(232 137 28 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(232 137 28 / 0); }
+}
+
+.mic-live {
+  animation: plus-pulse 1.4s ease-out infinite;
+}
+
+@keyframes plus-sheet {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.sheet-in {
+  animation: plus-sheet 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mic-live, .sheet-in { animation: none; }
+}
