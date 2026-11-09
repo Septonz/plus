@@ -395,21 +395,29 @@ async function main() {
   );
 
   console.log("\nFamily dollar fund (sender_ca)");
-  const potId = (await step("pot:create", "pot_create(sender_ca -> sender_ca, 25 USDC / 30 days)", async () =>
+  // v1 of the fund (25 USDC per period) was created but never funded: close it once.
+  const oldPot = state.steps["pot:create"];
+  if (oldPot?.status === "done") {
+    await step("pot:cancel:v1", `pot_cancel(pot ${oldPot.value}, unfunded 25 USDC v1)`, async () =>
+      contractTx(await plus("sender_ca").pot_cancel({ sender: pub.sender_ca, pot_id: oldPot.value as number }, opts)),
+    );
+  }
+  // 5 USDC per period, funded with 10 USDC; sender_ca's remaining USDC stays free for the SEP-31 spike.
+  const potId = (await step("pot:create:v2", "pot_create(sender_ca -> sender_ca, 5 USDC / 30 days)", async () =>
     contractTx(
       await plus("sender_ca").pot_create(
-        { sender: pub.sender_ca, payout_to: pub.sender_ca, asset: USDC_SAC, per_period: units(25), period_secs: 30n * DAY },
+        { sender: pub.sender_ca, payout_to: pub.sender_ca, asset: USDC_SAC, per_period: units(5), period_secs: 30n * DAY },
         opts,
       ),
     ),
   )) as number;
-  if (state.steps["pot:fund"]?.status === "done" || (await balance("sender_ca", USDC)) >= 50) {
-    await step("pot:fund", "pot_fund(50 USDC)", async () =>
-      contractTx(await plus("sender_ca").pot_fund({ sender: pub.sender_ca, pot_id: potId, amount: units(50) }, opts)),
+  if (state.steps["pot:fund:v2"]?.status === "done" || (await balance("sender_ca", USDC)) >= 10) {
+    await step("pot:fund:v2", "pot_fund(10 USDC)", async () =>
+      contractTx(await plus("sender_ca").pot_fund({ sender: pub.sender_ca, pot_id: potId, amount: units(10) }, opts)),
     );
   } else {
-    warnings.push(`pot_fund skipped: sender_ca has < 50 USDC (${pub.sender_ca})`);
-    console.log("  WARN  pot_fund skipped: sender_ca needs 50 USDC (rerun after the faucet)");
+    warnings.push(`pot_fund skipped: sender_ca has < 10 USDC (${pub.sender_ca})`);
+    console.log("  WARN  pot_fund skipped: sender_ca needs 10 USDC (rerun after the faucet)");
   }
 
   // ----- Nigeria ---------------------------------------------------------
@@ -439,8 +447,8 @@ async function main() {
       ]),
     );
   } else {
-    warnings.push(`mm offers skipped: mm has < 10 USDC (${pub.mm})`);
-    console.log("  WARN  offers skipped: mm needs USDC (rerun after the faucet)");
+    warnings.push(`mm offers waiting: mm has < 10 USDC (${pub.mm})`);
+    console.log("  skip  offers: waiting until mm has 10 USDC (placed on the next run after that)");
   }
 
   console.log("\nNigeria: pooled ajo");
@@ -486,7 +494,6 @@ async function main() {
     for (const w of warnings) console.log(`  - ${w}`);
     console.log(`\nGet test USDC at https://faucet.circle.com (network: Stellar Testnet), ~20 USDC each to:`);
     for (const n of ["sender_ca", "partner", "mm"] as Name[]) console.log(`  ${n.padEnd(10)} ${pub[n]}`);
-    console.log("  (sender_ca needs 50 USDC for pot_fund: request the faucet more than once.)");
   }
 }
 
@@ -545,7 +552,7 @@ function writeDocs(d: {
     "| ------ | -- | ------- |",
     `| Seettu (India, record mode) | group ${d.seettuId} | 5 Ref members, Rs 200, 30-day period |`,
     `| Ajo (Nigeria, pooled) | group ${d.ajoId} | amaka, ng_member2, ng_member3; 5,000 NGNT; 1-day period |`,
-    `| Family dollar fund | pot ${d.potId} | sender_ca -> sender_ca, 25 USDC every 30 days |`,
+    `| Family dollar fund | pot ${d.potId} | sender_ca -> sender_ca, 5 USDC every 30 days, funded with 10 USDC |`,
     "",
     "## Demo user refs (India)",
     "",
