@@ -29,7 +29,10 @@ export interface Market {
   groupSavings: { mode: "record" | "pooled"; localName: string };
   advance: { min: number; max: number; feeBps: number; eligibleAfterWeeks: number };
   record: "attested" | "native";
+  /** Above this amount (major units) a payment needs the PIN, typed on the app's PIN pad. */
   pinThreshold: number;
+  /** Most a user may pay out per day (major units), across payments and group contributions. */
+  payDailyLimit: number;
   idCheck: "partner_kyc_mock" | "nin_mock";
   /** Voice-agent tools. */
   services: string[];
@@ -51,6 +54,7 @@ export const SERVICES: readonly string[] = [
   "prepare_group_contribution",
   "prepare_advance",
   "confirm_action",
+  "reject_action",
   "group_status",
   "my_record",
   "share_record",
@@ -77,6 +81,7 @@ export const MARKETS: Record<MarketId, Market> = {
     advance: { min: 2000, max: 10000, feeBps: 150, eligibleAfterWeeks: 8 },
     record: "attested",
     pinThreshold: 2000,
+    payDailyLimit: 10000,
     idCheck: "partner_kyc_mock",
     services: [...SERVICES],
     helperServices: [...HELPER_SERVICES],
@@ -100,6 +105,7 @@ export const MARKETS: Record<MarketId, Market> = {
     advance: { min: 5000, max: 30000, feeBps: 150, eligibleAfterWeeks: 8 },
     record: "native",
     pinThreshold: 20000,
+    payDailyLimit: 200000,
     idCheck: "nin_mock",
     services: [...SERVICES],
     helperServices: [...HELPER_SERVICES],
@@ -148,4 +154,15 @@ export function formatMoney(minorUnits: bigint, marketId: MarketId): string {
   const grouped = market.currency.code === "INR" ? groupIndian(digits) : groupThousands(digits);
   const fraction = minor === 0n ? "" : `.${minor.toString().padStart(2, "0")}`;
   return `${negative ? "-" : ""}${market.currency.symbol}${grouped}${fraction}`;
+}
+
+/**
+ * Amount for speech: "2,350 rupees", "50,000 naira" (no symbol, so a voice never guesses the
+ * currency; an India user never hears "dollars"). Same integer-only rules as formatMoney.
+ */
+export function formatSpokenMoney(minorUnits: bigint, marketId: MarketId): string {
+  const symbol = getMarket(marketId).currency.symbol;
+  const text = formatMoney(minorUnits, marketId).replace(symbol, "");
+  const unit = marketId === "in" ? "rupees" : "naira";
+  return `${text} ${unit}`;
 }

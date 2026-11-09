@@ -3,15 +3,20 @@
 // India: Selvi (wa_phone from DEMO_SELVI_PHONE, so you can play her on WhatsApp), her simulated
 // bank account (Rs 2,350 to spend, Rs 1,415 saved, built only through sim_credit / sim_debit /
 // sim_move_to_savings with fixed refs, so reruns change nothing), two payees, helper Meena,
-// one cash-in awaiting Selvi's confirmation, and the seettu mirrored from the contract.
+// one cash-in awaiting Selvi's confirmation (recorded through helper_record_cash_in), and the
+// seettu mirrored from the contract with Meena as its leader.
+// App demo logins (Supabase Auth): demo-selvi@example.com and demo-meena@example.com, linked through
+// users.auth_user_id / helpers.auth_user_id, app_metadata.demo = true. One shared demo password,
+// VITE_DEMO_LOGIN_PASSWORD in the root .env.local (generated on first run, gitignored, never printed).
+// Production login is phone OTP plus PIN; these demo logins exist only on the dev project.
 // Nigeria: Amaka and the cash agent agent_ng, the ajo mirrored from the contract, and Amaka's
 // NGNT grant from the Stellar seed.
 //
 // Demo user refs are public (sha256("plus-demo:<name>")); real users get userRef(phone) HMAC.
 // Requires: `pnpm seed` (Stellar) has run; Supabase CLI logged in. Dev project only.
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { formatMoney, getMarket } from "../packages/markets/src/index.ts";
 import { adminClient, loadLocalEnv, ROOT } from "./lib/supabase-admin.ts";
@@ -70,6 +75,7 @@ async function mirrorGroup(opts: {
   market: "in" | "ng";
   name: string;
   memberName: (p: Party) => { ref: string; name: string; userId: string | null };
+  leaderHelperId?: string;
 }) {
   const g = await readGroup(opts.contractId, opts.onchainId);
   const row = check(
@@ -81,6 +87,7 @@ async function mirrorGroup(opts: {
       amount: Number(BigInt(g.amount) / DECIMALS_TO_MINOR),
       period_secs: Number(g.period_secs),
       next_due: new Date(Number(g.next_due) * 1000).toISOString(),
+      ...(opts.leaderHelperId ? { leader_helper_id: opts.leaderHelperId } : {}),
     }, { onConflict: "onchain_id" }).select("id").single(),
     `group ${opts.name}`,
   );
@@ -114,6 +121,45 @@ async function upsertHelper(row: Record<string, unknown>) {
     await db.from("helpers").upsert(row, { onConflict: "phone" }).select("id").single(),
     `helper ${row.name}`,
   ) as { id: string }).id;
+}
+
+// ---------------------------------------------------------------------------
+// Demo logins
+// ---------------------------------------------------------------------------
+
+export const DEMO_SELVI_EMAIL = "demo-selvi@example.com";
+export const DEMO_MEENA_EMAIL = "demo-meena@example.com";
+
+function demoPassword(): string {
+  const existing = process.env.VITE_DEMO_LOGIN_PASSWORD;
+  if (existing) return existing;
+  const pw = randomBytes(18).toString("base64url");
+  appendFileSync(join(ROOT, ".env.local"), `
+# Demo app logins (dev project only), written by pnpm seed:db
+VITE_DEMO_LOGIN_PASSWORD=${pw}
+`);
+  process.env.VITE_DEMO_LOGIN_PASSWORD = pw;
+  console.log("  wrote VITE_DEMO_LOGIN_PASSWORD to .env.local (value not shown)");
+  return pw;
+}
+
+async function demoLogin(email: string, password: string, role: "user" | "helper"): Promise<string> {
+  let id: string | undefined;
+  for (let page = 1; page <= 10 && !id; page++) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) throw new Error(`list auth users: ${error.message}`);
+    id = data.users.find((u) => u.email === email)?.id;
+    if (data.users.length < 200) break;
+  }
+  const attrs = { password, email_confirm: true, app_metadata: { demo: true, plus_role: role } };
+  if (id) {
+    const { error } = await db.auth.admin.updateUserById(id, attrs);
+    if (error) throw new Error(`update ${email}: ${error.message}`);
+    return id;
+  }
+  const { data, error } = await db.auth.admin.createUser({ email, ...attrs });
+  if (error) throw new Error(`create ${email}: ${error.message}`);
+  return data.user.id;
 }
 
 async function main() {
@@ -160,6 +206,13 @@ async function main() {
   });
   console.log(`  helper Meena (group leader, daily limit ${formatMoney(BigInt(india.helperFloatLimit * 100), "in")})`);
 
+  const password = demoPassword();
+  const selviLogin = await demoLogin(DEMO_SELVI_EMAIL, password, "user");
+  const meenaLogin = await demoLogin(DEMO_MEENA_EMAIL, password, "helper");
+  check(await db.from("users").update({ auth_user_id: selviLogin }).eq("id", selvi), "link Selvi login");
+  check(await db.from("helpers").update({ auth_user_id: meenaLogin }).eq("id", meena), "link Meena login");
+  console.log(`  app logins: ${DEMO_SELVI_EMAIL} (Selvi), ${DEMO_MEENA_EMAIL} (Meena)`);
+
   // Money: Rs 4,000 in (10% auto-saved), Rs 1,015 moved to savings, Rs 235 paid.
   // -> Rs 2,350 to spend, Rs 1,415 saved. Fixed refs make every step apply once.
   const cashIn = check(
@@ -202,39 +255,6 @@ async function main() {
   );
   console.log("  payees: flower wholesaler, medical shop");
 
-  // One cash-in awaiting Selvi's confirmation (what_arrived reads it out).
-  const awaiting = check(
-    await db.from("cash_events").select("id").eq("user_id", selvi).eq("status", "awaiting_user").limit(1),
-    "find awaiting",
-  ) as { id: string }[];
-  if (awaiting.length === 0) {
-    const pa = check(
-      await db.from("pending_actions").insert({
-        user_id: selvi,
-        kind: "confirm_cash_in",
-        params: { helper_id: meena, amount: 50000 },
-        readback: `Meena says you gave her ${formatMoney(50000n, "in")} in cash to add to your account. Is that right?`,
-        expires_at: new Date(Date.now() + 48 * 3600_000).toISOString(),
-        created_by: "helper",
-      }).select("id").single(),
-      "pending_action",
-    ) as { id: string };
-    check(
-      await db.from("cash_events").insert({
-        helper_id: meena,
-        user_id: selvi,
-        direction: "in",
-        amount: 50000,
-        status: "awaiting_user",
-        pending_action_id: pa.id,
-      }),
-      "awaiting cash_event",
-    );
-    console.log("  cash-in: Meena recorded Rs 500, awaiting Selvi");
-  } else {
-    console.log("  cash-in awaiting Selvi already present");
-  }
-
   const nameByRef = Object.fromEntries(SEETTU_NAMES.map((n) => [refHex(n), n]));
   await mirrorGroup({
     contractId,
@@ -246,7 +266,28 @@ async function main() {
       const n = nameByRef[ref];
       return { ref, name: n ? cap(n) : "Member", userId: n === "selvi" ? selvi : null };
     },
+    leaderHelperId: meena,
   });
+
+  // One cash-in awaiting Selvi's answer (Home screen and what_arrived), made exactly the way the
+  // helper page makes it. Cash-ins from before the action functions (no cash_event_id) expire.
+  const stale = check(
+    await db.from("pending_actions").select("id").eq("user_id", selvi).eq("kind", "confirm_cash_in").eq("status", "pending")
+      .is("params->>cash_event_id", null),
+    "find old cash-ins",
+  ) as { id: string }[];
+  for (const pa of stale) {
+    check(await db.from("cash_events").update({ status: "expired" }).eq("pending_action_id", pa.id).eq("status", "awaiting_user"), "expire old cash_event");
+    check(await db.from("pending_actions").update({ status: "expired", result: { ok: false, error: "expired" } }).eq("id", pa.id), "expire old cash-in");
+  }
+  const ce = await rpc("helper_record_cash_in", {
+    p_helper_id: meena,
+    p_user_id: selvi,
+    p_amount: 50000,
+    p_idempotency_key: "seed-selvi-cash-in-awaiting-v2",
+    p_readback: `Meena says you gave her ${formatMoney(50000n, "in")} in cash. Is that right?`,
+  }) as unknown as { status: string };
+  console.log(`  cash-in: Meena recorded Rs 500 (${ce.status === "awaiting_user" ? "awaiting Selvi" : ce.status})`);
 
   // ----- Nigeria -------------------------------------------------------------
   console.log("Nigeria");
