@@ -9,10 +9,14 @@
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "seed": "pnpm --filter @plus/client build && node scripts/seed.ts",
-    "bindings": "node scripts/bindings.mjs"
+    "bindings": "node scripts/bindings.mjs",
+    "seed:db": "pnpm --filter @plus/client build && node scripts/seed-db.ts",
+    "staff:create": "node scripts/create-staff.ts",
+    "test:functions": "deno test --allow-env=PIN_PEPPER,USER_REF_SECRET supabase/functions/_shared/"
   },
   "devDependencies": {
     "@plus/client": "workspace:*",
-    "@stellar/stellar-sdk": "^16.4.1"
+    "@stellar/stellar-sdk": "^16.4.1",
+    "@supabase/supabase-js": "^2.119.0"
   }
 }
