@@ -35,8 +35,8 @@ See [docs/markets.md](docs/markets.md).
 │       ├── sync-events/   Contract events -> Postgres
 │       └── scheduler/     Periodic jobs
 ├── agent/                 Voice agent prompts (in/, ng/) and tool definitions (tools/)
-├── scripts/               sync-markets.mjs, seed.ts, bindings.mjs
-├── docs/                  deployments.md, markets.md
+├── scripts/               sync-markets.mjs, seed.ts, bindings.mjs, spikes/ (throwaway reference code)
+├── docs/                  deployments.md, markets.md, spikes/ (spike write-ups)
 ├── Cargo.toml             Rust workspace
 └── package.json           pnpm workspace
 ```
@@ -82,6 +82,16 @@ npx supabase functions deploy
 ```
 
 Edit market packs in `packages/markets/src/markets.ts`, then run `pnpm markets:sync`. Never edit `supabase/functions/_shared/markets.ts`.
+
+### Contract bindings
+
+Regenerate the TypeScript client with `pnpm bindings` (never edit `packages/plus-client` by hand). It currently wraps `stellar contract bindings typescript`, which stellar-cli 30 marks as **deprecated** in favour of the JavaScript Stellar SDK's own generator:
+
+```sh
+npx @stellar/stellar-sdk generate --network testnet --contract-id <CONTRACT_ID> --output-dir packages/plus-client --overwrite
+```
+
+The old command still works, so we have not switched yet. When we do, change only `scripts/bindings.mjs` (it keeps re-applying the `@plus/client` name and the `rootDir` fix). Pass the contract ID from `docs/deployments.md`; the stellar CLI alias `plus` is CLI config that the SDK generator is not expected to read.
 
 ## Prototype simplifications
 
