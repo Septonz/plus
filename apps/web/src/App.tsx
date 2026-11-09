@@ -9,6 +9,11 @@ function App() {
     <main className="min-h-screen bg-stone-50 text-stone-900 flex flex-col items-center justify-center gap-8 p-6">
       <h1 className="text-6xl font-bold tracking-tight">Plus</h1>
 
+      <div className="flex flex-wrap justify-center gap-3">
+        <a href="/app" className="rounded-full bg-[#7a2e14] px-6 py-3 text-lg font-bold text-white">Open the Plus app</a>
+        <a href="/helper" className="rounded-full border-2 border-stone-300 bg-white px-6 py-3 text-lg font-bold">Helper page</a>
+      </div>
+
       <div role="radiogroup" aria-label="Market" className="inline-flex rounded-full bg-stone-200 p-1">
         {MARKET_IDS.map((id) => {
           const selected = id === marketId
