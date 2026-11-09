@@ -154,6 +154,7 @@ pub enum Error {
     NoAdvance = 12,
     InsufficientPool = 13,
     InsufficientBalance = 14,
+    DuplicateMember = 15,
 }
 
 // ---------------------------------------------------------------------------
@@ -560,6 +561,11 @@ impl Plus {
         positive(amount)?;
         if members.is_empty() || period_secs == 0 {
             return Err(Error::InvalidAmount);
+        }
+        for (i, m) in members.iter().enumerate() {
+            if members.first_index_of(m) != Some(i as u32) {
+                return Err(Error::DuplicateMember);
+            }
         }
         if pooled {
             require_asset(&env, &asset)?;

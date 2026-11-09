@@ -541,3 +541,30 @@ fn only_admin_can_pause() {
     assert!(s.plus.try_pause().is_err());
     assert!(!s.plus.paused());
 }
+
+#[test]
+fn group_create_rejects_duplicate_members() {
+    let s = Setup::new();
+    let org = s.user(0);
+    let a = s.user(0);
+    let dup_accounts = vec![
+        &s.env,
+        Party::Account(a.clone()),
+        Party::Account(s.user(0)),
+        Party::Account(a),
+    ];
+    assert_eq!(
+        s.plus
+            .try_group_create(&org, &dup_accounts, &s.usdc, &U, &DAY, &true),
+        Err(Ok(Error::DuplicateMember))
+    );
+    let dup_refs = vec![&s.env, Party::Ref(s.r(1)), Party::Ref(s.r(1))];
+    assert_eq!(
+        s.plus
+            .try_group_create(&org, &dup_refs, &s.usdc, &U, &DAY, &false),
+        Err(Ok(Error::DuplicateMember))
+    );
+    // Distinct refs are accepted.
+    let ok = vec![&s.env, Party::Ref(s.r(1)), Party::Ref(s.r(2))];
+    s.plus.group_create(&org, &ok, &s.usdc, &U, &DAY, &false);
+}
