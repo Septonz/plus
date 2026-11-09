@@ -8,7 +8,8 @@
     "markets:check": "node scripts/sync-markets.mjs --check",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
-    "seed": "pnpm --filter @plus/client build && node scripts/seed.ts"
+    "seed": "pnpm --filter @plus/client build && node scripts/seed.ts",
+    "bindings": "node scripts/bindings.mjs"
   },
   "devDependencies": {
     "@plus/client": "workspace:*",

@@ -1,4 +1,6 @@
-// Plus testnet seed. Run with `pnpm seed` (add `-- --fresh` to start over).
+// Plus testnet seed. Run with `pnpm seed`. `pnpm seed --fresh` redeploys the
+// contract first (new `plus` alias, bindings, Supabase secret, web env), so totals
+// never double.
 //
 // - TESTNET ONLY. The script refuses any other network.
 // - Keys are read through the stellar CLI (`stellar keys secret <name>`) and are
@@ -6,14 +8,17 @@
 // - Re-runnable: every transaction is recorded in scripts/.seed-state.json. The
 //   hash is saved BEFORE submitting; on a rerun a pending hash is looked up on-chain
 //   and only rebuilt once it has provably failed or expired (never resubmitted blindly).
+// - Network errors ("fetch failed") are retried 3 times with exponential backoff via
+//   supabase/functions/_shared/stellar-retry.ts; submissions with an unknown outcome
+//   are looked up by hash before anything is resent.
 // - USDC comes from Circle's web faucet. Steps that need USDC are skipped with a
 //   warning and picked up on the next run.
 
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   Asset,
   BASE_FEE,
@@ -26,8 +31,17 @@ import {
   scValToNative,
 } from "@stellar/stellar-sdk";
 import { basicNodeSigner } from "@stellar/stellar-sdk/contract";
-import { AttestKind, Client } from "@plus/client";
-import type { Party } from "@plus/client";
+import type * as PlusClient from "@plus/client";
+import {
+  OutcomeUnknownError,
+  SubmitRejectedError,
+  submitTransaction,
+  withRetry,
+} from "../supabase/functions/_shared/stellar-retry.ts";
+import type { RetryOptions } from "../supabase/functions/_shared/stellar-retry.ts";
+
+// Loaded at runtime, after a possible --fresh redeploy has regenerated the bindings.
+let lib: typeof PlusClient;
 
 // ---------------------------------------------------------------------------
 // Network (testnet only)
@@ -97,54 +111,48 @@ let skipped = 0;
 // Transaction pipeline: sign -> save hash -> submit -> poll
 // ---------------------------------------------------------------------------
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const retry: RetryOptions = {
+  attempts: 3,
+  baseDelayMs: 1000,
+  onRetry: (err, attempt, ms) =>
+    console.log(`  retry network error (attempt ${attempt}/3${ms ? `, waiting ${ms} ms` : ""}): ${(err as Error).message}`),
+};
+const net = <T>(fn: () => Promise<T>) => withRetry(fn, retry);
 
-async function poll(hash: string): Promise<rpc.Api.GetTransactionResponse> {
-  for (let i = 0; i < 40; i++) {
-    const res = await server.getTransaction(hash);
-    if (res.status !== rpc.Api.GetTransactionStatus.NOT_FOUND) return res;
-    await sleep(1500);
-  }
-  return server.getTransaction(hash);
+function valueOf(res: rpc.Api.GetTransactionResponse): unknown {
+  return res.status === rpc.Api.GetTransactionStatus.SUCCESS && res.returnValue
+    ? scValToNative(res.returnValue)
+    : undefined;
 }
 
-function valueOf(res: rpc.Api.GetSuccessfulTransactionResponse): unknown {
-  return res.returnValue ? scValToNative(res.returnValue) : undefined;
-}
-
+/** Save hash, submit through the shared safe submitter, record the outcome. */
 async function submit(key: string, tx: Transaction): Promise<unknown> {
   const hash = tx.hash().toString("hex");
-  state.steps[key] = {
-    status: "pending",
-    hash,
-    xdr: tx.toXDR(),
-    maxTime: Number(tx.timeBounds?.maxTime ?? 0),
-  };
+  state.steps[key] = { status: "pending", hash, xdr: tx.toXDR(), maxTime: Number(tx.timeBounds?.maxTime ?? 0) };
   save(); // hash is on disk before the network sees the transaction
 
-  const sent = await server.sendTransaction(tx);
-  if (sent.status === "ERROR") {
-    delete state.steps[key];
-    save();
-    throw new Error(`${key}: submission rejected (${sent.errorResult?.result().switch().name ?? "unknown"})`);
+  let res: rpc.Api.GetTransactionResponse;
+  try {
+    res = await submitTransaction(server, tx, retry);
+  } catch (e) {
+    if (e instanceof SubmitRejectedError) {
+      delete state.steps[key]; // rejected by RPC: nothing was applied
+      save();
+      const code = (e.result as rpc.Api.SendTransactionResponse).errorResult?.result().switch().name ?? "unknown";
+      throw new Error(`${key}: submission rejected (${code})`);
+    }
+    if (e instanceof OutcomeUnknownError) throw new Error(`${key}: ${hash} not found yet; rerun to look it up again`);
+    throw e; // pending hash stays on disk: the next run looks it up
   }
-  return settle(key, hash);
-}
-
-async function settle(key: string, hash: string): Promise<unknown> {
-  const res = await poll(hash);
   if (res.status === rpc.Api.GetTransactionStatus.SUCCESS) {
     const value = valueOf(res);
     state.steps[key] = { status: "done", hash, value };
     save();
     return value;
   }
-  if (res.status === rpc.Api.GetTransactionStatus.FAILED) {
-    delete state.steps[key];
-    save();
-    throw new Error(`${key}: transaction ${hash} failed on-chain`);
-  }
-  throw new Error(`${key}: ${hash} still not found; rerun to check it again`);
+  delete state.steps[key];
+  save();
+  throw new Error(`${key}: transaction ${hash} failed on-chain`);
 }
 
 /** Run one transaction exactly once across reruns. */
@@ -156,7 +164,7 @@ async function step(key: string, label: string, build: () => Promise<Transaction
     return prev.value;
   }
   if (prev?.status === "pending") {
-    const res = await server.getTransaction(prev.hash);
+    const res = await net(() => server.getTransaction(prev.hash));
     if (res.status === rpc.Api.GetTransactionStatus.SUCCESS) {
       state.steps[key] = { status: "done", hash: prev.hash, value: valueOf(res) };
       save();
@@ -166,16 +174,16 @@ async function step(key: string, label: string, build: () => Promise<Transaction
     }
     const expired = prev.maxTime !== undefined && Date.now() / 1000 > prev.maxTime + 10;
     if (res.status === rpc.Api.GetTransactionStatus.NOT_FOUND && !expired && prev.xdr) {
-      // Same signed envelope, same hash: safe to resubmit until it expires.
+      // Looked up: not seen and not expired. The same signed envelope (same hash) is safe to resend.
       console.log(`  wait  ${label} (re-sending pending ${prev.hash.slice(0, 8)})`);
-      await server.sendTransaction(TransactionBuilder.fromXDR(prev.xdr, PASSPHRASE) as Transaction);
+      const value = await submit(key, TransactionBuilder.fromXDR(prev.xdr, PASSPHRASE) as Transaction);
       ran++;
-      return settle(key, prev.hash);
+      return value;
     }
     // FAILED, or NOT_FOUND after expiry: provably not applied, so rebuild.
     delete state.steps[key];
   }
-  const tx = await build();
+  const tx = await net(build); // simulate + sign only, nothing submitted: safe to retry
   const value = await submit(key, tx);
   ran++;
   console.log(`  done  ${label}  ${tx.hash().toString("hex").slice(0, 12)}`);
@@ -186,11 +194,11 @@ async function step(key: string, label: string, build: () => Promise<Transaction
 // Builders
 // ---------------------------------------------------------------------------
 
-const clients: Record<string, Client> = {};
+let clients: Record<string, PlusClient.Client> = {};
 let CONTRACT_ID = "";
 
-function plus(name: Name): Client {
-  clients[name] ??= new Client({
+function plus(name: Name): PlusClient.Client {
+  clients[name] ??= new lib.Client({
     contractId: CONTRACT_ID,
     networkPassphrase: PASSPHRASE,
     rpcUrl: RPC_URL,
@@ -216,7 +224,7 @@ async function contractTx(at: Assembled): Promise<Transaction> {
 }
 
 async function classicTx(name: Name, ops: ReturnType<typeof Operation.payment>[]): Promise<Transaction> {
-  const account = await horizon.loadAccount(pub[name]);
+  const account = await net(() => horizon.loadAccount(pub[name]));
   const b = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: PASSPHRASE }).setTimeout(60);
   for (const op of ops) b.addOperation(op);
   const tx = b.build();
@@ -225,7 +233,7 @@ async function classicTx(name: Name, ops: ReturnType<typeof Operation.payment>[]
 }
 
 async function balance(name: Name, asset: Asset): Promise<number> {
-  const acct = await horizon.loadAccount(pub[name]);
+  const acct = await net(() => horizon.loadAccount(pub[name]));
   const line = acct.balances.find(
     (b) => "asset_code" in b && b.asset_code === asset.getCode() && b.asset_issuer === asset.getIssuer(),
   );
@@ -233,8 +241,8 @@ async function balance(name: Name, asset: Asset): Promise<number> {
 }
 
 const opts = { timeoutInSeconds: 60 };
-const acct = (a: string): Party => ({ tag: "Account", values: [a] });
-const ref = (b: Buffer): Party => ({ tag: "Ref", values: [b] });
+const acct = (a: string): PlusClient.Party => ({ tag: "Account", values: [a] });
+const ref = (b: Buffer): PlusClient.Party => ({ tag: "Ref", values: [b] });
 
 // ---------------------------------------------------------------------------
 // Main
@@ -248,12 +256,14 @@ async function main() {
   for (const n of NAMES) pub[n] = stellar(["keys", "address", n]);
   CONTRACT_ID = process.env.PLUS_CONTRACT_ID ?? stellar(["contract", "alias", "show", "plus", "--network", NETWORK]);
 
-  if (fresh && existsSync(STATE_FILE)) {
-    rmSync(STATE_FILE);
-    console.log("--fresh: cleared scripts/.seed-state.json");
-    console.log("  note: attestations accumulate on the same contract; redeploy `plus` for a clean ledger.");
-  }
   state = existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")) : undefined;
+  lib = await import("@plus/client");
+  if (fresh) {
+    CONTRACT_ID = await redeploy();
+    // Bindings were regenerated; a fresh module URL picks up the new build.
+    const dist = pathToFileURL(join(ROOT, "packages", "plus-client", "dist", "index.js")).href;
+    lib = await import(`${dist}?v=${Date.now()}`);
+  }
   if (!state || state.contractId !== CONTRACT_ID || state.network !== NETWORK) {
     if (state) console.log(`contract changed (${state.contractId} -> ${CONTRACT_ID}): starting new seed state`);
     state = { network: NETWORK, contractId: CONTRACT_ID, createdAt: new Date().toISOString(), steps: {} };
@@ -270,7 +280,7 @@ async function main() {
   console.log(`  USDC SAC ${USDC_SAC}`);
   console.log(`  NGNT SAC ${NGNT_SAC}\n`);
 
-  const cfg = (await plus("admin").config()).result;
+  const cfg = (await net(() => plus("admin").config())).result;
   if (!cfg.assets.includes(NGNT_SAC)) {
     await step("admin:add_asset:ngnt", "add_asset(NGNT)", async () =>
       contractTx(await plus("admin").add_asset({ asset: NGNT_SAC }, opts)),
@@ -317,7 +327,7 @@ async function main() {
     await step(`selvi:w${w}:wage`, `week ${w}: Received wage Rs ${wage}`, async () =>
       contractTx(
         await partner.attest(
-          { user_ref: selvi, kind: AttestKind.Received, amount: units(wage), payment_ref: sha256(`plus-demo:selvi:wage:w${w}`) },
+          { user_ref: selvi, kind: lib.AttestKind.Received, amount: units(wage), payment_ref: sha256(`plus-demo:selvi:wage:w${w}`) },
           opts,
         ),
       ),
@@ -325,7 +335,7 @@ async function main() {
     await step(`selvi:w${w}:wage:saved`, `week ${w}: Saved Rs ${wage / 10}`, async () =>
       contractTx(
         await partner.attest(
-          { user_ref: selvi, kind: AttestKind.Saved, amount: units(wage) / 10n, payment_ref: sha256(`plus-demo:selvi:save:wage:w${w}`) },
+          { user_ref: selvi, kind: lib.AttestKind.Saved, amount: units(wage) / 10n, payment_ref: sha256(`plus-demo:selvi:save:wage:w${w}`) },
           opts,
         ),
       ),
@@ -335,7 +345,7 @@ async function main() {
       await step(`selvi:m${m}:transfer`, `month ${m}: Received state transfer Rs 1000`, async () =>
         contractTx(
           await partner.attest(
-            { user_ref: selvi, kind: AttestKind.Received, amount: units(1000), payment_ref: sha256(`plus-demo:selvi:dbt:m${m}`) },
+            { user_ref: selvi, kind: lib.AttestKind.Received, amount: units(1000), payment_ref: sha256(`plus-demo:selvi:dbt:m${m}`) },
             opts,
           ),
         ),
@@ -343,7 +353,7 @@ async function main() {
       await step(`selvi:m${m}:transfer:saved`, `month ${m}: Saved Rs 100`, async () =>
         contractTx(
           await partner.attest(
-            { user_ref: selvi, kind: AttestKind.Saved, amount: units(100), payment_ref: sha256(`plus-demo:selvi:save:dbt:m${m}`) },
+            { user_ref: selvi, kind: lib.AttestKind.Saved, amount: units(100), payment_ref: sha256(`plus-demo:selvi:save:dbt:m${m}`) },
             opts,
           ),
         ),
@@ -351,7 +361,7 @@ async function main() {
       await step(`selvi:m${m}:seettu:paid`, `month ${m}: Paid seettu Rs 200`, async () =>
         contractTx(
           await partner.attest(
-            { user_ref: selvi, kind: AttestKind.Paid, amount: units(200), payment_ref: sha256(`plus-demo:seettu:selvi:m${m}`) },
+            { user_ref: selvi, kind: lib.AttestKind.Paid, amount: units(200), payment_ref: sha256(`plus-demo:seettu:selvi:m${m}`) },
             opts,
           ),
         ),
@@ -478,7 +488,7 @@ async function main() {
   );
 
   // ----- docs ------------------------------------------------------------
-  const wasm = await server.getContractWasmByContractId(CONTRACT_ID);
+  const wasm = await net(() => server.getContractWasmByContractId(CONTRACT_ID));
   const wasmHash = createHash("sha256").update(wasm).digest("hex");
   let commit = "";
   try {
@@ -495,6 +505,73 @@ async function main() {
     console.log(`\nGet test USDC at https://faucet.circle.com (network: Stellar Testnet), ~20 USDC each to:`);
     for (const n of ["sender_ca", "partner", "mm"] as Name[]) console.log(`  ${n.padEnd(10)} ${pub[n]}`);
   }
+}
+
+const USDC_SAC_ID = new Asset("USDC", USDC_ISSUER).contractId(PASSPHRASE);
+const SUPABASE_REF = "qoqmnjzfjhpemwleipth"; // Plus dev project (testnet values only)
+const WEB_ENV = join(ROOT, "apps", "web", ".env.local");
+
+function pnpmRun(args: string[]) {
+  // npm_execpath (set by pnpm) is either its JS entry or a native pnpm.exe: no shell needed.
+  const p = process.env.npm_execpath;
+  if (p && /\.[cm]?js$/.test(p)) execFileSync(process.execPath, [p, ...args], { cwd: ROOT, stdio: "inherit" });
+  else if (p && /\.exe$/i.test(p)) execFileSync(p, args, { cwd: ROOT, stdio: "inherit" });
+  else execSync(`pnpm ${args.join(" ")}`, { cwd: ROOT, stdio: "inherit" });
+}
+
+/**
+ * --fresh: refund what the seed put into the old contract's family pot, deploy a new
+ * contract under the `plus` alias, regenerate bindings, point Supabase and the web
+ * app at it, and start a new seed state.
+ */
+async function redeploy(): Promise<string> {
+  console.log("--fresh: redeploying the contract");
+  const old = state;
+  const potStep = old?.steps["pot:create:v2"];
+  if (old && potStep?.status === "done" && old.steps["pot:fund:v2"]?.status === "done") {
+    // Give sender_ca its USDC back before the old contract is abandoned.
+    CONTRACT_ID = old.contractId;
+    await step("fresh:refund:pot", `pot_cancel(pot ${potStep.value}) on old contract, refund sender_ca`, async () =>
+      contractTx(await plus("sender_ca").pot_cancel({ sender: pub.sender_ca, pot_id: potStep.value as number }, opts)),
+    );
+  }
+
+  execFileSync("stellar", ["contract", "build", "--package", "plus"], { cwd: ROOT, stdio: ["ignore", "ignore", "inherit"] });
+  // A deployment is a submission: never retried automatically. If it fails, rerun --fresh.
+  const out = stellar([
+    "contract", "deploy",
+    "--wasm", join(ROOT, "target", "wasm32v1-none", "release", "plus.wasm"),
+    "--source-account", "admin",
+    "--network", NETWORK,
+    "--alias", "plus",
+    "--", "--admin", "admin", "--partner", "partner", "--usdc", USDC_SAC_ID, "--advance_fee_bps", "150",
+  ]);
+  const id = out.split(/\s+/).pop() ?? "";
+  if (!/^C[A-Z2-7]{55}$/.test(id)) throw new Error(`unexpected deploy output: ${out}`);
+  console.log(`  done  deployed ${id}`);
+
+  rmSync(STATE_FILE, { force: true });
+  state = undefined as unknown as State;
+  clients = {};
+
+  console.log("  ...   pnpm bindings");
+  pnpmRun(["bindings"]);
+
+  // id is validated above (contract strkey only), so it is safe on a command line.
+  execSync(`npx -y supabase secrets set --yes --project-ref ${SUPABASE_REF} PLUS_CONTRACT_ID=${id}`, {
+    cwd: ROOT,
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+  console.log("  done  Supabase secret PLUS_CONTRACT_ID");
+
+  const line = `VITE_PLUS_CONTRACT_ID=${id}`;
+  const env = existsSync(WEB_ENV) ? readFileSync(WEB_ENV, "utf8") : "";
+  const next = /^VITE_PLUS_CONTRACT_ID=.*$/m.test(env)
+    ? env.replace(/^VITE_PLUS_CONTRACT_ID=.*$/m, line)
+    : `${env}${env && !env.endsWith("\n") ? "\n" : ""}${line}\n`;
+  writeFileSync(WEB_ENV, next);
+  console.log("  done  apps/web/.env.local");
+  return id;
 }
 
 function writeDocs(d: {
