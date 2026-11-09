@@ -1,11 +1,17 @@
 {
   "name": "plus",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@12.18.0",
   "scripts": {
     "markets:sync": "node scripts/sync-markets.mjs",
     "markets:check": "node scripts/sync-markets.mjs --check",
     "build": "pnpm -r build",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "seed": "pnpm --filter @plus/client build && node scripts/seed.ts"
+  },
+  "devDependencies": {
+    "@plus/client": "workspace:*",
+    "@stellar/stellar-sdk": "^16.4.1"
   }
 }
