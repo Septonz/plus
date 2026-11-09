@@ -5,7 +5,10 @@ members = [
 ]
 
 [workspace.dependencies]
-soroban-sdk = "29"
+# Pinned to 28: OpenZeppelin stellar-* 0.8.0 (latest) depends on soroban-sdk ^28.
+soroban-sdk = "28"
+stellar-access = "=0.8.0"
+stellar-contract-utils = "=0.8.0"
 
 [profile.release]
 opt-level = "z"

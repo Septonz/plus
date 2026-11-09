@@ -9,3 +9,5 @@ supabase/.temp
 supabase/.branches
 .DS_Store
 *.log
+.mcp.json
+scripts/.seed-state.json
