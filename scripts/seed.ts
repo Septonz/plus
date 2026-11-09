@@ -49,7 +49,8 @@ let lib: typeof PlusClient;
 
 const NETWORK = "testnet";
 const PASSPHRASE = "Test SDF Network ; September 2015";
-const RPC_URL = "https://soroban-testnet.stellar.org";
+// Fastest testnet RPC in `pnpm bench:rpc` (docs/speed.md); override with STELLAR_RPC_URL.
+const RPC_URL = process.env.STELLAR_RPC_URL || "https://soroban-rpc.testnet.stellar.gateway.fm";
 const HORIZON_URL = "https://horizon-testnet.stellar.org";
 const EXPERT = "https://stellar.expert/explorer/testnet";
 
@@ -76,7 +77,12 @@ function stellar(args: string[]): string {
   return execFileSync("stellar", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
-const NAMES = ["admin", "partner", "sender_ca", "issuer", "mm", "amaka", "ng_member2", "ng_member3", "agent_ng"] as const;
+const NAMES = [
+  "admin", "partner", "sender_ca", "issuer", "mm", "amaka", "ng_member2", "ng_member3", "agent_ng",
+  "funmi", "ng_member4", "iya_tunde",
+] as const;
+/** Identities created by this script when missing. funmi is NOT friendbot-funded: partner sponsors her reserves. */
+const CREATED: Partial<Record<Name, "sponsored" | "friendbot">> = { funmi: "sponsored", ng_member4: "friendbot", iya_tunde: "friendbot" };
 type Name = (typeof NAMES)[number];
 
 const pub: Record<string, string> = {};
@@ -232,6 +238,37 @@ async function classicTx(name: Name, ops: ReturnType<typeof Operation.payment>[]
   return tx;
 }
 
+/** Classic transaction with operations from several source accounts, signed by each of them. */
+async function multiTx(source: Name, ops: ReturnType<typeof Operation.payment>[], signers: Name[]): Promise<Transaction> {
+  const account = await net(() => horizon.loadAccount(pub[source]));
+  const b = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: PASSPHRASE }).setTimeout(60);
+  for (const op of ops) b.addOperation(op);
+  const tx = b.build();
+  for (const n of signers) tx.sign(kp(n));
+  return tx;
+}
+
+/**
+ * Partner pays the network fee (fee bump) for accounts that hold no XLM (Funmi). The fee source's
+ * sequence number is not used, so this never collides with partner's own transactions.
+ */
+function feeBumped(inner: Transaction): Transaction {
+  const fee = (BigInt(inner.fee) + 1000n).toString();
+  const outer = TransactionBuilder.buildFeeBumpTransaction(kp("partner"), fee, inner, PASSPHRASE);
+  outer.sign(kp("partner"));
+  return outer as unknown as Transaction; // submit() only needs hash/toXDR/timeBounds
+}
+
+async function accountExists(g: string): Promise<boolean> {
+  try {
+    await net(() => horizon.loadAccount(g));
+    return true;
+  } catch (e) {
+    if ((e as { response?: { status?: number } }).response?.status === 404) return false;
+    throw e;
+  }
+}
+
 async function balance(name: Name, asset: Asset): Promise<number> {
   const acct = await net(() => horizon.loadAccount(pub[name]));
   const line = acct.balances.find(
@@ -253,7 +290,17 @@ async function main() {
   const network = process.env.STELLAR_NETWORK ?? NETWORK;
   if (network !== "testnet") throw new Error(`refusing to seed network "${network}": testnet only`);
 
-  for (const n of NAMES) pub[n] = stellar(["keys", "address", n]);
+  for (const n of NAMES) {
+    try {
+      pub[n] = stellar(["keys", "address", n]);
+    } catch {
+      if (!CREATED[n]) throw new Error(`stellar identity ${n} is missing`);
+      // Keys stay in the stellar CLI's store; nothing is printed.
+      stellar(["keys", "generate", n, "--network", NETWORK, ...(CREATED[n] === "friendbot" ? ["--fund"] : [])]);
+      pub[n] = stellar(["keys", "address", n]);
+      console.log(`  new identity ${n} ${pub[n]}${CREATED[n] === "friendbot" ? " (friendbot)" : ""}`);
+    }
+  }
   CONTRACT_ID = process.env.PLUS_CONTRACT_ID ?? stellar(["contract", "alias", "show", "plus", "--network", NETWORK]);
 
   state = existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")) : undefined;
@@ -492,6 +539,8 @@ async function main() {
     contractTx(await partner.set_credit_limit({ borrower: acct(pub.amaka), limit: units(30_000) }, opts)),
   );
 
+  const ng = await nigeriaCore({ NGNT, NGNT_SAC, USDC });
+
   // ----- docs ------------------------------------------------------------
   const wasm = await net(() => server.getContractWasmByContractId(CONTRACT_ID));
   const wasmHash = createHash("sha256").update(wasm).digest("hex");
@@ -499,10 +548,11 @@ async function main() {
   try {
     commit = execFileSync("git", ["log", "-1", "--format=%h", "--", "contracts/plus"], { cwd: ROOT, encoding: "utf8" }).trim();
   } catch {}
-  writeDocs({ USDC_SAC, NGNT_SAC, wasmHash, commit, seettuId, potId, ajoId, userRef });
+  writeDocs({ USDC_SAC, NGNT_SAC, wasmHash, commit, seettuId, potId, ajoId, userRef, ...ng });
 
   console.log(`\n${ran} transaction(s) sent, ${skipped} step(s) already done.`);
   console.log(`Seettu group ${seettuId}, ajo group ${ajoId}, family pot ${potId}`);
+  console.log(`Bodija Market Ajo group ${ng.bodijaId} (earlier cycle: group ${ng.historyId})`);
   console.log("Wrote docs/deployments.md");
   if (warnings.length) {
     console.log("\nWARNINGS (rerun `pnpm seed` once fixed):");
@@ -510,6 +560,144 @@ async function main() {
     console.log(`\nGet test USDC at https://faucet.circle.com (network: Stellar Testnet), ~20 USDC each to:`);
     for (const n of ["sender_ca", "partner", "mm"] as Name[]) console.log(`  ${n.padEnd(10)} ${pub[n]}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Nigeria core: Funmi, Mama Bisi (agent_ng), Iya Tunde, Bodija Market Ajo
+// ---------------------------------------------------------------------------
+
+const AJO_MEMBERS: Name[] = ["amaka", "funmi", "ng_member2", "ng_member3", "ng_member4"];
+const AJO_AMOUNT = 1_000; // NGNT per member per round
+const HISTORY_PERIOD = 60n; // earlier cycle, sped up: one round a minute
+const FUNMI_CASH_INS = [3_000, 2_800, 3_200, 3_000, 3_400, 2_900, 3_100, 3_000]; // weekly, from Mama Bisi
+const FUNMI_LIMIT = 20_000;
+const POOL_MIN = 50_000;
+const FLOAT = 200_000;
+
+/** A contract call as `name`; Funmi's are fee-bumped by partner (she holds no XLM). */
+async function callAs(name: Name, build: (c: PlusClient.Client) => Promise<unknown>): Promise<Transaction> {
+  const inner = await contractTx((await build(plus(name))) as Assembled);
+  return CREATED[name] === "sponsored" ? feeBumped(inner) : inner;
+}
+
+type GroupView = { next_due: bigint; turn: number; contributed: boolean[] };
+async function groupNow(id: number): Promise<GroupView> {
+  const g = (await net(() => plus("admin").group({ group_id: id }))).result as unknown as { unwrap?: () => unknown };
+  return (typeof g?.unwrap === "function" ? g.unwrap() : g) as GroupView;
+}
+
+async function nigeriaCore(x: { NGNT: Asset; NGNT_SAC: string; USDC: Asset }) {
+  const { NGNT, NGNT_SAC, USDC } = x;
+
+  console.log("\nNigeria core: Funmi's wallet (reserves sponsored by partner)");
+  if (!(await accountExists(pub.funmi)) || state.steps["funmi:create"]?.status === "pending") {
+    await step("funmi:create", "partner sponsors and creates funmi; funmi trusts NGNT, USDC", () =>
+      multiTx("partner", [
+        Operation.beginSponsoringFutureReserves({ sponsoredId: pub.funmi }),
+        Operation.createAccount({ destination: pub.funmi, startingBalance: "0" }),
+        Operation.changeTrust({ asset: NGNT, source: pub.funmi }),
+        Operation.changeTrust({ asset: USDC, source: pub.funmi }),
+        Operation.endSponsoringFutureReserves({ source: pub.funmi }),
+      ] as ReturnType<typeof Operation.payment>[], ["partner", "funmi"]),
+    );
+  } else {
+    skipped++;
+    console.log("  skip  funmi exists");
+  }
+
+  console.log("\nNigeria core: trustlines and NGNT");
+  for (const name of ["ng_member4", "iya_tunde"] as Name[]) {
+    if ((await balance(name, NGNT)) < 0) {
+      await step(`trust:${name}:NGNT`, `${name} trusts NGNT`, () => classicTx(name, [Operation.changeTrust({ asset: NGNT }) as ReturnType<typeof Operation.payment>]));
+    } else {
+      skipped++;
+      console.log(`  skip  ${name} trusts NGNT`);
+    }
+  }
+  await step("ngnt:issue:ng_member4", "issuer pays ng_member4 20,000 NGNT", () =>
+    classicTx("issuer", [Operation.payment({ destination: pub.ng_member4, asset: NGNT, amount: "20000" })]),
+  );
+
+  const create = (key: string, label: string, period: bigint) =>
+    step(key, label, () =>
+      callAs("amaka", (c) => c.group_create({
+        organizer: pub.amaka,
+        members: AJO_MEMBERS.map((n) => acct(pub[n])),
+        asset: NGNT_SAC,
+        amount: units(AJO_AMOUNT),
+        period_secs: period,
+        pooled: true,
+      }, opts)),
+    ) as Promise<number>;
+
+  console.log("\nNigeria core: Bodija Market Ajo, earlier cycle (sped up: 1-minute rounds, real contributions and payouts)");
+  const historyId = await create("bodija:history:create", "group_create(Bodija Market Ajo, earlier cycle, 5 x 1,000 NGNT, 60 s)", HISTORY_PERIOD);
+
+  for (let w = 1; w <= 8; w++) {
+    // Week w: Mama Bisi's cash-in, then everyone's contribution, then that round's payout.
+    const amount = FUNMI_CASH_INS[w - 1];
+    await step(`funmi:w${w}:cash_in`, `week ${w}: Mama Bisi (agent_ng) -> funmi ${amount.toLocaleString("en")} NGNT`, () =>
+      classicTx("agent_ng", [Operation.payment({ destination: pub.funmi, asset: NGNT, amount: String(amount) })]),
+    );
+    await Promise.all(AJO_MEMBERS.map((n) =>
+      step(`bodija:history:w${w}:${n}`, `week ${w}: ${n} contributes 1,000 NGNT`, () =>
+        callAs(n, (c) => c.group_contribute({ user: pub[n], group_id: historyId }, opts)),
+      ),
+    ));
+    if (state.steps[`bodija:history:w${w}:payout`]?.status !== "done") {
+      const g = await groupNow(historyId);
+      const wait = Number(g.next_due) * 1000 - Date.now() + 6000; // ledger time trails the wall clock a little
+      if (wait > 0) {
+        console.log(`  wait  ${Math.ceil(wait / 1000)} s until round ${w} is due`);
+        await new Promise((r) => setTimeout(r, wait));
+      }
+    }
+    const turn = AJO_MEMBERS[(w - 1) % AJO_MEMBERS.length];
+    await step(`bodija:history:w${w}:payout`, `week ${w}: group_payout to ${turn}`, () =>
+      callAs("partner", (c) => c.group_payout({ group_id: historyId }, opts)),
+    );
+  }
+
+  console.log("\nNigeria core: Bodija Market Ajo (live, 1-day rounds)");
+  const bodijaId = await create("bodija:create", "group_create(Bodija Market Ajo, 5 x 1,000 NGNT, 1 day)", DAY);
+  // This round: the others have paid; Funmi's contribution is left for the demo.
+  const live = await groupNow(bodijaId);
+  await Promise.all(AJO_MEMBERS.filter((n) => n !== "funmi").map((n) => {
+    if (live.contributed[AJO_MEMBERS.indexOf(n)] && state.steps[`bodija:r1:${n}`]?.status !== "done") {
+      skipped++;
+      console.log(`  skip  ${n} already contributed this round`);
+      return Promise.resolve(undefined);
+    }
+    return step(`bodija:r1:${n}`, `round 1: ${n} contributes 1,000 NGNT`, () =>
+      callAs(n, (c) => c.group_contribute({ user: pub[n], group_id: bodijaId }, opts)),
+    );
+  }));
+
+  console.log("\nNigeria core: advance");
+  const pool = BigInt((await net(() => plus("admin").pool_balance({ asset: NGNT_SAC }))).result as unknown as bigint);
+  if (pool < units(POOL_MIN)) {
+    await step(`pool:topup:${new Date().toISOString().slice(0, 10)}`, `fund_pool(NGNT, 200,000): pool was ${pool / DECIMALS}`, () =>
+      callAs("partner", (c) => c.fund_pool({ asset: NGNT_SAC, amount: units(200_000) }, opts)),
+    );
+  } else {
+    console.log(`  skip  pool has ${(pool / DECIMALS).toLocaleString("en")} NGNT`);
+  }
+  await step("funmi:limit", `set_credit_limit(Account funmi, ${FUNMI_LIMIT.toLocaleString("en")} NGNT)`, () =>
+    callAs("partner", (c) => c.set_credit_limit({ borrower: acct(pub.funmi), limit: units(FUNMI_LIMIT) }, opts)),
+  );
+
+  console.log("\nNigeria core: Mama Bisi's float");
+  const float = await balance("agent_ng", NGNT);
+  if (float < FLOAT) {
+    const top = Math.ceil(FLOAT - float);
+    await step(`float:agent_ng:${top}`, `issuer tops agent_ng up by ${top.toLocaleString("en")} NGNT to ${FLOAT.toLocaleString("en")}`, () =>
+      classicTx("issuer", [Operation.payment({ destination: pub.agent_ng, asset: NGNT, amount: String(top) })]),
+    );
+  } else {
+    console.log(`  skip  float ${float.toLocaleString("en")} NGNT`);
+  }
+  console.log(`  funmi holds ${(await balance("funmi", NGNT)).toLocaleString("en")} NGNT`);
+  return { bodijaId, historyId };
 }
 
 const USDC_SAC_ID = new Asset("USDC", USDC_ISSUER).contractId(PASSPHRASE);
@@ -588,6 +776,8 @@ function writeDocs(d: {
   potId: number;
   ajoId: number;
   userRef: Record<string, Buffer>;
+  bodijaId: number;
+  historyId: number;
 }) {
   const a = (g: string) => `[\`${g}\`](${EXPERT}/account/${g})`;
   const c = (id: string) => `[\`${id}\`](${EXPERT}/contract/${id})`;
@@ -600,7 +790,10 @@ function writeDocs(d: {
     amaka: "Nigeria demo user, ajo organizer",
     ng_member2: "Ajo member",
     ng_member3: "Ajo member",
-    agent_ng: "Nigeria cash agent (helper), 200,000 NGNT float",
+    agent_ng: "Mama Bisi, Nigeria cash agent (helper role agent): 200,000 NGNT float, 500,000 naira daily limit",
+    funmi: "Funmi, tomato seller in Ibadan (demo user). The Stellar wallet is her account: NGNT + USDC trustlines, base reserves sponsored by partner, network fees paid by partner (fee bump). Custodial key in Supabase secret STELLAR_SECRET_FUNMI (users.secret_name)",
+    ng_member4: "Ajo member (Bodija Market Ajo)",
+    iya_tunde: "Iya Tunde, tomato wholesaler (Funmi's payee); NGNT trustline",
   };
   const date = state.createdAt.slice(0, 10);
   const lines = [
@@ -608,7 +801,7 @@ function writeDocs(d: {
     "",
     "Public addresses and IDs only. Never put secret keys here.",
     "",
-    "Generated by `pnpm seed` (scripts/seed.ts). Network: **Stellar Testnet** (`Test SDF Network ; September 2015`), RPC `https://soroban-testnet.stellar.org`.",
+    `Generated by \`pnpm seed\` (scripts/seed.ts). Network: **Stellar Testnet** (\`Test SDF Network ; September 2015\`), RPC \`${RPC_URL}\`, Horizon \`${HORIZON_URL}\`.`,
     "",
     "## Contracts",
     "",
@@ -634,7 +827,10 @@ function writeDocs(d: {
     "| Object | ID | Details |",
     "| ------ | -- | ------- |",
     `| Seettu (India, record mode) | group ${d.seettuId} | 5 Ref members, Rs 200, 30-day period |`,
-    `| Ajo (Nigeria, pooled) | group ${d.ajoId} | amaka, ng_member2, ng_member3; 5,000 NGNT; 1-day period |`,
+    `| Ajo (Nigeria, pooled, first demo) | group ${d.ajoId} | amaka, ng_member2, ng_member3; 5,000 NGNT; 1-day period |`,
+    `| Bodija Market Ajo (live) | group ${d.bodijaId} | amaka, funmi, ng_member2, ng_member3, ng_member4; 1,000 NGNT each; 1-day period; organizer amaka |`,
+    `| Bodija Market Ajo, earlier cycle | group ${d.historyId} | same members; 8 rounds with 1-minute periods, sped up so Funmi has real contribution and payout history |`,
+    "| Funmi's credit limit | | 20,000 NGNT (partner, set_credit_limit); advance pool topped up by 200,000 NGNT when below 50,000 |",
     `| Family dollar fund | pot ${d.potId} | sender_ca -> sender_ca, 5 USDC every 30 days, funded with 10 USDC |`,
     "",
     "## Demo user refs (India)",
