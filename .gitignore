@@ -1,0 +1,11 @@
+node_modules
+target
+dist
+.env
+.env.*
+!.env.example
+.stellar
+supabase/.temp
+supabase/.branches
+.DS_Store
+*.log

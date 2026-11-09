@@ -1,0 +1,11 @@
+{
+  "name": "plus",
+  "private": true,
+  "packageManager": "pnpm@12.18.0",
+  "scripts": {
+    "markets:sync": "node scripts/sync-markets.mjs",
+    "markets:check": "node scripts/sync-markets.mjs --check",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint"
+  }
+}
