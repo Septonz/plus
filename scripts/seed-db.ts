@@ -9,8 +9,11 @@
 // users.auth_user_id / helpers.auth_user_id, app_metadata.demo = true. One shared demo password,
 // VITE_DEMO_LOGIN_PASSWORD in the root .env.local (generated on first run, gitignored, never printed).
 // Production login is phone OTP plus PIN; these demo logins exist only on the dev project.
-// Nigeria: Amaka and the cash agent agent_ng, the ajo mirrored from the contract, and Amaka's
-// NGNT grant from the Stellar seed.
+// Nigeria: Funmi (demo user; her Stellar wallet is her account, custodial key in the Supabase
+// secret STELLAR_SECRET_FUNMI), Mama Bisi (cash agent agent_ng, key in STELLAR_SECRET_AGENT_NG),
+// payee Iya Tunde, Amaka, the ajo and the Bodija Market Ajo mirrored from the contract, and
+// Funmi's eight weeks of on-chain history imported as transactions (real hashes and ledger times).
+// Demo logins demo-funmi@example.com and demo-mamabisi@example.com.
 //
 // Demo user refs are public (sha256("plus-demo:<name>")); real users get userRef(phone) HMAC.
 // Requires: `pnpm seed` (Stellar) has run; Supabase CLI logged in. Dev project only.
@@ -32,9 +35,11 @@ const E164 = /^\+[1-9][0-9]{7,14}$/;
 const MEENA_PHONE = "+910000000201";
 const AMAKA_PHONE = "+2340000000301";
 const AGENT_NG_PHONE = "+2340000000401";
+const FUNMI_PHONE = "+2340000000501";
+const HORIZON_URL = "https://horizon-testnet.stellar.org";
 
 const SEETTU_NAMES = ["selvi", "lakshmi", "meena", "kavitha", "revathi"];
-const AJO_NAMES: Record<string, string> = { amaka: "Amaka", ng_member2: "Tunde", ng_member3: "Halima" };
+const AJO_NAMES: Record<string, string> = { amaka: "Amaka", ng_member2: "Tunde", ng_member3: "Halima", funmi: "Funmi", ng_member4: "Kemi" };
 
 const { db } = adminClient();
 const refHex = (name: string) => createHash("sha256").update(`plus-demo:${name}`, "utf8").digest("hex");
@@ -129,6 +134,15 @@ async function upsertHelper(row: Record<string, unknown>) {
 
 export const DEMO_SELVI_EMAIL = "demo-selvi@example.com";
 export const DEMO_MEENA_EMAIL = "demo-meena@example.com";
+export const DEMO_FUNMI_EMAIL = "demo-funmi@example.com";
+export const DEMO_MAMA_BISI_EMAIL = "demo-mamabisi@example.com";
+
+/** When a transaction closed, from Horizon (so imported history shows the real on-chain time). */
+async function ledgerTime(hash: string): Promise<string> {
+  const res = await fetch(`${HORIZON_URL}/transactions/${hash}`);
+  if (!res.ok) throw new Error(`horizon ${res.status} for ${hash}`);
+  return (await res.json() as { created_at: string }).created_at;
+}
 
 function demoPassword(): string {
   const existing = process.env.VITE_DEMO_LOGIN_PASSWORD;
@@ -292,7 +306,9 @@ async function main() {
   // ----- Nigeria -------------------------------------------------------------
   console.log("Nigeria");
   const nigeria = getMarket("ng");
-  const pubs = Object.fromEntries(["amaka", "ng_member2", "ng_member3", "agent_ng"].map((n) => [n, stellar(["keys", "address", n])]));
+  const pubs = Object.fromEntries(
+    ["amaka", "ng_member2", "ng_member3", "ng_member4", "agent_ng", "funmi", "iya_tunde"].map((n) => [n, stellar(["keys", "address", n])]),
+  );
   const amaka = await upsertUser({ col: "wa_phone", val: AMAKA_PHONE }, {
     market_id: "ng",
     wa_phone: AMAKA_PHONE,
@@ -303,16 +319,47 @@ async function main() {
     auto_save_bps: nigeria.autoSave.defaultBps,
   });
   console.log("  user Amaka");
-  await upsertHelper({
+
+  const funmi = await upsertUser({ col: "wa_phone", val: FUNMI_PHONE }, {
     market_id: "ng",
-    name: "Agent Musa",
+    wa_phone: FUNMI_PHONE,
+    name: "Funmi",
+    language: "en", // Nigerian Pidgin by default (en covers Pidgin); Yoruba if she speaks it
+    kyc_tier: 1,
+    stellar_pub: pubs.funmi,
+    secret_name: "STELLAR_SECRET_FUNMI",
+    is_demo: true,
+    auto_save_bps: 0,
+  });
+  console.log(`  user Funmi (wallet ${pubs.funmi.slice(0, 6)}…, key in Supabase secret STELLAR_SECRET_FUNMI)`);
+
+  // Mama Bisi is the cash agent agent_ng (this row was "Agent Musa" before the Nigeria pivot).
+  const mamaBisi = await upsertHelper({
+    market_id: "ng",
+    name: "Mama Bisi",
     phone: AGENT_NG_PHONE,
     role: "agent",
     stellar_pub: pubs.agent_ng,
+    secret_name: "STELLAR_SECRET_AGENT_NG",
     daily_limit: nigeria.helperFloatLimit * 100,
     active: true,
   });
-  console.log(`  helper agent_ng (agent, daily limit ${formatMoney(BigInt(nigeria.helperFloatLimit * 100), "ng")})`);
+  console.log(`  helper Mama Bisi (agent, float on Stellar, daily limit ${formatMoney(BigInt(nigeria.helperFloatLimit * 100), "ng")})`);
+
+  const funmiLogin = await demoLogin(DEMO_FUNMI_EMAIL, password, "user");
+  const bisiLogin = await demoLogin(DEMO_MAMA_BISI_EMAIL, password, "helper");
+  check(await db.from("users").update({ auth_user_id: funmiLogin }).eq("id", funmi), "link Funmi login");
+  check(await db.from("helpers").update({ auth_user_id: bisiLogin }).eq("id", mamaBisi), "link Mama Bisi login");
+  console.log(`  app logins: ${DEMO_FUNMI_EMAIL} (Funmi), ${DEMO_MAMA_BISI_EMAIL} (Mama Bisi)`);
+
+  check(
+    await db.from("payees").upsert(
+      { user_id: funmi, name: "Iya Tunde (tomato wholesaler)", stellar_address: pubs.iya_tunde },
+      { onConflict: "user_id,name" },
+    ),
+    "Funmi payee",
+  );
+  console.log("  payee: Iya Tunde (tomato wholesaler), Stellar wallet");
 
   const grantHash: string | undefined = state?.steps?.["ngnt:issue"]?.hash;
   if (grantHash) {
@@ -335,16 +382,54 @@ async function main() {
   }
 
   const nameByPub = Object.fromEntries(Object.entries(AJO_NAMES).map(([k, v]) => [pubs[k], v]));
-  await mirrorGroup({
-    contractId,
-    onchainId: ajoId,
-    market: "ng",
-    name: nigeria.groupSavings.localName,
-    memberName: (p) => {
-      const ref = p.tag === "Account" ? p.values[0] : Buffer.from(p.values[0]).toString("hex");
-      return { ref, name: nameByPub[ref] ?? "Member", userId: ref === pubs.amaka ? amaka : null };
-    },
-  });
+  const userByPub: Record<string, string> = { [pubs.amaka]: amaka, [pubs.funmi]: funmi };
+  const memberName = (p: Party) => {
+    const ref = p.tag === "Account" ? p.values[0] : Buffer.from(p.values[0]).toString("hex");
+    return { ref, name: nameByPub[ref] ?? "Member", userId: userByPub[ref] ?? null };
+  };
+  await mirrorGroup({ contractId, onchainId: ajoId, market: "ng", name: nigeria.groupSavings.localName, memberName });
+  const bodijaId = Number(state?.steps?.["bodija:create"]?.value);
+  if (Number.isInteger(bodijaId) && bodijaId > 0) {
+    await mirrorGroup({ contractId, onchainId: bodijaId, market: "ng", name: "Bodija Market Ajo", memberName });
+  } else console.log("  Bodija Market Ajo not on-chain yet: run pnpm seed");
+
+  // Funmi's history: the seed's real transactions, imported once each (ref = seed:<tx hash>).
+  const history: { key: string; kind: string; source: string; amount: number }[] = [];
+  const CASH_INS = [3_000, 2_800, 3_200, 3_000, 3_400, 2_900, 3_100, 3_000];
+  const AJO_ORDER = ["amaka", "funmi", "ng_member2", "ng_member3", "ng_member4"];
+  for (let w = 1; w <= 8; w++) {
+    history.push({ key: `funmi:w${w}:cash_in`, kind: "incoming", source: "cash", amount: CASH_INS[w - 1] * 100 });
+    history.push({ key: `bodija:history:w${w}:funmi`, kind: "group_contribution", source: "Bodija Market Ajo", amount: -1_000 * 100 });
+    if (AJO_ORDER[(w - 1) % AJO_ORDER.length] === "funmi") {
+      history.push({ key: `bodija:history:w${w}:payout`, kind: "incoming", source: "ajo_payout", amount: AJO_ORDER.length * 1_000 * 100 });
+    }
+  }
+  let imported = 0;
+  for (const h of history) {
+    const hash: string | undefined = state?.steps?.[h.key]?.hash;
+    if (!hash) continue;
+    const exists = check(await db.from("transactions").select("id").eq("rail", "stellar").eq("ref", `seed:${hash}`).maybeSingle(), "find history");
+    if (exists) continue;
+    check(
+      await db.from("transactions").insert({
+        user_id: funmi,
+        market_id: "ng",
+        kind: h.kind,
+        source: h.source,
+        amount: h.amount,
+        currency: "NGN",
+        rail: "stellar",
+        tx_hash: hash,
+        chain_tx_hash: hash,
+        ref: `seed:${hash}`,
+        status: "completed",
+        created_at: await ledgerTime(hash),
+      }),
+      `history ${h.key}`,
+    );
+    imported++;
+  }
+  console.log(`  Funmi's on-chain history: ${imported} new of ${history.length} transactions (cash-ins from Mama Bisi, ajo contributions and payouts)`);
 
   console.log("\nDone. Rerun any time: fixed refs mean no money step applies twice.");
 }
