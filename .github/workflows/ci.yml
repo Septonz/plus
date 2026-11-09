@@ -38,3 +38,17 @@ jobs:
 
       - run: cargo test
       - run: stellar contract build
+
+  functions:
+    name: Edge Function tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - run: deno test --allow-env=PIN_PEPPER,USER_REF_SECRET supabase/functions/_shared/
+      - run: deno check index.ts
+        working-directory: supabase/functions/agent-tools
