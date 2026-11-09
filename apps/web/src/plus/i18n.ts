@@ -1,0 +1,131 @@
+// Labels: everyday Tamil Nadu Tamil first, English underneath. In English mode, English only.
+export type Lang = 'ta' | 'en'
+
+export const T = {
+  appName: { ta: 'பிளஸ்', en: 'Plus' },
+  hello: { ta: 'வணக்கம்', en: 'Hello' },
+  mic: { ta: 'பேசுங்க', en: 'Pesunga · Speak' },
+  micListening: { ta: 'கேக்குறேன்…', en: 'Listening…' },
+  micSpeaking: { ta: 'பேசுறேன்…', en: 'Speaking…' },
+  micConnecting: { ta: 'இணைக்குது…', en: 'Connecting…' },
+  micStop: { ta: 'நிறுத்த தொடுங்க', en: 'Tap to stop' },
+  micError: { ta: 'குரல் இப்போ வேலை செய்யல', en: 'Voice is not working right now' },
+
+  home: { ta: 'முகப்பு', en: 'Home' },
+  pay: { ta: 'பணம் அனுப்பு', en: 'Pay' },
+  seettu: { ta: 'சீட்டு', en: 'Seettu' },
+  advance: { ta: 'முன்பணம்', en: 'Advance' },
+  record: { ta: 'என் கணக்கு', en: 'My record' },
+  addMoney: { ta: 'பணம் வருவது', en: 'Add money' },
+  settings: { ta: 'அமைப்பு', en: 'Settings' },
+  back: { ta: 'பின்னால', en: 'Back' },
+
+  toSpend: { ta: 'செலவுக்கு', en: 'To spend' },
+  saved: { ta: 'சேமிப்பு', en: 'Saved' },
+  latestIn: { ta: 'கடைசியா வந்த பணம்', en: 'Latest money in' },
+  nothingYet: { ta: 'இன்னும் எதுவும் வரல', en: 'Nothing yet' },
+  waitingForYou: { ta: 'உங்க பதிலுக்காக காத்திருக்கு', en: 'Waiting for your answer' },
+  isThatRight: { ta: 'சரியா?', en: 'Is that right?' },
+  yes: { ta: 'ஆமா', en: 'Yes' },
+  no: { ta: 'இல்ல', en: 'No' },
+  today: { ta: 'இன்னைக்கு', en: 'today' },
+  yesterday: { ta: 'நேத்து', en: 'yesterday' },
+  daysAgo: { ta: 'நாள் முன்னாடி', en: 'days ago' },
+
+  choosePayee: { ta: 'யாருக்கு அனுப்பணும்?', en: 'Who do you want to pay?' },
+  howMuch: { ta: 'எவ்வளவு?', en: 'How much?' },
+  next: { ta: 'அடுத்து', en: 'Next' },
+  clear: { ta: 'அழி', en: 'Clear' },
+
+  checkThis: { ta: 'சரியா பாருங்க', en: 'Please check' },
+  typePin: { ta: 'உங்க PIN போடுங்க', en: 'Type your PIN' },
+  pinHidden: { ta: 'PIN யாருக்கும் சொல்லாதீங்க', en: 'Never tell anyone your PIN' },
+  done: { ta: 'முடிஞ்சது', en: 'Done' },
+  close: { ta: 'மூடு', en: 'Close' },
+  working: { ta: 'கொஞ்சம் பொறுங்க…', en: 'One moment…' },
+  cancelled: { ta: 'ரத்து பண்ணியாச்சு', en: 'Cancelled' },
+
+  thisMonth: { ta: 'இந்த மாசம்', en: 'This month' },
+  paidThisMonth: { ta: 'இந்த மாசம் கட்டியாச்சு', en: 'Paid this month' },
+  notPaidYet: { ta: 'இன்னும் கட்டல', en: 'Not paid yet' },
+  payNow: { ta: 'இப்போ கட்டுங்க', en: 'Pay now' },
+  members: { ta: 'உறுப்பினர்கள்', en: 'Members' },
+  verifiedOnStellar: { ta: 'Stellar-ல உறுதி', en: 'Verified on Stellar' },
+  waitingForStellar: { ta: 'Stellar-க்கு போகுது', en: 'Going to Stellar' },
+  you: { ta: 'நீங்க', en: 'you' },
+  contributions: { ta: 'தவணை', en: 'payments' },
+
+  eligible: { ta: 'உங்களுக்கு கிடைக்கும்', en: 'You can take an advance' },
+  notEligible: { ta: 'இன்னும் கிடைக்காது', en: 'Not available yet' },
+  upTo: { ta: 'அதிகபட்சம்', en: 'Up to' },
+  cost: { ta: 'செலவு', en: 'Cost' },
+  youGet: { ta: 'கிடைக்கும்', en: 'You get' },
+  youRepay: { ta: 'திருப்பி கட்டணும்', en: 'You repay' },
+  noAdvanceOpen: { ta: 'இப்போ முன்பணம் எதுவும் இல்ல', en: 'No advance open' },
+  owed: { ta: 'கட்ட வேண்டியது', en: 'Still to repay' },
+  askAdvance: { ta: 'முன்பணம் கேளுங்க', en: 'Ask for this advance' },
+  comingSoon: { ta: 'சீக்கிரம் வரும்', en: 'Coming soon' },
+
+  received: { ta: 'வந்தது', en: 'Received' },
+  paidOut: { ta: 'அனுப்பியது', en: 'Paid' },
+  intoSeettu: { ta: 'சீட்டுக்கு', en: 'Into seettu' },
+  confirmedOnStellar: { ta: 'Stellar-ல பதிவானவை', en: 'Entries confirmed on Stellar' },
+  history: { ta: 'வரலாறு', en: 'History' },
+  openStellar: { ta: 'Stellar Expert-ல பாருங்க', en: 'See it on Stellar Expert' },
+  privacyNote: { ta: 'உங்க பேரு chain-ல இல்ல, ஒரு குறியீடு மட்டும்', en: 'Your name is never on the chain, only a code' },
+
+  waysIn: { ta: 'பணம் எப்படி வரும்', en: 'How money comes in' },
+  stateTransfer: { ta: 'அரசு உதவித் தொகை', en: 'State transfer' },
+  wages: { ta: 'கூலி', en: 'Wages' },
+  cashHelper: { ta: 'கையில பணம், மீனா மூலம்', en: 'Cash, through your helper' },
+  familyAbroad: { ta: 'வெளிநாட்டு குடும்பம்', en: 'Family abroad' },
+  demo: { ta: 'டெமோ', en: 'Demo' },
+  demoStateTransfer: { ta: 'அரசு தொகை ₹1,000 வருது', en: 'State transfer ₹1,000 arrives' },
+  demoWages: { ta: 'கூலி வருது', en: 'Wages arrive' },
+  arrived: { ta: 'வந்துருச்சு', en: 'arrived' },
+
+  autoSave: { ta: 'தானா சேமிப்பு', en: 'Auto-save' },
+  autoSaveHelp: { ta: 'வர்ற பணத்துல இவ்வளவு சேமிப்புக்கு போகும்', en: 'This much of money that arrives goes to savings' },
+  save: { ta: 'சேமி', en: 'Save' },
+  trustedContact: { ta: 'நம்பிக்கையான ஆள்', en: 'Trusted contact' },
+  trustedHelp: { ta: 'அவசரத்துக்கு கூப்பிட ஒரு நம்பர்', en: 'Someone we can call in an emergency' },
+  language: { ta: 'மொழி', en: 'Language' },
+  pin: { ta: 'PIN', en: 'PIN' },
+  setPin: { ta: 'PIN வையுங்க', en: 'Set your PIN' },
+  changePin: { ta: 'PIN மாத்துங்க', en: 'Change your PIN' },
+  currentPin: { ta: 'இப்போ இருக்குற PIN', en: 'Current PIN' },
+  newPin: { ta: 'புது PIN', en: 'New PIN' },
+  signOut: { ta: 'வெளியேறு', en: 'Sign out' },
+  saveDone: { ta: 'சேமிச்சாச்சு', en: 'Saved' },
+
+  continueAsSelvi: { ta: 'செல்வியா உள்ள போங்க', en: 'Continue as Selvi' },
+  continueAsMeena: { ta: 'மீனாவா உள்ள போங்க', en: 'Continue as Meena' },
+  demoLoginNote: { ta: 'டெமோ மட்டும். நிஜத்துல: போன் OTP + PIN', en: 'Demo only. In production: phone OTP plus PIN' },
+  tagline: { ta: 'உங்க பணம், உங்க குரல்ல', en: 'Your money, by voice' },
+
+  helperTitle: { ta: 'உதவியாளர்', en: 'Helper' },
+  recordCash: { ta: 'கையில வாங்கின பணம் பதிவு', en: 'Record cash you received' },
+  whoGaveCash: { ta: 'யாரு பணம் கொடுத்தாங்க?', en: 'Who gave you cash?' },
+  leftToday: { ta: 'இன்னைக்கு இன்னும்', en: 'Left today' },
+  recorded: { ta: 'பதிவு பண்ணியாச்சு', en: 'Recorded' },
+  recent: { ta: 'சமீபத்தில', en: 'Recent' },
+  statusAwaiting: { ta: 'பதிலுக்கு காத்திருக்கு', en: 'Waiting for her Yes' },
+  statusConfirmed: { ta: 'உறுதி ஆச்சு', en: 'Confirmed' },
+  statusRejected: { ta: 'இல்லன்னு சொன்னாங்க', en: 'She said No' },
+  statusExpired: { ta: 'நேரம் முடிஞ்சது', en: 'Expired' },
+} as const
+
+export type Key = keyof typeof T
+
+/** Payee names she saved in English, said the way she says them. */
+export const PAYEE_TA: Record<string, string> = {
+  'flower wholesaler': 'பூ மொத்த வியாபாரி',
+  'medical shop': 'மெடிக்கல் கடை',
+}
+
+export const SOURCE_KEY: Record<string, Key> = {
+  state_transfer: 'stateTransfer',
+  wages: 'wages',
+  cash: 'cashHelper',
+  family_abroad: 'familyAbroad',
+}

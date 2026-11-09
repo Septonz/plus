@@ -50,5 +50,10 @@ jobs:
           deno-version: v2.x
 
       - run: deno test --allow-env=PIN_PEPPER,USER_REF_SECRET supabase/functions/_shared/
-      - run: deno check index.ts
-        working-directory: supabase/functions/agent-tools
+      - name: Type-check every function
+        run: |
+          for f in agent-tools voice-session helper-api payout-sim chain-worker sync-events scheduler sender-api; do
+            echo "::group::$f"
+            (cd "supabase/functions/$f" && deno check index.ts)
+            echo "::endgroup::"
+          done

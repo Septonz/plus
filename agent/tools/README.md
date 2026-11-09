@@ -2,69 +2,88 @@
 
 Webhook tools for the Plus voice agent. Each JSON file is a `POST /v1/convai/tools` request body
 (`tool_config` of type `webhook`) pointing at the deployed `agent-tools` Edge Function:
+`https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/<tool name>`.
 
-| Tool | URL |
-| ---- | --- |
-| `get_user` | `https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/get_user` |
-| `get_balance` | `https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/get_balance` |
-| `what_arrived` | `https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/what_arrived` |
+| Tool | What it does | Body (besides identity) |
+| ---- | ------------ | ----------------------- |
+| `get_user` | Who she is; waiting cash-ins first | none |
+| `get_balance` | To spend and saved | none |
+| `what_arrived` | Money in, cash-ins first | none |
+| `set_auto_save` | Prepares an auto-save change (0–30%) | `percent` |
+| `prepare_pay` | Prepares a payment; Tamil/English payee matching | `payee`, `amount` (rupees) |
+| `prepare_group_contribution` | Prepares this month's seettu | none |
+| `confirm_action` | Confirms by voice, only below the PIN threshold | `action_id` |
+| `reject_action` | Cancels, or says No to a cash-in | `action_id` |
+| `my_record` | Totals, count confirmed on Stellar, link | none |
+| `group_status` | Seettu and members' records | none |
+| `advance_status` | Eligibility, limit, cost in rupees | none |
 
-How they work:
+## How a tool call proves who she is
 
-- **Auth:** every call carries the `x-plus-secret` header. Its value is an ElevenLabs workspace
-  secret. The files only hold the placeholder `<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>`, never
-  the secret itself.
-- **Who is calling:** the body has one property, `caller_id`, bound to the system dynamic variable
-  `system__caller_id`. ElevenLabs fills it in, not the LLM:
-  - on a phone call it is the caller's number (`+14155552671`);
-  - on WhatsApp it is the WhatsApp user ID (the number without `+`).
-  
-  `agent-tools` accepts both forms. If Meta sends a Business-Scoped User ID instead of a phone
-  number, the user is treated as unknown.
-- **Responses:** every response is `{ text, ...fields, latency_ms }`. `text` is short English the
-  agent says in the caller's language. Amounts are already formatted (`₹2,350`, `₦50,000`).
+Every tool sends the `x-plus-secret` header (an ElevenLabs workspace secret; the files only hold
+the placeholder `<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>`) and two identity properties that
+ElevenLabs fills in, never the LLM:
 
-## Add them to your agent (dashboard)
+- `plus_session`, bound to the dynamic variable `plus_session`. The app's mic button calls the
+  `voice-session` function, which checks her Supabase login and returns a signed URL plus a
+  15-minute HMAC token. The app starts the conversation with `dynamicVariables: { plus_session }`.
+  `agent-tools` verifies it; invalid or expired → `401`. This is the path for the app.
+- `caller_id`, bound to `system__caller_id`, for phone and WhatsApp later. Used only when there is
+  no session token (the placeholder value `none`).
 
-1. **Get the secret value.** The agent secret is in the root `.env.local` (gitignored) as
-   `AGENT_SHARED_SECRET`. It was rotated on 2026-11-09, so the old value no longer works. Copy it
-   from the file. Don't paste it into chats or commit it.
-2. **Store it in ElevenLabs.** Go to ElevenLabs → **Agents** → your agent. Under the agent's tool
-   or workspace settings, open **Secrets**, then **Add secret**. Name it `PLUS_AGENT_SECRET` and
-   paste the value.
-3. **Create `get_user`.** In your agent → **Tools** → **Add tool** → **Webhook**, set:
-   - Name: `get_user`
-   - Description: copy `description` from `get_user.json`
-   - Method `POST`, URL from the table above
-   - Response timeout: `10` seconds
-   - **Headers** → Add header → name `x-plus-secret`, type **Secret** → choose `PLUS_AGENT_SECRET`
-   - **Body parameters** → Add property → name `caller_id`, type `string`, value type
-     **Dynamic variable** → `system__caller_id`. Mark it required.
-4. **Repeat step 3** for `get_balance` and `what_arrived`.
-5. **Tell the agent when to use them.** In the system prompt (`agent/in/prompt.md`) add: "At the
-   start of every conversation call `get_user`. Never ask the caller for their phone number. Read
-   tool `text` fields aloud in the caller's language, keeping the amounts exactly as given."
-6. **Make yourself Selvi.** Put your WhatsApp number in `.env.local` as
-   `DEMO_SELVI_PHONE=+91…` (international format) and run `pnpm seed:db`. Re-running is safe: it
-   only moves Selvi to your number and applies no money twice.
-7. **Test on a real channel.** `system__caller_id` is empty in the browser test widget, so test by
-   WhatsApp message or phone call. Ask "How much money do I have?" You should hear ₹2,350 to spend
-   and ₹1,415 saved. Every call appears in the `tool_calls` table with its latency.
+The PIN never goes through the agent. Amounts above the PIN threshold (₹2,000 for India) can only
+be confirmed on the app's screen; `confirm_action` by voice answers `pin_required_on_screen`.
+A `pin` sent by voice is refused.
+
+## Exact steps in ElevenLabs
+
+You need: the agent from `ELEVENLABS_AGENT_ID`, and `AGENT_SHARED_SECRET` from the root
+`.env.local` (gitignored; don't paste it into chats or commit it).
+
+1. **Make the agent private.** Agents → your agent → **Security** → turn on **Enable
+   authentication**. Now the agent only starts from a signed URL, which only `voice-session`
+   can get (it holds `ELEVENLABS_API_KEY` as a Supabase secret). API equivalent:
+   `platform_settings.auth.enable_auth = true`.
+2. **Add the `plus_session` dynamic variable.** Agent → **Agent** tab → system prompt section →
+   **Dynamic variables** → add `plus_session` with placeholder value `none`. (API:
+   `conversation_config.agent.dynamic_variables.dynamic_variable_placeholders = { "plus_session": "none" }`.)
+   The placeholder is what phone or WhatsApp calls send; the app overrides it per conversation.
+3. **Store the secret.** Agent → **Secrets** (workspace settings) → **Add secret** → name
+   `PLUS_AGENT_SECRET`, value = `AGENT_SHARED_SECRET`.
+4. **Create each tool** (all eleven in the table). Agent → **Tools** → **Add tool** → **Webhook**:
+   - Name and description: copy `name` and `description` from the JSON file.
+   - Method `POST`; URL = `https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/<name>`.
+   - Response timeout `10` seconds.
+   - **Headers** → `x-plus-secret`, type **Secret** → `PLUS_AGENT_SECRET`.
+   - **Body parameters**:
+     - `plus_session`, string, value type **Dynamic variable** → `plus_session`. Not required.
+     - `caller_id`, string, value type **Dynamic variable** → `system__caller_id`. Not required.
+     - The tool's own properties from the JSON file (for example `payee` and `amount`), value type
+       **LLM prompt**, with the descriptions from the file; mark them required as in the file.
+5. **System prompt and first message.** Paste `agent/in/prompt.md` as the system prompt and set
+   the first message to `Vanakkam! Naan Plus. Ungalukku enna udhavi venum?`. Language: Tamil.
+6. **Try it.** `pnpm --filter web dev`, open `http://localhost:5173/app`, tap **Continue as
+   Selvi**, then the big mic **பேசுங்க**. Say "poo kadaikku munnooru anuppu". The confirm screen
+   opens by itself; tap ஆமா / Yes. Every call appears in `tool_calls` with its channel and latency.
 
 ### Or with the API
 
 ```sh
-# 1. Create the workspace secret once, and note the returned secret_id.
-# 2. Replace the placeholder in each file with that secret_id (locally, don't commit), then:
-curl -s https://api.elevenlabs.io/v1/convai/tools \
-  -H "xi-api-key: $ELEVENLABS_API_KEY" -H "content-type: application/json" \
-  -d @agent/tools/get_user.json
-# 3. Attach the returned tool ids to the agent (conversation_config.agent.prompt.tool_ids).
+# 1. Create the workspace secret once and note its secret_id.
+# 2. Replace the placeholder in each file with that secret_id locally (don't commit), then:
+for f in agent/tools/*.json; do
+  curl -s https://api.elevenlabs.io/v1/convai/tools \
+    -H "xi-api-key: $ELEVENLABS_API_KEY" -H "content-type: application/json" -d @"$f"
+done
+# 3. Attach the returned tool ids: PATCH /v1/convai/agents/$ELEVENLABS_AGENT_ID with
+#    conversation_config.agent.prompt.tool_ids, the dynamic variable placeholder from step 2,
+#    and platform_settings.auth.enable_auth = true.
 ```
 
 ElevenLabs sources:
 
-- [WhatsApp: personalization and caller variables](https://elevenlabs.io/docs/eleven-agents/whatsapp)
-- [Dynamic variables (system__caller_id)](https://elevenlabs.io/docs/eleven-agents/customization/personalization/dynamic-variables)
+- [Agent authentication and signed URLs](https://elevenlabs.io/docs/eleven-agents/customization/authentication)
+- [Dynamic variables](https://elevenlabs.io/docs/eleven-agents/customization/personalization/dynamic-variables)
 - [Server tools: headers and secrets](https://elevenlabs.io/docs/eleven-agents/customization/tools/server-tools)
-- [Create tool API (`api_schema`, `dynamic_variable`, `secret_id`)](https://elevenlabs.io/docs/eleven-agents/api-reference/tools/create)
+- [Create tool API](https://elevenlabs.io/docs/eleven-agents/api-reference/tools/create)
+- [React SDK](https://elevenlabs.io/docs/eleven-agents/libraries/react)

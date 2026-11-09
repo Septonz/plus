@@ -1,18 +1,25 @@
-// agent-tools: one router for the Plus voice agent's webhook tools (ElevenLabs).
+// agent-tools: the one router for Plus tools, used by the voice agent and by the app.
 //
-//   POST /functions/v1/agent-tools/<tool>     body: { caller_id: "{{system__caller_id}}", ...args }
+//   POST /functions/v1/agent-tools/<tool>
 //
-// 1. The x-plus-secret header is checked before anything else.
-// 2. The user is identified only by the caller's phone number (system__caller_id), never by
-//    anything the LLM says.
-// 3. Every call is logged to tool_calls with its latency (never PINs).
-// Each tool returns { text, ...fields }: short plain text the agent can read aloud (in English;
-// the agent says it in the user's language) plus structured fields.
+// Who is calling (checked before any tool runs):
+//   app   - Authorization: Bearer <Supabase access token>. The login is verified and mapped to
+//           users.auth_user_id. App-only tools (set_pin, update_settings) and the PIN pad live here.
+//   voice - x-plus-secret header (the ElevenLabs workspace secret), then the user from:
+//           plus_session (signed 15-minute token minted by voice-session for the app's voice
+//           button; invalid or expired -> 401), or, for phone/WhatsApp, caller_id bound to
+//           system__caller_id. Never from anything the LLM says.
+// Every call is logged to tool_calls with its latency (never PINs, session tokens or phone numbers).
+// Tools live in ../_shared/tools.ts so voice and taps share one code path.
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
-import { hasValidAgentSecret, unauthorized } from "../_shared/auth.ts";
+import { hasValidAgentSecret } from "../_shared/auth.ts";
 import { callerFromBody } from "../_shared/caller.ts";
-import { formatMoney, getMarket, type MarketId } from "../_shared/markets.ts";
+import { bearer, json, kickChainWorker, preflight, readJson } from "../_shared/http.ts";
+import { formatMoney, getMarket } from "../_shared/markets.ts";
+import { hasSessionToken, verifySession } from "../_shared/session.ts";
+import { supabaseStore } from "../_shared/store.ts";
+import { APP_TOOLS, type Channel, type Store, type ToolResult, type User, VOICE_TOOLS } from "../_shared/tools.ts";
 
 // Provided by the Supabase Edge Runtime.
 declare const EdgeRuntime: { waitUntil(p: PromiseLike<unknown>): void };
@@ -24,209 +31,58 @@ const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SE
 const HORIZON_URL = Deno.env.get("HORIZON_URL") ?? "https://horizon-testnet.stellar.org";
 const NGNT_ISSUER = Deno.env.get("NGNT_ISSUER") ?? "GDLLQ6TC6GJBOOWCTBTMDMFWRKUHKW7UOWZMIA6WZNCZJHTC3UBS3SVB";
 const USDC_ISSUER = Deno.env.get("USDC_ISSUER") ?? "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
-
-type User = {
-  id: string;
-  market_id: MarketId;
-  name: string | null;
-  language: string;
-  kyc_tier: number;
-  stellar_pub: string | null;
-  auto_save_bps: number;
-};
-type ToolResult = { text: string; [k: string]: unknown };
-type Tool = (user: User, args: Record<string, unknown>) => Promise<ToolResult>;
-
-const LANGUAGE_NAMES: Record<string, string> = { ta: "Tamil", en: "English", yo: "Yoruba", ha: "Hausa", ig: "Igbo" };
-const SOURCE_NAMES: Record<string, string> = {
-  state_transfer: "the state transfer",
-  wages: "wages",
-  family_abroad: "family abroad",
-  cash: "cash",
-  deposit: "a deposit",
-};
+const PASSPHRASE = Deno.env.get("STELLAR_NETWORK_PASSPHRASE") ?? "Test SDF Network ; September 2015";
+const EXPLORER = `https://stellar.expert/explorer/${PASSPHRASE.startsWith("Public") ? "public" : "testnet"}`;
+const CONTRACT_ID = Deno.env.get("PLUS_CONTRACT_ID") ?? "";
+const USER_COLS = "id, market_id, name, language, kyc_tier, stellar_pub, auto_save_bps, ref_hash, trusted_contact_phone";
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Nigeria balances come from the user's own Stellar account (Horizon).
 // ---------------------------------------------------------------------------
 
-const money = (minor: bigint | number | string, market: MarketId) => formatMoney(BigInt(minor), market);
-
-/** "50000.1234567" (7 on-chain decimals) -> minor units (2 decimals), truncating. */
 function decimalToMinor(value: string): bigint {
   const [whole, frac = ""] = value.split(".");
   return BigInt(whole) * 100n + BigInt((frac + "00").slice(0, 2));
 }
 
-function usd(value: string): string {
-  const cents = decimalToMinor(value);
-  return `$${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")}`;
-}
-
-function whenSpoken(iso: string, now = new Date()): string {
-  const days = Math.floor((now.getTime() - new Date(iso).getTime()) / 86_400_000);
-  if (days <= 0) return "today";
-  if (days === 1) return "yesterday";
-  return `${days} days ago`;
-}
-
-function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(args).filter(([k]) => !/pin|secret|otp|password/i.test(k)));
-}
-
-// ---------------------------------------------------------------------------
-// Tools
-// ---------------------------------------------------------------------------
-
-const getUser: Tool = async (user) => {
-  const market = getMarket(user.market_id);
-  const { count } = await db.from("user_credentials").select("user_id", { count: "exact", head: true }).eq(
-    "user_id",
-    user.id,
-  );
-  const hasPin = (count ?? 0) > 0;
-  const name = user.name ?? "this caller";
-  return {
-    text: `This is ${name}. Language: ${LANGUAGE_NAMES[user.language] ?? user.language}. ${market.country}. ` +
-      `Auto-save is ${user.auto_save_bps / 100}% of money that arrives. PIN ${hasPin ? "is set" : "is not set yet"}.`,
-    known: true,
-    user_id: user.id,
-    name: user.name,
-    language: user.language,
-    market: user.market_id,
-    currency: market.currency.code,
-    kyc_tier: user.kyc_tier,
-    auto_save_bps: user.auto_save_bps,
-    has_pin: hasPin,
-    group_savings_name: market.groupSavings.localName,
-  };
-};
-
-const getBalance: Tool = async (user) => {
-  const market = getMarket(user.market_id);
-  if (market.custody === "partner_bank") {
-    const { data: acct, error } = await db
-      .from("sim_bank_accounts")
-      .select("balance_paise, savings_paise, bank_name")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (error) throw error;
-    if (!acct) return { text: "There is no bank account linked yet.", has_account: false };
-    const bal = money(acct.balance_paise, user.market_id);
-    const sav = money(acct.savings_paise, user.market_id);
-    return {
-      text: `You have ${bal} to spend and ${sav} saved, in your ${acct.bank_name} account.`,
-      has_account: true,
-      currency: market.currency.code,
-      balance_minor: String(acct.balance_paise),
-      savings_minor: String(acct.savings_paise),
-      balance_text: bal,
-      savings_text: sav,
-    };
-  }
-
-  // Nigeria: the user's own Stellar account.
+async function stellarBalance(user: User): Promise<ToolResult> {
   if (!user.stellar_pub) return { text: "There is no wallet set up yet.", has_account: false };
   const res = await fetch(`${HORIZON_URL}/accounts/${user.stellar_pub}`);
-  if (res.status === 404) return { text: "Your wallet is not active yet.", has_account: false };
+  if (res.status === 404) return { text: "The wallet is not active yet.", has_account: false };
   if (!res.ok) throw new Error(`horizon ${res.status}`);
   const acct = await res.json() as { balances: { asset_code?: string; asset_issuer?: string; balance: string }[] };
-  const line = (code: string, issuer: string) =>
-    acct.balances.find((b) => b.asset_code === code && b.asset_issuer === issuer)?.balance;
-  const ngnt = line("NGNT", NGNT_ISSUER) ?? "0";
+  const line = (code: string, issuer: string) => acct.balances.find((b) => b.asset_code === code && b.asset_issuer === issuer)?.balance;
+  const ngnt = decimalToMinor(line("NGNT", NGNT_ISSUER) ?? "0");
   const usdc = line("USDC", USDC_ISSUER);
-  const bal = money(decimalToMinor(ngnt), user.market_id);
+  const usd = usdc ? decimalToMinor(usdc) : 0n;
+  const usdText = `$${usd / 100n}.${(usd % 100n).toString().padStart(2, "0")}`;
   return {
-    text: `You have ${bal}` + (usdc && usdc !== "0.0000000" ? ` and ${usd(usdc)} in dollars.` : "."),
+    text: `She has ${formatMoney(ngnt, user.market_id).replace("₦", "")} naira` + (usd > 0n ? ` and ${usdText} in dollars.` : "."),
     has_account: true,
-    currency: market.currency.code,
-    balance_minor: String(decimalToMinor(ngnt)),
-    balance_text: bal,
-    usd_text: usdc ? usd(usdc) : null,
+    currency: getMarket(user.market_id).currency.code,
+    balance_minor: String(ngnt),
+    balance_text: formatMoney(ngnt, user.market_id),
+    usd_text: usd > 0n ? usdText : null,
   };
-};
+}
 
-const whatArrived: Tool = async (user) => {
-  const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
-  const [incoming, cash] = await Promise.all([
-    db.from("transactions")
-      .select("amount, source, created_at")
-      .eq("user_id", user.id)
-      .eq("kind", "incoming")
-      .eq("status", "completed")
-      .gte("created_at", since)
-      .order("created_at", { ascending: false })
-      .limit(5),
-    db.from("cash_events")
-      .select("id, amount, created_at, helpers(name)")
-      .eq("user_id", user.id)
-      .eq("direction", "in")
-      .eq("status", "awaiting_user")
-      .order("created_at", { ascending: false })
-      .limit(3),
-  ]);
-  if (incoming.error) throw incoming.error;
-  if (cash.error) throw cash.error;
-
-  const arrived = incoming.data.map((t) => ({
-    amount_minor: String(t.amount),
-    amount_text: money(t.amount, user.market_id),
-    source: t.source,
-    when: whenSpoken(t.created_at),
-    at: t.created_at,
-  }));
-  const awaiting = cash.data.map((c) => {
-    const helper = (c.helpers as unknown as { name: string } | null)?.name ?? "A helper";
-    return {
-      cash_event_id: c.id,
-      helper,
-      amount_minor: String(c.amount),
-      amount_text: money(c.amount, user.market_id),
-      when: whenSpoken(c.created_at),
-    };
-  });
-
-  const parts: string[] = [];
-  if (arrived.length === 0) parts.push("Nothing new has arrived in the last two weeks.");
-  else {
-    parts.push(
-      "Arrived: " +
-        arrived.map((a) => `${a.amount_text} from ${SOURCE_NAMES[a.source ?? ""] ?? a.source ?? "a payment"}, ${a.when}`)
-          .join("; ") + ".",
-    );
-  }
-  for (const a of awaiting) {
-    parts.push(`${a.helper} recorded ${a.amount_text} cash for you ${a.when}. It counts once you confirm it.`);
-  }
-  return { text: parts.join(" "), arrived, awaiting_confirmation: awaiting };
-};
-
-const TOOLS: Record<string, Tool> = {
-  get_user: getUser,
-  get_balance: getBalance,
-  what_arrived: whatArrived,
-};
+const store: Store = { ...supabaseStore(db), stellarBalance };
 
 // ---------------------------------------------------------------------------
 // Timing probe (not a voice tool): how long one contract read takes from here.
-// Lazy import so the Stellar SDK never slows down the voice tools' cold start.
 // ---------------------------------------------------------------------------
 
 async function timeRecordOf(user: User): Promise<ToolResult> {
   const t0 = performance.now();
   const { StellarSdk } = await import("../_shared/stellar.ts");
   const tImport = performance.now();
-  const { data } = await db.from("users").select("ref_hash").eq("id", user.id).single();
-  if (!data?.ref_hash) return { text: "No on-chain ref for this user.", ok: false };
-  const { rpc, Contract, TransactionBuilder, Account, Keypair, Networks, xdr, scValToNative } = StellarSdk;
+  if (!user.ref_hash) return { text: "No on-chain ref for this user.", ok: false };
+  const { rpc, Contract, TransactionBuilder, Account, Keypair, xdr, scValToNative } = StellarSdk;
   const server = new rpc.Server(Deno.env.get("STELLAR_RPC_URL") ?? "https://soroban-testnet.stellar.org");
   const source = new Account(Keypair.random().publicKey(), "0"); // simulation only: never signed or sent
-  const ref = Uint8Array.from(data.ref_hash.match(/../g)!.map((h: string) => parseInt(h, 16)));
-  const tx = new TransactionBuilder(source, {
-    fee: "100",
-    networkPassphrase: Deno.env.get("STELLAR_NETWORK_PASSPHRASE") || Networks.TESTNET,
-  })
-    .addOperation(new Contract(Deno.env.get("PLUS_CONTRACT_ID")!).call("record_of", xdr.ScVal.scvBytes(ref)))
+  const ref = Uint8Array.from(user.ref_hash.match(/../g)!.map((h) => parseInt(h, 16)));
+  const tx = new TransactionBuilder(source, { fee: "100", networkPassphrase: PASSPHRASE })
+    .addOperation(new Contract(CONTRACT_ID).call("record_of", xdr.ScVal.scvBytes(ref as never)))
     .setTimeout(30)
     .build();
   const tSim = performance.now();
@@ -245,62 +101,98 @@ async function timeRecordOf(user: User): Promise<ToolResult> {
 }
 
 // ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+type Identity = { channel: Channel; user: User | null } | { error: Response };
+
+async function identify(req: Request, args: Record<string, unknown>): Promise<Identity> {
+  if (hasValidAgentSecret(req)) {
+    if (hasSessionToken(args.plus_session)) {
+      const check = await verifySession(args.plus_session, Deno.env.get("VOICE_SESSION_SECRET") ?? "");
+      if (!check.ok) return { error: json({ error: `${check.error}_session` }, 401) };
+      const { data, error } = await db.from("users").select(USER_COLS).eq("id", check.userId).maybeSingle();
+      if (error) throw error;
+      if (!data) return { error: json({ error: "invalid_session" }, 401) };
+      return { channel: "voice", user: data as User };
+    }
+    const phone = callerFromBody(args);
+    if (!phone) return { channel: "voice", user: null };
+    const { data, error } = await db.from("users").select(USER_COLS).eq("wa_phone", phone).maybeSingle();
+    if (error) throw error;
+    return { channel: "voice", user: data as User | null };
+  }
+
+  const token = bearer(req);
+  if (token) {
+    const { data, error } = await db.auth.getUser(token);
+    if (error || !data.user) return { error: json({ error: "unauthorized" }, 401) };
+    const { data: user, error: uErr } = await db.from("users").select(USER_COLS).eq("auth_user_id", data.user.id).maybeSingle();
+    if (uErr) throw uErr;
+    if (!user) return { error: json({ error: "no_plus_account", text: "This login is not linked to a Plus account." }, 403) };
+    return { channel: "app", user: user as User };
+  }
+  return { error: json({ error: "unauthorized" }, 401) };
+}
+
+function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(args).filter(([k]) =>
+      !/pin|secret|otp|password|session|caller|phone/i.test(k)
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
 Deno.serve(async (req) => {
-  if (!hasValidAgentSecret(req)) return unauthorized();
+  const pre = preflight(req);
+  if (pre) return pre;
   const started = performance.now();
   const tool = new URL(req.url).pathname.split("/").filter(Boolean).pop() ?? "";
   const requestId = req.headers.get("x-request-id") ?? crypto.randomUUID();
 
-  let args: Record<string, unknown> = {};
-  if (req.method === "POST") {
-    try {
-      args = (await req.json()) ?? {};
-    } catch {
-      return Response.json({ error: "invalid_json" }, { status: 400 });
-    }
-  }
-
-  const handler = tool === "_time_record_of" ? timeRecordOf : TOOLS[tool];
-  if (!handler) return Response.json({ error: "unknown_tool", tool }, { status: 404 });
+  const body = await readJson(req);
+  if (body instanceof Response) return body;
+  const args = body;
 
   let status = 200;
   let result: ToolResult;
   let userId: string | null = null;
+  let channel: Channel | null = null;
   try {
-    const phone = callerFromBody(args);
-    const { data: user, error } = phone
-      ? await db.from("users")
-        .select("id, market_id, name, language, kyc_tier, stellar_pub, auto_save_bps")
-        .eq("wa_phone", phone)
-        .maybeSingle()
-      : { data: null, error: null };
-    if (error) throw error;
-    if (!user) {
-      result = {
-        text: "I don't recognise this number yet. Offer to set up Plus for them.",
-        known: false,
-      };
+    const who = await identify(req, args);
+    if ("error" in who) return who.error;
+    channel = who.channel;
+    const probe = tool === "_time_record_of" && channel === "voice";
+    const handler = (channel === "app" ? APP_TOOLS : VOICE_TOOLS)[tool];
+    if (!handler && !probe) return json({ error: "unknown_tool", tool }, 404);
+
+    if (!who.user) {
+      result = { text: "I don't recognise this number yet. Offer to set up Plus for them.", known: false };
     } else {
-      userId = user.id;
-      result = await handler(user as User, args);
+      userId = who.user.id;
+      result = probe
+        ? await timeRecordOf(who.user)
+        : await handler({ user: who.user, channel, store, args, explorer: EXPLORER, contractId: CONTRACT_ID });
+      // A confirmed action may have queued on-chain records: start the worker now.
+      if (tool === "confirm_action" && result.ok) EdgeRuntime.waitUntil(kickChainWorker());
     }
   } catch (err) {
     status = 500;
     console.error(`agent-tools ${tool} failed`, err instanceof Error ? err.message : err);
-    result = { text: "Sorry, I couldn't check that just now. Please try again in a moment.", error: "internal" };
+    result = { text: "Sorry, I couldn't do that just now. Please try again in a moment.", error: "internal" };
   }
 
   const latency = Math.round(performance.now() - started);
-  // Log after responding; tool_calls never holds the caller's number or any PIN.
-  const { caller_id: _c, system__caller_id: _s, caller_phone: _p, ...rest } = args;
+  // Log after responding. tool_calls never holds a PIN, a session token or the caller's number.
   EdgeRuntime.waitUntil(
     db.from("tool_calls").insert({
       tool,
       user_id: userId,
-      args: sanitizeArgs(rest),
+      args: { ...sanitizeArgs(args), _channel: channel },
       result,
       latency_ms: latency,
       request_id: requestId,
@@ -308,5 +200,5 @@ Deno.serve(async (req) => {
       if (error) console.error("tool_calls insert failed", error.message);
     }),
   );
-  return Response.json({ ...result, latency_ms: latency }, { status });
+  return json({ ...result, latency_ms: latency }, status);
 });
