@@ -11,8 +11,10 @@ India is the primary market. Nigeria is a smaller second pack that proves the co
 | Custody | Partner bank (simulated) | User's own Stellar account |
 | USD balance | No | Yes (optional USDC) |
 | Domestic rail | UPI (simulated) | Stellar |
+| Cash-in | Helper records cash handed over | Agent float, bank transfer |
 | Cash-out | Agent guidance | Claimable code |
-| Incoming sources | State transfer, wages, family abroad | Deposit |
+| Helper daily limit | ₹20,000 | ₦500,000 |
+| Incoming sources | State transfer, wages, family abroad, cash | Deposit, cash |
 | Inbound corridors | CA (SEP-31, test anchor) | None |
 | Auto-save | On, 10% (1000 bps) | On, 10% (1000 bps) |
 | Group savings | Seettu, recorded on-chain | Ajo, pooled in the contract |
@@ -24,6 +26,9 @@ India is the primary market. Nigeria is a smaller second pack that proves the co
 Both packs expose the same services: `get_user`, `start_onboarding`, `verify_id`, `set_pin`,
 `get_balance`, `what_arrived`, `set_auto_save`, `prepare_pay`, `prepare_save`, `prepare_cashout`,
 `prepare_group_contribution`, `prepare_advance`, `confirm_action`, `group_status`, `my_record`, `share_record`.
+
+Helpers (group leaders, bank correspondents, agents) have one service of their own, `record_cash_in`.
+It is not a voice tool: the helper records the cash, and the user confirms it before it counts.
 
 Indian users never hold crypto: rupees stay in the partner bank and Stellar carries only records,
 attestations, advance limits, family pots and inbound SEP-31 transfers.
