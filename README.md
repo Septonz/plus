@@ -8,6 +8,10 @@ Built for the Stellar Blockchain Innovation Challenge, Problem Space 1: fair fin
 
 Selvi sells flowers in Madurai and gets a ₹1,000 monthly state transfer into her bank account, saves with neighbours in a seettu, and turns to moneylenders when an emergency hits. With Plus she talks in Tamil on WhatsApp: she hears what arrived, saves a share of it automatically, pays her seettu, and gets a small advance whose full cost is said out loud before she agrees. Every rupee stays in her bank, while Stellar quietly builds a verifiable record that she can share, by consent, to earn fairer credit.
 
+## Funmi's story (Nigeria)
+
+Funmi sells tomatoes at Bodija market in Ibadan and has no bank account. Her Plus wallet on Stellar is her account: she hands cash to Mama Bisi, a Plus cash agent at the market, says Yes in her app, and naira (test NGNT) lands in her wallet. She talks to Plus in Pidgin or Yoruba, pays her supplier, pays her ajo (held by the contract, paid out on time), takes a small advance with one fee said out loud (no interest, no late fees, 10% of each cash-in repays it), and cashes out with a 6-digit code. The demo ends with a switch to India: the same agent for people who do have bank accounts.
+
 ## Market packs
 
 Plus is one shared core plus a **market pack** per country (`packages/markets`). A pack sets the currency, languages, custody model, payment rail, cash-out method, group-savings style, advance limits and ID check.
@@ -100,17 +104,19 @@ The old command still works, so we have not switched yet. When we do, change onl
 `pnpm --filter web dev`, then:
 
 - **http://localhost:5173/app**: the Plus app, Selvi's home. Mobile-first PWA (installable; manifest, icons, a service worker that never caches money data). Tamil labels with English underneath, a Tamil/English toggle, nothing smaller than 16px, and the big mic **பேசுங்க** on every screen. Screens: Home, Pay, Seettu, Advance, My record, Add money, Settings.
+- **Funmi (Nigeria):** on `/app`, "Continue as Funmi". The app picks its screens from the Nigeria market pack (`getMarket('ng').screens`): Home, Add cash, Pay, Ajo, Advance, Cash out, My record, Settings, with English and Yoruba labels. After her Yes the confirm sheet shows "Sending on Stellar…", then the tick, the seconds it took and the Stellar Expert link. Balances come from `wallet_balances`, refreshed from Horizon after every confirmed transaction and every minute.
+- **http://localhost:5173/agent**: the cash agent page, Mama Bisi ("Continue as Mama Bisi"). Record cash (customer phone + amount; checks her float and the ₦500,000 daily limit; Funmi then gets "Mama Bisi says you gave her ₦500. Is that right?"; 10% goes to an open advance) and redeem a cash-out code (shows the amount, then claims the cash-out on Stellar). Own login, so it can sit next to `/app`.
 - **http://localhost:5173/helper**: the helper page, where Meena records cash a member handed her. It keeps its own login, so both pages can be open side by side.
 
 **Logins.** The demo uses two Supabase Auth users created by `pnpm seed:db`: "Continue as Selvi" (`demo-selvi@example.com`) and "Continue as Meena" (`demo-meena@example.com`), password generated into `VITE_DEMO_LOGIN_PASSWORD` in the root `.env.local`. They are linked through `users.auth_user_id` and `helpers.auth_user_id`. **Production login is phone OTP plus a PIN**, not these demo buttons.
 
 **One code path.** Taps and voice call the same `agent-tools` functions. Money always moves in two steps: a `prepare_*` tool creates a pending action, the confirm screen opens by itself (Realtime on her own `pending_actions`, `transactions` and `cash_events`, filtered by RLS), and she taps Yes, or types her PIN above ₹2,000. The PIN goes from the app straight to `agent-tools`; it never passes through the voice agent. A cash-in from a helper only counts after her Yes.
 
-**Voice.** The mic calls `voice-session` (checks her login, gets a signed URL for the private ElevenLabs agent, mints a 15-minute `plus_session` token) and starts the official React SDK with `plus_session` as a dynamic variable. Setup steps: `agent/tools/README.md`.
+**Voice.** The mic calls `voice-session` (checks her login, gets a signed URL for the private ElevenLabs agent, mints a 15-minute `plus_session` token) and starts the official React SDK with `plus_session` as a dynamic variable. Setup steps: `agent/tools/README.md` (India) and `agent/ng/README.md` (the "Plus Nigeria" agent; `voice-session` picks the agent by the user's market).
 
 ### Background jobs (Supabase Cron, one-time setup)
 
-`chain-worker` (writes the `chain_outbox` to Stellar, one transaction at a time per signer) and `sync-events` run every minute, and `expire_stale_actions` every 5 minutes. Cron and the after-insert kick read two Vault secrets. Create them once in the SQL editor of the dev project (the second value is generated inside the database and never shown):
+`chain-worker` (writes the `chain_outbox` to Stellar, one transaction at a time per signer), `sync-events` and `scheduler` run every minute, and `expire_stale_actions` every 5 minutes. `scheduler` refreshes Nigeria wallet balances, pays an ajo round on the contract when it is due (`group_payout`), expires agent cash-ins after 24 hours and returns cash-outs nobody redeemed in 7 days. Cron and the after-insert kick read two Vault secrets. Create them once in the SQL editor of the dev project (the second value is generated inside the database and never shown):
 
 ```sql
 select vault.create_secret('https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1', 'plus_functions_url');
@@ -141,4 +147,9 @@ This is a Testnet prototype. Where it cuts corners, it does so in ways that do n
 - `pnpm staff:create`: creates the staff dashboard user (`DEMO_STAFF_EMAIL`) with `app_metadata.role = staff`, and prints how to log in.
 - `pnpm test:functions`: Deno tests for `supabase/functions/_shared` (PINs, caller ids). SQL tests for the money functions are in `supabase/tests/` (run in a rolled-back transaction).
 - `pnpm e2e` (by hand, not CI): runs the India flow against the dev project by voice session and app: state transfer, auto-save, what arrived, pay the flower wholesaler ₹300, seettu, helper cash-in confirmed, my record. Then waits for the chain outbox and checks each contract event on Stellar, printing confirm → on-chain times.
+- `pnpm e2e:ng` (by hand, not CI): the Nigeria demo through the real functions: Mama Bisi records ₦500 and Funmi says Yes, pay Iya Tunde, ajo, advance (and auto-repay from a cash-in), cash-out code redeemed by the agent, my record. Prints Yes → tick seconds and a Stellar Expert link per step. `pnpm e2e:ng --read` only reads (balances, ajo, advance, record, agent float).
+
+### Secrets (Supabase secrets, never committed)
+
+`PLUS_CONTRACT_ID`, `NGNT_SAC_ID`, `USDC_SAC_ID`, `PARTNER_SECRET` (pays fees, sponsors reserves), the `STELLAR_SECRET_*` custodial keys named by `users.secret_name` (Nigeria: `STELLAR_SECRET_FUNMI`, `STELLAR_SECRET_AGENT_NG`), `CASHOUT_CODE_SECRET` (cash-out code hashes), `AGENT_SHARED_SECRET`, `USER_REF_SECRET`, `PIN_PEPPER`, `VOICE_SESSION_SECRET`, `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`, `ELEVENLABS_AGENT_ID_NG`. Names are in `.env.example`; values live only in Supabase secrets and Vault.
 - `pnpm bindings`: regenerates `packages/plus-client` from the deployed contract and re-applies the `@plus/client` name and the TypeScript 7 `rootDir` fix.

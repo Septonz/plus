@@ -39,3 +39,17 @@ From a laptop: Gateway 5.0 s / 5.4 s, Horizon 5.0 s / 5.2 s, SDF default 10.8 s 
 | - | - | - |
 | Contract call (India pay Yes → attest) | median 10.6 s (8.2 to 26.8 s); 30 to 98 s when queued behind other rows | median 4.6 s (4.4 to 4.7 s) |
 | Classic payment (Horizon) | no payment path existed | median 4.7 s (3.7 to 5.2 s) |
+
+## Balance reads (Nigeria): Horizon, 2026-11-09
+
+Nigeria balances live on Stellar, so the app reads a cache (`wallet_balances`) that is refreshed
+from Horizon `GET /accounts/:id` after each confirmed transaction (chain-worker) and every minute
+(scheduler). Each row stores how long its Horizon read took (`horizon_ms`).
+
+| From | Reads | p50 | p90 | max |
+| - | - | - | - | - |
+| Edge Function (scheduler, refresh of Funmi and Mama Bisi) | 2 | 149 ms | | 153 ms |
+| Edge Function (agent-api `me`, Mama Bisi's float) | 1 | 121 ms | | |
+| Laptop, Funmi's account | 20 | 182 ms | 210 ms | 280 ms |
+
+A balance read is about 0.15 s; the tick after her Yes (about 5 s) is the ledger close, not the read.
