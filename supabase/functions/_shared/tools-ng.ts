@@ -429,10 +429,13 @@ export const ngCashOuts: NgTool = async ({ user, store, now = new Date() }) => {
 async function spendCheck(store: NgStore, user: User, amount: bigint, now: Date): Promise<ToolResult | null> {
   if (user.kyc_tier < 1) return refuse("Her account is not open yet. Finish signing up first.", "signup_not_finished");
   const [available, paidToday] = await Promise.all([store.available(user.id), store.paidSince(user.id, dayStart(M, now))]);
+  // The tier limit first: more money in the wallet would not fix that one.
+  const limit = spendAllowed(user, amount, paidToday);
+  if (limit) return limit;
   if (available < amount) {
     return refuse(`Not enough money: she has ${say(available > 0n ? available : 0n)} to spend.`, "insufficient_funds", { available_text: show(available) });
   }
-  return spendAllowed(user, amount, paidToday);
+  return null;
 }
 
 /** Room in a wallet for incoming money: its balance limit minus what it holds and what is on its way. */

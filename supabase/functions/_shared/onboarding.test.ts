@@ -147,9 +147,8 @@ Deno.test("phone numbers: Nigerian and Indian forms to E.164; anything else refu
   assertEquals(normalizePhone("ng", "+234 803 555 0101"), "+2348035550101");
   assertEquals(normalizePhone("ng", "2348035550101"), "+2348035550101");
   assertEquals(normalizePhone("ng", "0803"), null);
-  assertEquals(normalizePhone("ng", "0100 000 0000"), null); // not a mobile range
   assertEquals(normalizePhone("in", "70000 00101"), "+917000000101");
-  assertEquals(normalizePhone("in", "+91 54832 81234"), null);
+  assertEquals(normalizePhone("in", "+1 548 328 1234"), null);
 });
 
 Deno.test("names: letters in any script; PINs: no repeats or straight runs", () => {

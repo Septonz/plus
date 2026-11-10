@@ -46,6 +46,7 @@ const KOBO_PER_UNIT = 100_000n; // 1 NGNT unit (1e-7) -> kobo: units / 1e5
 
 const FUNMI_START = 26_400n; // naira
 const FLOAT_START = 200_000n; // naira
+const ANCHOR_MIN = 2_000_000n; // naira: the partner bank's anchor pays bank transfers in from this
 const SELVI_SPEND = 235_000n; // paise
 const SELVI_SAVED = 141_500n; // paise
 
@@ -225,6 +226,38 @@ async function asUser(email: string) {
 // Nigeria: Funmi
 // ---------------------------------------------------------------------------
 
+/**
+ * anchor_ng: the partner bank's distribution account. Its key is made inside Supabase and goes
+ * straight into Vault (scheduler/provision); this script only ever sees its public address. The
+ * issuer keeps it funded so "simulate transfer received" always has NGNT to send.
+ */
+async function ensureAnchor(NGNT: Asset) {
+  const call = async () => {
+    const res = await fetch(`${url}/functions/v1/scheduler/provision`, {
+      method: "POST",
+      headers: { "x-plus-secret": process.env.AGENT_SHARED_SECRET!, "content-type": "application/json" },
+      body: JSON.stringify({ signer: "anchor_ng" }),
+    });
+    return await res.json() as { ok: boolean; pub: string; status: string; tx_hash: string | null; error?: string };
+  };
+  let a = await call();
+  if (!a.ok) throw new Error(`anchor provision: ${a.error}`);
+  for (let i = 0; i < 30 && a.status !== "done"; i++) {
+    await sleep(2000);
+    a = await call();
+  }
+  if (a.status !== "done") throw new Error(`anchor wallet not created yet (status ${a.status}); run again`);
+  const acct = await horizon.loadAccount(a.pub);
+  const line = acct.balances.find((b) => "asset_code" in b && b.asset_code === "NGNT" && b.asset_issuer === NGNT.getIssuer());
+  const have = line ? toUnits(line.balance) : 0n;
+  if (have < ANCHOR_MIN * UNIT) {
+    await send(`issuer funds the partner bank's anchor to ${naira(ANCHOR_MIN * UNIT)}`,
+      await classic("issuer", [Operation.payment({ destination: a.pub, asset: NGNT, amount: decimal(ANCHOR_MIN * UNIT - have) })]));
+  } else {
+    console.log(`  anchor_ng ${a.pub.slice(0, 6)}… holds ${naira(have)}`);
+  }
+}
+
 async function resetNigeria() {
   const NGNT = new Asset("NGNT", pub("issuer"));
   const NGNT_SAC = NGNT.contractId(PASSPHRASE);
@@ -232,7 +265,7 @@ async function resetNigeria() {
 
   console.log("\n1. Waiting actions");
   await expireWaiting(funmi.id);
-  await waitForOutbox(["funmi", "agent_ng", "partner"]);
+  await waitForOutbox(["funmi", "agent_ng", "partner", "anchor_ng"]);
 
   console.log("\n2. Unused cash-out codes");
   const codes = must(await db.from("cash_out_codes").select("id, amount, create_outbox_id").eq("user_id", funmi.id).eq("status", "issued"), "codes") as
@@ -283,6 +316,9 @@ async function resetNigeria() {
         await classic(name, [Operation.payment({ destination: pub("issuer"), asset: NGNT, amount: decimal(-diff) })], name === "funmi"));
     if (userId) await addTx({ user_id: userId, kind: "adjustment", source: "demo_reset", amount: diff / KOBO_PER_UNIT, hash });
   }
+
+  console.log("\n4b. The partner bank's anchor (pays bank transfers into wallets)");
+  await ensureAnchor(NGNT);
 
   console.log("\n5. Ajo round");
   const links = must(await db.from("group_members").select("group_id, groups!inner(id, name, onchain_id, mode, amount, period_secs, created_at)")

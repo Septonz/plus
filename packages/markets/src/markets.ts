@@ -129,7 +129,7 @@ export const MARKETS: Record<MarketId, Market> = {
       },
       idDocument: null,
     },
-    onboarding: { phoneCodeDigits: 6, phoneCodeTtlSecs: 600, maxCodeAttempts: 5, maxCodesPerSession: 5, demoPhonePrefix: "+9170000", phonePattern: "^\\+91[6-9][0-9]{9}$", phoneHint: "+91 70000 00101" },
+    onboarding: { phoneCodeDigits: 6, phoneCodeTtlSecs: 600, maxCodeAttempts: 5, maxCodesPerSession: 5, demoPhonePrefix: "+9170000", phonePattern: "^\\+91[0-9]{10}$", phoneHint: "+91 70000 00101" },
     virtualAccount: null,
     services: [...SERVICES],
     helperServices: [...HELPER_SERVICES],
@@ -168,7 +168,7 @@ export const MARKETS: Record<MarketId, Market> = {
       // Mock registry: any 11 digits pass except this test number, which is always "not found".
       idDocument: { name: "NIN", digits: 11, wrongTestNumber: "00000000000" },
     },
-    onboarding: { phoneCodeDigits: 6, phoneCodeTtlSecs: 600, maxCodeAttempts: 5, maxCodesPerSession: 5, demoPhonePrefix: "+2347000000", phonePattern: "^\\+234[789][01][0-9]{8}$", phoneHint: "0700 000 0101" },
+    onboarding: { phoneCodeDigits: 6, phoneCodeTtlSecs: 600, maxCodeAttempts: 5, maxCodesPerSession: 5, demoPhonePrefix: "+2347000000", phonePattern: "^\\+234[0-9]{10}$", phoneHint: "0700 000 0101" },
     virtualAccount: { bankLabel: "Partner bank (simulated)", digits: 10 },
     services: [...SERVICES],
     helperServices: [...HELPER_SERVICES],
