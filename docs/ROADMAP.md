@@ -1,6 +1,6 @@
 # Roadmap
 
-The plan for pieces 3 to 8, saved so it survives new sessions. Tick an item (`[x]`) when it is
+The plan for pieces 3 to 10, saved so it survives new sessions. Tick an item (`[x]`) when it is
 merged to main.
 
 How we build: in this order, each piece on its own branch, using the design components in
@@ -78,3 +78,25 @@ Two demo users (naira, illustrative numbers), both with demo login buttons.
   asset ID, verification hash, level, collateral status). No personal data on-chain.
 - [ ] The backend writes to it through the outbox at every loan and asset change, and the app's
   small "Verified on Stellar" tick links to it.
+
+## Piece 9 (after piece 8; reads from `plus_credit`): Verify a Plus record, the key demo moment
+
+- [ ] Funmi can say "share my record with the lender" or tap Share on My record: consent screen,
+  PIN, then a one-time 8-character code valid for 24 hours. Every share is logged and can be
+  revoked.
+- [ ] A public page `/verify` (no login): a lender enters the code and sees, read directly from
+  Stellar (`plus_credit` contract and contract events), an anonymous summary: months of history,
+  ajo payments made and on-time %, savings consistency, verified assets with level and status (no
+  photos, no names), loans taken and repaid, current loan status. Every line shows "Read from
+  Stellar" with a link. No personal data, no name, no ID.
+- [ ] The page shows how long the verification took.
+
+## Piece 10 (after piece 8; reads from `plus_credit`): The ajo vouches
+
+- [ ] Members of an ajo in good standing (verified ID, 6+ weeks, all ajo payments on time) can
+  vouch for another member's loan by voice ("I vouch for Funmi") or tap, with PIN.
+- [ ] Each vouch is recorded on `plus_credit`. A loan backed by two or more vouches needs less
+  collateral (a first loan drops from 150% to 100%), and the offer screen explains why.
+- [ ] A voucher whose vouched loan defaults loses vouching rights for 6 months; no money is taken
+  from them.
+- [ ] Show vouches on the loan offer and on the `/verify` page.
