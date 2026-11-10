@@ -18,6 +18,7 @@
     "demo:new-user": "node scripts/demo-new-user.ts",
     "screens": "node scripts/screens.ts",
     "demo:logins": "node scripts/demo-logins.ts",
+    "agents:sync": "node scripts/agents-sync.ts",
     "bench:rpc": "deno run -A --no-config --node-modules-dir=none scripts/bench-rpc.ts",
     "bench:confirm": "node scripts/bench-confirm.ts",
     "warm": "node scripts/warm.ts",

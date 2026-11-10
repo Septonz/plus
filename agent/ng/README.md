@@ -7,6 +7,7 @@ sends Nigeria users to the Nigeria tools by their `market_id`, so the URLs are t
 
 - System prompt: [`prompt.md`](prompt.md) (Pidgin by default, Yoruba if she speaks it, naira,
   read back then "check your screen and tap Yes", never a PIN out loud, patient with pauses).
+- Set up or update by API: `pnpm agents:sync` (see [`../tools/README.md`](../tools/README.md)).
 - Tools: [`tools/`](tools), 22 webhook tool bodies (`POST /v1/convai/tools`).
 
 | Tool | What it does | Body (besides identity) |

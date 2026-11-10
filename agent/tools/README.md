@@ -35,7 +35,18 @@ The PIN never goes through the agent. Amounts above the PIN threshold (₹2,000 
 be confirmed on the app's screen; `confirm_action` by voice answers `pin_required_on_screen`.
 A `pin` sent by voice is refused.
 
-## Exact steps in ElevenLabs
+## Set up both agents: `pnpm agents:sync`
+
+`pnpm agents:sync` (scripts/agents-sync.ts) does everything below for both agents, by API, and is
+safe to re-run after any change to a prompt or a tool file: it creates the workspace secret
+`PLUS_AGENT_SECRET` from `AGENT_SHARED_SECRET` (once; `--rotate-secret` to overwrite), adds the
+Nigerian English voice, sets each agent's prompt and first message, turns authentication on, adds
+the `plus_session` dynamic variable and a 10-second silence timeout, turns on language detection
+(Tamil/English, Pidgin/English/Yoruba), and creates, updates or removes the webhook tools by name.
+A new Nigeria agent's id is saved as `ELEVENLABS_AGENT_ID_NG` in `.env.local` and the Supabase
+secrets. `--dry-run` shows what would change.
+
+## The same steps by hand in ElevenLabs
 
 You need: the agent from `ELEVENLABS_AGENT_ID`, and `AGENT_SHARED_SECRET` from the root
 `.env.local` (gitignored; don't paste it into chats or commit it).
