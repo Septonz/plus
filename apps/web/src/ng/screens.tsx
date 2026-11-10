@@ -10,6 +10,7 @@ import {
 } from '../ds/components'
 import { tool, type ToolResult } from '../plus/api'
 import type { PendingAction, PlusData } from '../plus/data'
+import { useSays } from '../plus/screen'
 import { CopyButton, ErrorState, LoadingList, TextField } from '../plus/ui'
 import { CodeBox } from './confirm'
 import { useTool, type Go, type Wallet } from './NgApp'
@@ -59,6 +60,15 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
   const name = data.me?.name ?? ''
   const members = (ajo?.members ?? []) as Row[]
   const paid = members.filter((m) => m.paid_this_round).length
+  const cashIns = data.pending.filter((a) => a.kind === 'confirm_cash_in')
+  useSays(
+    `Home. Wallet: ${wallet ? naira(wallet.NGNT) : 'loading'}${sending ? `, ${sending} sending` : ''}. ` +
+      (ajo ? (ajo.in_group ? `Ajo ${String(ajo.name)}: ${paid} of ${members.length} paid this round; her part ${ajo.paid_this_period ? 'is paid' : ajo.on_its_way ? 'is sending' : `is not paid (${String(ajo.amount_text)})`}. ` : 'Not in an ajo. ') : '') +
+      (adv ? `Advance: ${adv.open ? `${String(adv.owed_text)} left to pay back` : adv.eligible ? `up to ${String(adv.limit_text)}` : 'not yet'}. ` : '') +
+      (cashIns.length ? `Waiting for her answer: ${cashIns.map((a) => a.readback).join('; ')}. ` : '') +
+      (latest.length ? `Latest: ${latest.slice(0, 3).map((t) => `${String(t.label)} ${t.outgoing ? '-' : '+'}${String(t.amount_text)}`).join(', ')}. ` : '') +
+      'Cards: Wallet, Ajo, Advance. Tabs: Home, Pay, Activity, Profile.',
+  )
 
   return (
     <div className="space-y-6">
@@ -132,6 +142,7 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
 export function WalletDetail({ wallet, version, onOpen }: { wallet: Wallet | null; version: number; onOpen: (d: Detail) => void }) {
   const rec = useTool('my_record', version)
   const recent = ((rec?.recent ?? []) as Row[]).filter((t) => t.kind !== 'adjustment').slice(0, 10)
+  useSays(`Wallet: ${wallet ? naira(wallet.NGNT) : 'loading'} available. Buttons: Add money, Cash out. Below: her recent activity, each with its Verified on Stellar tick.`)
   return (
     <>
       <div className="rounded-card p-6 text-white shadow-lift" style={{ background: 'var(--wallet)' }}>
@@ -156,6 +167,11 @@ export function WalletDetail({ wallet, version, onOpen }: { wallet: Wallet | nul
 /** Add money: her own bank account number (simulated partner bank), or cash with an agent. */
 export function AddCash({ data, version, onAnswer }: Props & { onAnswer: (a: PendingAction) => void }) {
   const bank = useTool('bank_details', version)
+  useSays(
+    'Add money. ' +
+      (bank?.ok ? `Bank transfer: anyone can send naira to her account number ${String(bank.account_number_text)}, ${String(bank.bank_label)}, name ${String(bank.account_name)}. A demo card can simulate a transfer arriving. ` : '') +
+      'Or cash: she gives it to Mama Bisi, the Plus agent, then taps Yes when asked.',
+  )
   return (
     <>
       <Waiting data={data} onAnswer={onAnswer} />
@@ -286,6 +302,13 @@ export function Pay({ data }: Props) {
   const [amount, setAmount] = useState('')
   const { busy, msg, run } = useSubmit()
   const ready = tab === 'saved' ? Boolean(who) : phone.replace(/\D/g, '').length >= 10
+  useSays(
+    'Pay. ' +
+      (tab === 'saved'
+        ? payees.length ? `Saved people: ${payees.map((p) => p.name).join(', ')}.${who ? ` ${who} is chosen.` : ''}` : 'No saved people yet.'
+        : `Pay a phone number${phone ? ` (${phone} typed)` : ''}. On Plus it goes to their wallet; not on Plus, they get a code for cash at any agent.`) +
+      (ready ? ` Amount: ${amount ? naira(BigInt(amount) * 100n) : 'not typed yet'}; then Next.` : ''),
+  )
   return (
     <div className="space-y-6">
       <Segmented label="Pay" value={tab} onChange={(t) => { setTab(t); setAmount('') }} options={[['saved', W.savedPeople.en], ['phone', W.newNumber.en]]} />
@@ -338,6 +361,7 @@ export function Pay({ data }: Props) {
 export function Ajo({ version }: Props) {
   const g = useTool('group_status', version)
   const { busy, msg, run } = useSubmit()
+  useSays(g ? `Ajo. ${g.text}${g.in_group && !g.paid_this_period && !g.on_its_way ? ' Button: Pay my part.' : ''} Each paid member has a Verified on Stellar tick.` : 'Ajo, loading.')
   return (
     <Loaded r={g} rows={5}>
       {(g) => !g.in_group ? (
@@ -415,6 +439,7 @@ export function Advance({ version }: Props) {
   const a = useTool('advance_status', version)
   const { busy, msg, run } = useSubmit()
   const pct = Number(a?.repay_pct ?? NG.advance.repayFromCashInBps / 100)
+  useSays(a ? `Advance. ${a.text}${a.eligible ? ` Options: ${((a.options ?? []) as Row[]).map((o) => `${String(o.amount_text)} (fee ${String(o.fee_text)})`).join(', ')}.` : ''}` : 'Advance, loading.')
   return (
     <>
       <Loaded r={a} rows={2}>
@@ -459,12 +484,19 @@ export function Advance({ version }: Props) {
 
 // ---------------------------------------------------------------------------- Cash out
 
-export function CashOut({ version }: Props) {
+type ShownCode = { id: string; code: string } | null
+
+export function CashOut({ version, shownCode, onShowCode }: Props & { shownCode: ShownCode; onShowCode: (c: ShownCode) => void }) {
   const list = useTool('cash_outs', version)
   const [amount, setAmount] = useState('')
-  const [shown, setShown] = useState<{ id: string; code: string } | null>(null)
+  const shown = shownCode
+  const setShown = onShowCode
   const { busy, msg, run } = useSubmit()
   const open = ((list?.cash_outs ?? []) as Row[]).filter((c) => c.status === 'issued' && new Date(String(c.expires_at)) > new Date())
+  useSays(
+    `Cash out. ${open.length ? `Waiting for an agent: ${open.map((c) => String(c.amount_text)).join(', ')}${shown ? '; a code is showing on screen (never read it out)' : '; each has a New code button'}. ` : ''}` +
+      `She types how much cash she needs${amount ? ` (${naira(BigInt(amount) * 100n)} typed)` : ''} and taps Next; after her Yes she gets a 6-digit code for the agent.`,
+  )
   return (
     <>
       {open.map((c) => (
@@ -525,6 +557,8 @@ function TxRow({ t }: { t: Row }) {
 
 export function Record({ version }: Props) {
   const r = useTool('my_record', version)
+  const latest = ((r?.recent ?? []) as Row[]).filter((t) => t.kind !== 'adjustment').slice(0, 5)
+  useSays(r ? `Activity. ${r.text} Latest: ${latest.map((t) => `${String(t.label)} ${t.outgoing ? '-' : '+'}${String(t.amount_text)}${t.counterparty ? ` (${String(t.counterparty)})` : ''}`).join(', ') || 'nothing yet'}.` : 'Activity, loading.')
   return (
     <Loaded r={r} rows={4}>
       {(r) => {
@@ -564,6 +598,10 @@ export function Settings({ data, version, onSignOut }: Props & { onSignOut: () =
   const [saved, setSaved] = useState(false)
   const limits = (me?.limits ?? null) as { tier: number; daily_text: string; balance_text: string; advances: boolean } | null
   const name = data.me?.name ?? ''
+  useSays(
+    `Profile: ${name}${limits ? `, level ${limits.tier}. Limits: send ${limits.daily_text} a day, hold up to ${limits.balance_text}` : ''}. ` +
+      'A PIN pad to set her PIN: she types it herself, never out loud. A Sign out button.',
+  )
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -586,7 +624,7 @@ export function Settings({ data, version, onSignOut }: Props & { onSignOut: () =
       </Loaded>
       <Section title="PIN">
         <Card className="space-y-3">
-          <p className="text-sm text-secondary">Needed on screen for payments over {naira(BigInt(NG.pinThreshold) * 100n)}. Never say it out loud.</p>
+          <p className="text-sm text-secondary">Up to {naira(BigInt(NG.pinThreshold) * 100n)} you can just say yes. Above that, type your PIN here on the screen. Never say it out loud.</p>
           <PinPad value={pin} onChange={setPin} />
           {msg && <Notice tone="danger">{msg}</Notice>}
           {saved && <Notice tone="success">PIN saved.</Notice>}

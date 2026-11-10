@@ -10,6 +10,7 @@ import {
 import { call, newKey, tool, type ToolResult } from './api'
 import { money, type PlusData, whenText } from './data'
 import { PAYEE_TA, SOURCE_KEY, T, type Key } from './i18n'
+import { useSays } from './screen'
 import { ErrorState, LoadingList, useLang, useT } from './ui'
 
 export type Screen = 'home' | 'pay' | 'seettu' | 'advance' | 'record' | 'add' | 'savings' | 'settings'
@@ -88,6 +89,14 @@ export function Home({ data, go, open, onOpen }: { data: PlusData; open: Detail 
   const { data: adv } = useToolRead<AdvanceStatus>('advance_status', data.version)
   const name = me?.name ?? ''
   const autoSave = (me?.auto_save_bps ?? 0) / 100
+  useSays(
+    `Home, in ${lang === 'ta' ? 'Tamil' : 'English'}. To spend: ${account ? money(account.balance_paise) : 'loading'}. Savings: ${account ? money(account.savings_paise) : 'loading'} (${autoSave}% auto-save). ` +
+      (g ? (g.in_group ? `Seettu ${g.name}: ${g.paid_this_period ? 'paid this month' : `not paid yet (${g.amount_text})`}. ` : '') : '') +
+      (adv ? `Advance: ${adv.open ? `${adv.owed_text} owed` : adv.eligible ? `up to ${adv.limit_text}` : 'not yet'}. ` : '') +
+      (cashIns.length ? `Waiting for her answer: ${cashIns.map((a) => `${String(a.params.helper_name)} says she gave ${money(String(a.params.amount))} in cash`).join('; ')}. ` : '') +
+      (recent.length ? `Latest: ${recent.slice(0, 3).map((x) => `${x.kind} ${money(x.amount)}`).join(', ')}. ` : '') +
+      'Cards: money, savings, seettu, advance. Tabs: Home, Pay, Activity, Profile. A language button.',
+  )
 
   async function answer(id: string, yes: boolean) {
     setBusy(id)
@@ -241,6 +250,10 @@ export function Pay({ data }: { data: PlusData } & Nav) {
   const [amount, setAmount] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  useSays(
+    `Pay. Saved people: ${data.payees.map((p) => p.name).join(', ') || 'none'}.` +
+      (payee ? ` ${payee.name} is chosen; amount ${amount ? money(BigInt(amount) * 100n) : 'not typed yet'}; then Next.` : ' She picks one, types the amount, and taps Next.'),
+  )
 
   async function next() {
     if (!payee || !amount) return
@@ -322,6 +335,7 @@ export function Seettu({ data }: { data: PlusData } & Nav) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const myPendingContribution = data.txs.find((x) => x.kind === 'group_contribution' && !x.chain_tx_hash)
+  useSays(g ? `Seettu. ${g.text}${g.in_group && !g.paid_this_period ? ' Button: Pay now.' : ''}` : 'Seettu, loading.')
 
   async function payNow() {
     setBusy(true)
@@ -390,6 +404,7 @@ export function Advance({ data }: { data: PlusData } & Nav) {
   const { data: a, error } = useToolRead<AdvanceStatus>('advance_status', data.version)
   const [pick, setPick] = useState<string | null>(null)
   const rules = getMarket('in').advance
+  useSays(a ? `Advance. ${a.text}` : 'Advance, loading.')
 
   return (
     <Loaded data={a} error={error} rows={2}>
@@ -458,6 +473,7 @@ type RecordResult = ToolResult & {
 
 export function Record({ data }: { data: PlusData } & Nav) {
   const { data: r, error } = useToolRead<RecordResult>('my_record', data.version)
+  useSays(r ? `Activity. ${r.text}` : 'Activity, loading.')
   return (
     <Loaded data={r} error={error} rows={4}>
       {(r) => {
@@ -515,6 +531,11 @@ export function AddMoney({ data }: { data: PlusData } & Nav) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null)
   const { account } = data
+  useSays(
+    `Money. To spend: ${account ? money(account.balance_paise) : 'loading'}${account ? ` at ${account.bank_name}` : ''}. ` +
+      'Ways in: government support, wages, cash handed to Meena, family abroad. Demo buttons: state transfer arrives, wages ₹500 or ₹1,500.' +
+      (msg ? ` ${msg.text}` : ''),
+  )
 
   async function simulate(endpoint: 'state_transfer_arrives' | 'wages_arrive', amount?: number) {
     setBusy(true)
@@ -583,6 +604,7 @@ export function Savings({ data }: { data: PlusData } & Nav) {
   const [percent, setPercent] = useState<number | null>(null)
   const shown = percent ?? current
   const [msg, setMsg] = useState<string | null>(null)
+  useSays(`Savings: ${data.account ? money(data.account.savings_paise) : 'loading'} saved. Auto-save ${current}% of money that arrives${shown !== current ? `; ${shown}% chosen, not saved yet` : ''}. Minus and plus buttons, and Save.`)
 
   async function saveAutoSave() {
     // Two-step like every change: prepare here, the confirm sheet asks Yes/No.
@@ -631,6 +653,10 @@ export function Settings({ data, onSignOut }: { data: PlusData; onSignOut: () =>
   const [newPin, setNewPin] = useState('')
   const [hasPin, setHasPin] = useState<boolean | null>(null)
   const name = data.me?.name ?? ''
+  useSays(
+    `Profile: ${name}. Language: ${lang === 'ta' ? 'Tamil' : 'English'}. Trusted person: ${data.me?.trusted_contact_phone ? 'set' : 'not set'}. ` +
+      `PIN: ${hasPin ? 'set' : 'not set'}; she sets or changes it on the screen only, never out loud. A Sign out button.`,
+  )
 
   useEffect(() => {
     tool<ToolResult & { has_pin: boolean }>('get_user').then((r) => setHasPin(Boolean(r.has_pin))).catch(() => setHasPin(null))
