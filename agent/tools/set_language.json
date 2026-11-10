@@ -1,0 +1,25 @@
+{
+  "tool_config": {
+    "type": "client",
+    "name": "set_language",
+    "description": "Change the app's language. Only in the Plus app (not on a phone call).",
+    "expects_response": true,
+    "response_timeout_secs": 20,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "language": {
+          "type": "string",
+          "description": "\"ta\" for Tamil or \"en\" for English.",
+          "enum": [
+            "ta",
+            "en"
+          ]
+        }
+      },
+      "required": [
+        "language"
+      ]
+    }
+  }
+}

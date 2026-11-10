@@ -1,0 +1,32 @@
+{
+  "tool_config": {
+    "type": "client",
+    "name": "navigate",
+    "description": "Open a screen on her phone. Use it whenever she asks to see something, and before talking her through a screen. Then call what_is_on_screen and say in one short sentence what she sees. Only in the Plus app (not on a phone call).",
+    "expects_response": true,
+    "response_timeout_secs": 20,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "screen": {
+          "type": "string",
+          "description": "The screen to open.",
+          "enum": [
+            "home",
+            "wallet",
+            "add_money",
+            "pay",
+            "ajo",
+            "advance",
+            "cash_out",
+            "activity",
+            "profile"
+          ]
+        }
+      },
+      "required": [
+        "screen"
+      ]
+    }
+  }
+}

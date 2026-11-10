@@ -1,0 +1,14 @@
+{
+  "tool_config": {
+    "type": "client",
+    "name": "what_is_on_screen",
+    "description": "What is on her screen right now, in words. Call it after navigate, and whenever she asks what she is looking at. Only in the Plus app (not on a phone call).",
+    "expects_response": true,
+    "response_timeout_secs": 20,
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  }
+}

@@ -8,7 +8,7 @@ sends Nigeria users to the Nigeria tools by their `market_id`, so the URLs are t
 - System prompt: [`prompt.md`](prompt.md) (Pidgin by default, Yoruba if she speaks it, naira,
   read back then "check your screen and tap Yes", never a PIN out loud, patient with pauses).
 - Set up or update by API: `pnpm agents:sync` (see [`../tools/README.md`](../tools/README.md)).
-- Tools: [`tools/`](tools), 22 webhook tool bodies (`POST /v1/convai/tools`).
+- Tools: [`tools/`](tools), 24 webhook and 5 client tool bodies (`POST /v1/convai/tools`).
 
 | Tool | What it does | Body (besides identity) |
 | ---- | ------------ | ----------------------- |
@@ -24,9 +24,24 @@ sends Nigeria users to the Nigeria tools by their `market_id`, so the URLs are t
 | `prepare_advance` | Prepares an advance: one fee, no interest, no late fees, 10% of each cash-in | `amount` (naira) |
 | `prepare_cashout` | Prepares a cash-out; the 6-digit code shows on her screen only | `amount` (naira) |
 | `cash_outs` | Open cash-outs and when they expire | none |
-| `confirm_action` | Confirms by voice below the PIN threshold (₦20,000); "sending", then the tick | `action_id` |
+| `confirm_action` | Confirms by voice up to the PIN threshold (₦5,000); "sending", then the tick | `action_id` |
 | `reject_action` | Cancels, or says No to a cash-in | `action_id` |
 | `my_record` | Money in and out, cash-ins, entries on Stellar, link | none |
+
+**Screen tools.** Everything on her screen is also by voice. `help` is a webhook (works on a call
+too). The rest are **client tools** (`type: client`): they run in her browser with her own login
+(`apps/web/src/plus/screen.ts`), so they only work in the app. The app also sends the agent a
+contextual update ("On her screen now: …") whenever the screen changes. The PIN is the exception:
+she sets and types it on the screen only.
+
+| Tool | Type | What it does | Body |
+| ---- | ---- | ------------ | ---- |
+| `help` | webhook | What she can do (each also by voice), the voice-yes limit, what is waiting | none |
+| `navigate` | client | Opens a screen | `screen` |
+| `what_is_on_screen` | client | What her screen shows now, in words | none |
+| `sign_out` | client | Signs her out (only when she clearly asks) | none |
+| `new_cashout_code` | client | A fresh code for a waiting cash-out, on her screen only | `amount` (optional) |
+| `simulate_bank_transfer` | client | Demo: a bank transfer arrives at her account number | `amount` |
 
 Sign-up (the app passes `onboarding_token` to `voice-session`, which gives the agent a
 `plus_session` for that sign-up only). The PIN, the photo and the NIN are screen-only: the tools

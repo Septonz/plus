@@ -1,0 +1,31 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "help",
+    "description": "When she asks what she can do, or seems stuck: everything Plus does, each also by voice, the voice-yes limit, and what is waiting for her. Offer two or three things in one short sentence.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/help",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          }
+        }
+      }
+    }
+  }
+}
