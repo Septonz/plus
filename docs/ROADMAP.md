@@ -10,9 +10,9 @@ CLAUDE.md. All money is simulated on Testnet.
 
 ## Piece 3: Everything by voice
 
-- [ ] Every screen action is also a voice tool, in both agents (update them with `pnpm agents:sync`).
-- [ ] A voice "yes" confirms money moves up to ₦5,000 / ₹500; above that, the PIN pad on screen.
-- [ ] New tools: `help` ("what can I do?") and `navigate(screen)`. The agent always says what's on screen.
+- [x] Every screen action is also a voice tool, in both agents (update them with `pnpm agents:sync`).
+- [x] A voice "yes" confirms money moves up to ₦5,000 / ₹500; above that, the PIN pad on screen.
+- [x] New tools: `help` ("what can I do?") and `navigate(screen)`. The agent always says what's on screen.
 
 ## Piece 4: Lending model
 
