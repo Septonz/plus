@@ -20,6 +20,7 @@ import { demoLoginsEnabled, demoOff, demoRateLimited, MONEY_TOOLS } from "../_sh
 import { hasSessionToken, verifySession } from "../_shared/session.ts";
 import { supabaseStore } from "../_shared/store.ts";
 import { supabaseNgStore } from "../_shared/store-ng.ts";
+import { supabaseAssetStore } from "../_shared/store-assets.ts";
 import { APP_TOOLS, type Channel, type Store, type Tool, type ToolResult, type User, VOICE_TOOLS } from "../_shared/tools.ts";
 import { NG_APP_TOOLS, NG_VOICE_TOOLS, type NgTool } from "../_shared/tools-ng.ts";
 import type { MarketId } from "../_shared/markets.ts";
@@ -44,6 +45,7 @@ const USER_COLS = "id, market_id, name, language, kyc_tier, stellar_pub, auto_sa
 const store: Store = supabaseStore(db);
 // Nigeria: the wallet is the account; money moves through the chain outbox.
 const ngStore = supabaseNgStore(db, CONTRACT_ID);
+const assetStore = supabaseAssetStore(db);
 const obStore = supabaseOnboardingStore(db);
 const SESSION_SECRET = Deno.env.get("VOICE_SESSION_SECRET") ?? "";
 const PIN_SECRET = Deno.env.get("PIN_PEPPER") ?? "";
@@ -274,7 +276,7 @@ Deno.serve(withCors(async (req) => {
       result = probe
         ? await timeRecordOf(who.user)
         : ngHandler
-        ? await ngHandler({ ...base, store: ngStore, ngntSac: NGNT_SAC, codeSecret: Deno.env.get("CASHOUT_CODE_SECRET") ?? "" })
+        ? await ngHandler({ ...base, store: ngStore, assets: assetStore, ngntSac: NGNT_SAC, codeSecret: Deno.env.get("CASHOUT_CODE_SECRET") ?? "" })
         : await handler!({ ...base, store });
       // A confirmed action may have queued on-chain records: start the worker now.
       if (tool === "confirm_action" && result.ok) EdgeRuntime.waitUntil(kickChainWorker());
