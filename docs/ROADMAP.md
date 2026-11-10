@@ -18,29 +18,29 @@ CLAUDE.md. All money is simulated on Testnet.
 
 Two demo users (naira, illustrative numbers), both with demo login buttons.
 
-- [ ] **Kemi** (new user, week 4 of 6): can save, transact, register and verify assets. She sees
+- [x] **Kemi** (new user, week 4 of 6): can save, transact, register and verify assets (asset flows: piece 5). She sees
   "Building your Plus history, week 4 of 6" with a checklist: identity verified, qualifying
   transactions, active weeks, one verified asset, and 2 more weeks needed. Also an estimated future
   range marked "estimate, not an offer". Never the words "rejected" or "not eligible". New sign-ups
   land in this view at week 1 of 6.
-- [ ] **Unlock rules:** account open 6+ weeks, money in during at least 4 of them, a minimum number
+- [x] **Unlock rules:** account open 6+ weeks, money in during at least 4 of them, a minimum number
   of qualifying transactions, verified identity, good standing. Circular or back-and-forth
   transfers don't count.
-- [ ] **Funmi** (unlocked, 8+ weeks, verified stall stock): a loan offer showing why she got it
+- [x] **Funmi** (unlocked, 8+ weeks, verified stall stock): a loan offer showing why she got it
   (activity 40%, verified assets 35%, savings consistency 25%), written as "you receive ₦30,000,
   cost ₦1,800, total ₦31,800". Repayment: 10% of every money-in plus a minimum of ₦2,500 every two
   weeks.
-- [ ] **Rewards ladder**, shown before she accepts: next loan ₦50,000 at 5%, then ₦80,000 at 4.5%;
+- [x] **Rewards ladder**, shown before she accepts: next loan ₦50,000 at 5%, then ₦80,000 at 4.5%;
   collateral 150% → 125% → 100% → partial; faster approval.
-- [ ] **Affordability first:** stall stock estimated ₦90,000, lending value ₦54,000, affordable
+- [x] **Affordability first:** stall stock estimated ₦90,000, lending value ₦54,000, affordable
   limit ₦30,000, so the lower one wins.
-- [ ] **Accepting needs the PIN pad.** Funds go as NGNT from a partner lending account to Funmi
+- [x] **Accepting needs the PIN pad.** Funds go as NGNT from a partner lending account to Funmi
   through the outbox (real Testnet), with loan state in the database. Repayments (10% of each
   money-in, and the two-weekly minimum from the scheduler) go as NGNT back to the lending account.
-- [ ] **Repay screen** with "I need more time", which offers a short extension and pauses new
+- [x] **Repay screen** with "I need more time", which offers a short extension and pauses new
   borrowing. Missed payment path: reminder, grace period, restructure, borrowing frozen; never
   contact anyone else.
-- [ ] Retire the old 1.5% advance from the UI but keep its contract functions.
+- [x] Retire the old 1.5% advance from the UI but keep its contract functions.
 
 ## Piece 5: Assets, from day one, for any user
 

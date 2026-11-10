@@ -103,7 +103,9 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
   const sofar = input.weeks.filter((w) => w.week <= week);
   const activeWeeks = sofar.filter((w) => w.money_in > 0n).length;
   const qualifying = sofar.reduce((s, w) => s + w.qualifying_tx, 0);
-  const savedWeeks = sofar.filter((w) => w.saved > 0n).length;
+  // Savings consistency looks at her last 8 weeks (or fewer, if she is newer).
+  const considered = Math.max(1, Math.min(8, week));
+  const savedWeeks = sofar.filter((w) => w.week > week - considered && w.saved > 0n).length;
   const identity = input.kyc_tier >= 2;
   const open = input.loans.find((l) => OPEN_STATUSES.has(l.status)) ?? null;
   // Postgres returns a freeze "until repaid" as the string "infinity".
@@ -149,7 +151,6 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
   const bestBps = verified.reduce((m, a) => Math.max(m, L.lendingValueBps[a.level] ?? 0), 0);
   const maxBps = Math.max(...Object.values(L.lendingValueBps));
   const assetsPart = maxBps > 0 ? bestBps / maxBps : 0;
-  const considered = Math.max(1, Math.min(8, week));
   const savings = Math.min(1, savedWeeks / considered);
   const why = [
     { key: "activity", label: "Activity", weight: L.weights.activity, points: Math.round(activity * L.weights.activity), detail: `${activeWeeks} active weeks, ${qualifying} qualifying transactions` },

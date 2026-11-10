@@ -76,6 +76,7 @@ Deno.test("Funmi: ₦30,000 offer at 6%: ₦1,800 cost, ₦31,800 total; the low
   assertEquals(p.affordability.lending_value, N(54_000));
   assertEquals(p.affordability.affordable, N(30_000));
   assertEquals(p.why.map((w) => w.weight), [40, 35, 25]);
+  assertEquals(p.why[2].detail, "Ajo paid in 8 of 8 weeks"); // the last 8 weeks, not all 21
   assertEquals(p.ladder.map((s) => s.max), [N(30_000), N(50_000), N(80_000), N(80_000)]);
 });
 
