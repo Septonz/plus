@@ -1,0 +1,43 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "prepare_pay",
+    "description": "Prepare a payment to one of her saved payees. Pass the payee exactly as she said it (for example \"Iya Tunde\", \"the tomato woman\"). If the result has options, ask her which one. Never ask for bank details. Nothing moves until she taps Yes or types her PIN on her screen.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/prepare_pay",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "payee": {
+            "type": "string",
+            "description": "Who she wants to pay, in her own words."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount in naira, a whole number she said (\"20k\" is 20000). Never guess."
+          }
+        },
+        "required": [
+          "payee",
+          "amount"
+        ]
+      }
+    }
+  }
+}

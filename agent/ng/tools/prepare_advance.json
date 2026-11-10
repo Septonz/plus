@@ -1,0 +1,38 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "prepare_advance",
+    "description": "Prepare an advance. Read back the amount, the one fee in naira, \"no interest, no late fees\", and that it repays itself from 10% of each cash-in. Nothing moves until she taps Yes on her screen.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/prepare_advance",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Advance amount in naira, a whole number she said (\"20k\" is 20000). Never guess."
+          }
+        },
+        "required": [
+          "amount"
+        ]
+      }
+    }
+  }
+}

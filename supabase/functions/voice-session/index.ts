@@ -4,7 +4,7 @@
 //   -> { signed_url, plus_session, expires_at }
 //
 // 1. Verifies the Supabase login and finds her Plus account (users.auth_user_id).
-// 2. Gets a signed conversation URL for the private ElevenLabs agent (valid 15 minutes).
+// 2. Gets a signed conversation URL for her market's private ElevenLabs agent (valid 15 minutes).
 // 3. Mints plus_session: an HMAC token bound to her user id, expiring in 15 minutes.
 // The app starts the ElevenLabs session with the signed URL and passes plus_session as a dynamic
 // variable; every tool call sends it back to agent-tools, which checks it. The ElevenLabs API key
@@ -27,15 +27,16 @@ Deno.serve(async (req) => {
   if (!token) return json({ error: "unauthorized" }, 401);
   const { data: auth, error: authErr } = await db.auth.getUser(token);
   if (authErr || !auth.user) return json({ error: "unauthorized" }, 401);
-  const { data: user, error } = await db.from("users").select("id, name, language").eq("auth_user_id", auth.user.id).maybeSingle();
+  const { data: user, error } = await db.from("users").select("id, name, language, market_id").eq("auth_user_id", auth.user.id).maybeSingle();
   if (error) return json({ error: "internal" }, 500);
   if (!user) return json({ error: "no_plus_account" }, 403);
 
   const apiKey = Deno.env.get("ELEVENLABS_API_KEY");
-  const agentId = Deno.env.get("ELEVENLABS_AGENT_ID");
+  // One ElevenLabs agent per market: Nigeria users get the Pidgin/Yoruba "Plus Nigeria" agent.
+  const agentId = user.market_id === "ng" ? Deno.env.get("ELEVENLABS_AGENT_ID_NG") : Deno.env.get("ELEVENLABS_AGENT_ID");
   const secret = Deno.env.get("VOICE_SESSION_SECRET");
   if (!apiKey || !agentId || !secret) {
-    console.error("voice-session: ELEVENLABS_API_KEY, ELEVENLABS_AGENT_ID or VOICE_SESSION_SECRET is not set");
+    console.error("voice-session: ELEVENLABS_API_KEY, the market's ELEVENLABS_AGENT_ID(_NG) or VOICE_SESSION_SECRET is not set");
     return json({ error: "voice_not_configured" }, 503);
   }
 

@@ -9,6 +9,8 @@ export interface Payee {
   id: string;
   name: string;
   upi_handle?: string | null;
+  /** Nigeria: the payee's Stellar wallet (G...). */
+  stellar_address?: string | null;
 }
 
 export type PayeeMatch =
@@ -25,6 +27,8 @@ const CONCEPTS: Record<string, string[]> = {
   tea: ["tea", "chai", "tea-kadai", "டீ"],
   rice: ["rice", "arisi", "அரிசி"],
   grocery: ["grocery", "provision", "provisions", "maligai", "மளிகை"],
+  // Nigeria (English, Pidgin, Yoruba)
+  tomato: ["tomato", "tomatoes", "tomatos", "tomati", "tòmátì"],
 };
 
 // Words that carry no meaning for matching.
@@ -32,6 +36,8 @@ const FILLER = new Set([
   "kadai", "kada", "kadaiku", "kadaikku", "kadaila", "shop", "shops", "store", "stores", "the", "to", "for",
   "a", "ku", "kku", "ukku", "anna", "akka", "annan", "sir", "madam", "pay", "send", "anuppu", "anuppunga",
   "kodu", "kudunga", "கடை", "கடைக்கு", "அண்ணா", "அக்கா", "wholesaler", "wholesale", "mandi",
+  // Nigerian Pidgin / English filler
+  "abeg", "make", "i", "wan", "give", "money", "dey", "seller", "woman", "oga", "madam", "my",
 ]);
 
 const WORD_TO_CONCEPT = new Map<string, string>();
@@ -84,11 +90,21 @@ export function matchPayee(spoken: string, payees: Payee[]): PayeeMatch {
   return top.length === 1 ? { kind: "match", payee: top[0] } : { kind: "ambiguous", options: top };
 }
 
-/** Rupees as said or typed ("300", "300.50", 300) -> paise. Integers only; no floats. */
+/**
+ * Rupees or naira as said or typed ("300", "300.50", 300, "₦5,000", "N5000", "20k naira") -> paise
+ * or kobo. Integers only; no floats.
+ */
 export function parseMajorAmount(value: unknown): bigint | null {
-  const s = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim().replace(/[,₹\s]|rs\.?|rupees?/gi, "") : "";
+  let s = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim().replace(/[,₹₦\s]|rs\.?|rupees?|naira/gi, "") : "";
+  s = s.replace(/^n(?=\d)/i, ""); // "N5000"
+  let thousands = false;
+  if (/^\d{1,6}k$/i.test(s)) {
+    thousands = true; // "20k"
+    s = s.slice(0, -1);
+  }
   const m = /^(\d{1,9})(?:\.(\d{1,2}))?$/.exec(s);
   if (!m) return null;
-  const paise = BigInt(m[1]) * 100n + BigInt((m[2] ?? "").padEnd(2, "0") || "0");
-  return paise > 0n ? paise : null;
+  const minor = BigInt(m[1]) * 100n + BigInt((m[2] ?? "").padEnd(2, "0") || "0");
+  const out = thousands ? minor * 1000n : minor;
+  return out > 0n ? out : null;
 }

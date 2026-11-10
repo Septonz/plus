@@ -16,10 +16,11 @@ import { createClient } from "@supabase/supabase-js";
 import { hasValidAgentSecret } from "../_shared/auth.ts";
 import { callerFromBody } from "../_shared/caller.ts";
 import { bearer, json, kickChainWorker, preflight, readJson } from "../_shared/http.ts";
-import { formatMoney, getMarket } from "../_shared/markets.ts";
 import { hasSessionToken, verifySession } from "../_shared/session.ts";
 import { supabaseStore } from "../_shared/store.ts";
-import { APP_TOOLS, type Channel, type Store, type ToolResult, type User, VOICE_TOOLS } from "../_shared/tools.ts";
+import { supabaseNgStore } from "../_shared/store-ng.ts";
+import { APP_TOOLS, type Channel, type Store, type Tool, type ToolResult, type User, VOICE_TOOLS } from "../_shared/tools.ts";
+import { NG_APP_TOOLS, NG_VOICE_TOOLS, type NgTool } from "../_shared/tools-ng.ts";
 
 // Provided by the Supabase Edge Runtime.
 declare const EdgeRuntime: { waitUntil(p: PromiseLike<unknown>): void };
@@ -28,45 +29,15 @@ const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SE
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const HORIZON_URL = Deno.env.get("HORIZON_URL") ?? "https://horizon-testnet.stellar.org";
-const NGNT_ISSUER = Deno.env.get("NGNT_ISSUER") ?? "GDLLQ6TC6GJBOOWCTBTMDMFWRKUHKW7UOWZMIA6WZNCZJHTC3UBS3SVB";
-const USDC_ISSUER = Deno.env.get("USDC_ISSUER") ?? "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
 const PASSPHRASE = Deno.env.get("STELLAR_NETWORK_PASSPHRASE") ?? "Test SDF Network ; September 2015";
 const EXPLORER = `https://stellar.expert/explorer/${PASSPHRASE.startsWith("Public") ? "public" : "testnet"}`;
 const CONTRACT_ID = Deno.env.get("PLUS_CONTRACT_ID") ?? "";
+const NGNT_SAC = Deno.env.get("NGNT_SAC_ID") ?? "";
 const USER_COLS = "id, market_id, name, language, kyc_tier, stellar_pub, auto_save_bps, ref_hash, trusted_contact_phone";
 
-// ---------------------------------------------------------------------------
-// Nigeria balances come from the user's own Stellar account (Horizon).
-// ---------------------------------------------------------------------------
-
-function decimalToMinor(value: string): bigint {
-  const [whole, frac = ""] = value.split(".");
-  return BigInt(whole) * 100n + BigInt((frac + "00").slice(0, 2));
-}
-
-async function stellarBalance(user: User): Promise<ToolResult> {
-  if (!user.stellar_pub) return { text: "There is no wallet set up yet.", has_account: false };
-  const res = await fetch(`${HORIZON_URL}/accounts/${user.stellar_pub}`);
-  if (res.status === 404) return { text: "The wallet is not active yet.", has_account: false };
-  if (!res.ok) throw new Error(`horizon ${res.status}`);
-  const acct = await res.json() as { balances: { asset_code?: string; asset_issuer?: string; balance: string }[] };
-  const line = (code: string, issuer: string) => acct.balances.find((b) => b.asset_code === code && b.asset_issuer === issuer)?.balance;
-  const ngnt = decimalToMinor(line("NGNT", NGNT_ISSUER) ?? "0");
-  const usdc = line("USDC", USDC_ISSUER);
-  const usd = usdc ? decimalToMinor(usdc) : 0n;
-  const usdText = `$${usd / 100n}.${(usd % 100n).toString().padStart(2, "0")}`;
-  return {
-    text: `She has ${formatMoney(ngnt, user.market_id).replace("₦", "")} naira` + (usd > 0n ? ` and ${usdText} in dollars.` : "."),
-    has_account: true,
-    currency: getMarket(user.market_id).currency.code,
-    balance_minor: String(ngnt),
-    balance_text: formatMoney(ngnt, user.market_id),
-    usd_text: usd > 0n ? usdText : null,
-  };
-}
-
-const store: Store = { ...supabaseStore(db), stellarBalance };
+const store: Store = supabaseStore(db);
+// Nigeria: the wallet is the account; money moves through the chain outbox.
+const ngStore = supabaseNgStore(db, CONTRACT_ID);
 
 // ---------------------------------------------------------------------------
 // Timing probe (not a voice tool): how long one contract read takes from here.
@@ -167,16 +138,25 @@ Deno.serve(async (req) => {
     if ("error" in who) return who.error;
     channel = who.channel;
     const probe = tool === "_time_record_of" && channel === "voice";
-    const handler = (channel === "app" ? APP_TOOLS : VOICE_TOOLS)[tool];
-    if (!handler && !probe) return json({ error: "unknown_tool", tool }, 404);
+    const ng = who.user?.market_id === "ng";
+    // Nigeria has its own tools; the app's settings tools (PIN, language) are shared.
+    const ngHandler: NgTool | undefined = ng ? (channel === "app" ? NG_APP_TOOLS : NG_VOICE_TOOLS)[tool] : undefined;
+    const handler: Tool | undefined = ngHandler ? undefined
+      : ng && !(tool === "set_pin" || tool === "update_settings") ? undefined
+      : (channel === "app" ? APP_TOOLS : VOICE_TOOLS)[tool];
+    if (!handler && !ngHandler && !probe && who.user) return json({ error: "unknown_tool", tool }, 404);
+    if (!who.user && !(channel === "app" ? APP_TOOLS : VOICE_TOOLS)[tool]) return json({ error: "unknown_tool", tool }, 404);
 
     if (!who.user) {
       result = { text: "I don't recognise this number yet. Offer to set up Plus for them.", known: false };
     } else {
       userId = who.user.id;
+      const base = { user: who.user, channel, args, explorer: EXPLORER, contractId: CONTRACT_ID };
       result = probe
         ? await timeRecordOf(who.user)
-        : await handler({ user: who.user, channel, store, args, explorer: EXPLORER, contractId: CONTRACT_ID });
+        : ngHandler
+        ? await ngHandler({ ...base, store: ngStore, ngntSac: NGNT_SAC, codeSecret: Deno.env.get("CASHOUT_CODE_SECRET") ?? "" })
+        : await handler!({ ...base, store });
       // A confirmed action may have queued on-chain records: start the worker now.
       if (tool === "confirm_action" && result.ok) EdgeRuntime.waitUntil(kickChainWorker());
     }

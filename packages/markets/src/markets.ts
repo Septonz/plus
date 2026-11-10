@@ -24,7 +24,14 @@ export interface Market {
   inboundCorridors: string[];
   autoSave: { enabled: boolean; defaultBps: number };
   groupSavings: { mode: "record" | "pooled"; localName: string };
-  advance: { min: number; max: number; feeBps: number; eligibleAfterWeeks: number };
+  /** repayFromCashInBps: share of each cash-in that repays an open advance (Nigeria: on-chain, automatic). */
+  advance: { min: number; max: number; feeBps: number; eligibleAfterWeeks: number; repayFromCashInBps: number };
+  /** claimable_code cash-outs: agents can claim at once; the user can take it back after returnAfterDays. */
+  cashOutCode: { digits: number; returnAfterDays: number; maxAttempts: number } | null;
+  /** Hours a helper's or agent's cash-in waits for the user's Yes before it expires. */
+  cashInExpiryHours: number;
+  /** App screens, in bottom-nav order; the app picks screens and wording from this. */
+  screens: Screen[];
   record: "attested" | "native";
   /** Above this amount (major units) a payment needs the PIN, typed on the app's PIN pad. */
   pinThreshold: number;
@@ -36,6 +43,8 @@ export interface Market {
   /** Services used by helpers (group leaders, correspondents, agents), never by the voice agent. */
   helperServices: string[];
 }
+
+export type Screen = "home" | "pay" | "group" | "advance" | "record" | "add_money" | "add_cash" | "cash_out" | "settings";
 
 export const SERVICES: readonly string[] = [
   "get_user",
@@ -75,7 +84,10 @@ export const MARKETS: Record<MarketId, Market> = {
     inboundCorridors: ["CA"],
     autoSave: { enabled: true, defaultBps: 1000 },
     groupSavings: { mode: "record", localName: "seettu" },
-    advance: { min: 2000, max: 10000, feeBps: 150, eligibleAfterWeeks: 8 },
+    advance: { min: 2000, max: 10000, feeBps: 150, eligibleAfterWeeks: 8, repayFromCashInBps: 1000 },
+    cashOutCode: null,
+    cashInExpiryHours: 24,
+    screens: ["home", "pay", "group", "advance", "record", "add_money", "settings"],
     record: "attested",
     pinThreshold: 2000,
     payDailyLimit: 10000,
@@ -99,7 +111,10 @@ export const MARKETS: Record<MarketId, Market> = {
     inboundCorridors: [],
     autoSave: { enabled: true, defaultBps: 1000 },
     groupSavings: { mode: "pooled", localName: "ajo" },
-    advance: { min: 5000, max: 30000, feeBps: 150, eligibleAfterWeeks: 8 },
+    advance: { min: 5000, max: 30000, feeBps: 150, eligibleAfterWeeks: 8, repayFromCashInBps: 1000 },
+    cashOutCode: { digits: 6, returnAfterDays: 7, maxAttempts: 5 },
+    cashInExpiryHours: 24,
+    screens: ["home", "add_cash", "pay", "group", "advance", "cash_out", "record", "settings"],
     record: "native",
     pinThreshold: 20000,
     payDailyLimit: 200000,

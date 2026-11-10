@@ -12,8 +12,11 @@
     "bindings": "node scripts/bindings.mjs",
     "seed:db": "pnpm --filter @plus/client build && node scripts/seed-db.ts",
     "staff:create": "node scripts/create-staff.ts",
-    "test:functions": "deno test --allow-env=PIN_PEPPER,USER_REF_SECRET supabase/functions/_shared/",
-    "e2e": "node scripts/e2e.ts"
+    "test:functions": "deno test --no-config --node-modules-dir=none --allow-env=PIN_PEPPER,USER_REF_SECRET supabase/functions/_shared/",
+    "e2e": "node scripts/e2e.ts",
+    "e2e:ng": "node scripts/e2e-ng.ts",
+    "bench:rpc": "deno run -A --no-config --node-modules-dir=none scripts/bench-rpc.ts",
+    "bench:confirm": "node scripts/bench-confirm.ts"
   },
   "devDependencies": {
     "@plus/client": "workspace:*",
