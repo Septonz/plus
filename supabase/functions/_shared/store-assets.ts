@@ -82,10 +82,13 @@ export function supabaseAssetStore(db: SupabaseClient): AssetStore {
       const ajo = groups.length
         ? must(await db.from("group_members").select("user_id").in("group_id", groups).not("user_id", "is", null).neq("user_id", userId), "ajo") as { user_id: string }[]
         : [];
-      const payees = must(await db.from("payees").select("phone").eq("user_id", userId).not("phone", "is", null), "payees") as { phone: string }[];
-      const paid = payees.length
-        ? must(await db.from("users").select("id").in("wa_phone", payees.map((p) => p.phone)).is("archived_at", null).neq("id", userId), "paid") as { id: string }[]
-        : [];
+      const payees = must(await db.from("payees").select("phone, stellar_address").eq("user_id", userId), "payees") as { phone: string | null; stellar_address: string | null }[];
+      const phones = payees.map((p) => p.phone).filter((x): x is string => !!x);
+      const addrs = payees.map((p) => p.stellar_address).filter((x): x is string => !!x);
+      const paid = [
+        ...(phones.length ? must(await db.from("users").select("id").in("wa_phone", phones).is("archived_at", null).neq("id", userId), "paid") as { id: string }[] : []),
+        ...(addrs.length ? must(await db.from("users").select("id").in("stellar_pub", addrs).is("archived_at", null).neq("id", userId), "paid") as { id: string }[] : []),
+      ];
       const how = new Map<string, string>();
       for (const a of ajo) how.set(a.user_id, "ajo");
       for (const p of paid) if (!how.has(p.id)) how.set(p.id, "paid");
