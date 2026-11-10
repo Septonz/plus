@@ -41,14 +41,16 @@ export function withCors(handler: (req: Request) => Response | Promise<Response>
 }
 
 export function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...CORS_HEADERS } });
+  // Amounts are bigint (kobo, paise); they travel as strings.
+  return new Response(JSON.stringify(body, (_k, v) => (typeof v === "bigint" ? v.toString() : v)), { status, headers: { "content-type": "application/json", ...CORS_HEADERS } });
 }
 
 const BOOTED_AT = Date.now();
 let healthHits = 0;
 
 /**
- * GET .../<function>/health: no auth, no database, nothing secret. Used by `pnpm warm` and the
+ * GET .../<function>/health: no database, nothing secret. No auth, except in scheduler and
+ * sync-events (verify_jwt off), where jobGate (cron.ts) checks the secret first. Used by `pnpm warm` and the
  * warm-up cron so no demo request hits a cold start. `cold` is true on the first call this
  * isolate has served.
  */

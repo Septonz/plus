@@ -20,8 +20,11 @@ sends Nigeria users to the Nigeria tools by their `market_id`, so the URLs are t
 | `bank_details` | Her account number for bank transfers in (Partner bank, simulated) | none |
 | `group_status` | Ajo: who paid, whose turn, read from the contract | none |
 | `prepare_ajo_contribution` | Prepares her ajo part for this round | none |
-| `advance_status` | Limit, fee in naira, or what's left to repay | none |
-| `prepare_advance` | Prepares an advance: one fee, no interest, no late fees, 10% of each cash-in | `amount` (naira) |
+| `loan_status` | Her loan picture: progress ("week 4 of 6") and an estimate before unlock; the offer, why, and the ladder after; or what's left on an open loan | none |
+| `prepare_loan` | Prepares accepting the offer (receive, cost, total); always the PIN on screen | `amount` (naira, optional: less than the offer) |
+| `prepare_loan_repay` | Prepares a repayment from her wallet, up to what she owes | `amount` (naira, optional: all) |
+| `loan_more_time` | "I need more time": next payment moves 2 weeks, no cost, once; new borrowing pauses | none |
+| `loan_restructure` | After a missed payment: smaller minimum, no cost, once | none |
 | `prepare_cashout` | Prepares a cash-out; the 6-digit code shows on her screen only | `amount` (naira) |
 | `cash_outs` | Open cash-outs and when they expire | none |
 | `confirm_action` | Confirms by voice up to the PIN threshold (₦5,000); "sending", then the tick | `action_id` |

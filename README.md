@@ -28,7 +28,7 @@ Before every rehearsal: `pnpm demo:reset ng` (and `pnpm demo:reset in`), then `p
 | 0:08 | Mama Bisi records ₦500 on /agent. Funmi's phone: "Mama Bisi says you gave her ₦500. Is that right?" | "She hands cash to Mama Bisi, a Plus agent. Nothing moves until Funmi herself says yes." |
 | 0:15 | Funmi taps **Yes** on the confirm sheet. "Sending…", then the tick. The feed shows *Mama Bisi → Funmi* with its seconds | "About five seconds, and anyone can check it: here it is on Stellar Expert." |
 | 0:25 | **Ajo** card: 4 of 5 ticks, each linking to its transaction. Funmi taps **Pay my part** | "Her ajo's pot is held by a contract nobody can edit or run off with. It pays Amaka tomorrow, on time." |
-| 0:35 | **Advance** card: up to ₦20,000, **one fee ₦300**, no interest, no late fees, 10% of each cash-in | "The full cost in naira, before she agrees. If she falls behind, her limit just pauses. Nobody is called." |
+| 0:35 | **Loan** card: "you receive ₦30,000, cost ₦1,800, total ₦31,800", why (activity 40%, verified assets 35%, savings 25%), the ladder; accept with her PIN | "The full cost in naira, before she agrees, and why she got it. Her verified stall stock backs it. If she needs more time, she asks; nobody else is ever contacted." |
 | 0:45 | **Wallet** card → **Cash out** ₦2,000: a 6-digit code; Mama Bisi redeems it on /agent; the feed shows the claim | "Cash out works the same way: the money waits on Stellar for the agent holding her code." |
 | 0:55 | Switch to **India**: Selvi's phone | "Same agent, same record, for people who do have a bank account." |
 
@@ -112,6 +112,13 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   production they would be in a KMS/HSM or held by the user (passkeys).
 - Demo people (Funmi, Selvi, Mama Bisi) sign in with a demo password; new users sign up with a
   phone code and sign in with phone + PIN.
+- Loans: the partner lender and its lending account (`lending_ng`, NGNT on testnet) are simulated;
+  the numbers (ladder, cost, repayment) are illustrative and live in the market pack. Her weeks
+  before Plus recorded them are a **compressed demo history** (`credit_history_seed`: weekly
+  summaries topped up by `pnpm demo:reset ng`); everything after is read from her real
+  transactions. Kemi (new to Plus, "week 4 of 6") is a real sign-up on a test number whose start
+  date the reset moves back 23 days. The old 1.5% advance is retired from the app; its contract
+  functions stay.
 - Ajo rounds are 1 day (real ajo: weekly or monthly); Funmi's 8 weeks of history were run with
   1-minute rounds.
 - `pnpm demo:reset` tops up or sweeps balances through the test issuer between rehearsals (these
@@ -137,8 +144,9 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
 
 ### Demo tools
 
-- `pnpm demo:reset ng`: Funmi back to the starting state: ₦26,400, no advance (the partner settles
-  one if open), an ajo round she hasn't paid (a new round with the same members if she has), no
+- `pnpm demo:reset ng`: Funmi back to the starting state: ₦26,400, no loan open (an open one is
+  settled by the reset, which doesn't count toward her ladder) and a ₦30,000 offer, her stall stock
+  independently verified, no advance (the partner settles one if open); Kemi in week 4 of 6; an ajo round she hasn't paid (a new round with the same members if she has), no
   pending actions or unused cash-out codes, Mama Bisi's float ₦200,000. `pnpm demo:reset in`:
   Selvi at ₹2,350 to spend and ₹1,415 saved, no advance, seettu unpaid this round. Never deletes
   anything; it only adds transactions. Prints the state the app shows.

@@ -18,8 +18,8 @@
 // Idempotent; answers the public address only. The issuer then funds it (pnpm demo:reset ng).
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
-import { mayRunJob } from "../_shared/cron.ts";
-import { DEMO_FUNCTIONS, health, json, kickChainWorker } from "../_shared/http.ts";
+import { jobGate } from "../_shared/cron.ts";
+import { DEMO_FUNCTIONS, json, kickChainWorker } from "../_shared/http.ts";
 import { contractReader, refreshBalances } from "../_shared/ng-chain.ts";
 import { payoutSplit } from "../_shared/tools-ng.ts";
 
@@ -144,6 +144,14 @@ async function returnCashOuts(now: Date) {
   return returned;
 }
 
+/** Loans: the two-weekly minimum, or a reminder, grace, late, then frozen. Nobody else is contacted. */
+async function loanMinimums() {
+  const { getMarket } = await import("../_shared/markets.ts");
+  const l = getMarket("ng").lending;
+  if (!l) return { skipped: true };
+  return must(await db.rpc("ng_loan_minimums", { p_grace_days: l.graceDays }), "ng_loan_minimums");
+}
+
 async function step<T>(name: string, fn: () => Promise<T>): Promise<T | { error: string }> {
   try {
     return await fn();
@@ -161,7 +169,10 @@ async function warm() {
   const results = await Promise.all(DEMO_FUNCTIONS.filter((f) => f !== "scheduler").map(async (fn) => {
     const t = performance.now();
     try {
-      const r = await fetch(`${base}/${fn}/health`, { signal: AbortSignal.timeout(10_000) });
+      const r = await fetch(`${base}/${fn}/health`, {
+        headers: { "x-plus-secret": Deno.env.get("AGENT_SHARED_SECRET") ?? "" },
+        signal: AbortSignal.timeout(10_000),
+      });
       const body = await r.json().catch(() => ({})) as { cold?: boolean };
       return { fn, status: r.status, cold: body.cold ?? null, ms: Math.round(performance.now() - t) };
     } catch (e) {
@@ -171,7 +182,8 @@ async function warm() {
   return { ok: true, warmed: results };
 }
 
-const SYSTEM_SIGNERS = new Set(["anchor_ng"]);
+/** System accounts: the bank-rail anchor and the partner lender's lending account (piece 4). */
+const SYSTEM_SIGNERS = new Set(["anchor_ng", "lending_ng"]);
 
 async function provision(req: Request) {
   let signer = "";
@@ -190,6 +202,7 @@ async function provision(req: Request) {
     must(await db.rpc("wallet_key_put", { p_signer: signer, p_secret: kp.secret() }), "wallet_key_put");
     pub = kp.publicKey();
   }
+  must(await db.from("system_wallets").upsert({ signer, pub }), "system_wallets");
   const out = must(
     await db.rpc("chain_enqueue_on", {
       p_signer: "partner",
@@ -205,20 +218,22 @@ async function provision(req: Request) {
 }
 
 Deno.serve(async (req) => {
-  const up = health(req, "scheduler");
-  if (up) return up;
-  if (!(await mayRunJob(req, db))) return json({ error: "unauthorized" }, 401);
+  // First, before every route (/health included): 401 without the cron or agent secret.
+  const gate = await jobGate(req, db, "scheduler");
+  if (gate) return gate;
   if (new URL(req.url).pathname.endsWith("/warm")) return json(await warm());
   if (new URL(req.url).pathname.endsWith("/provision")) return json(await provision(req));
   const now = new Date();
   const t0 = performance.now();
   const expired = await step("expire", expireActions);
-  const [balances, payouts, returns] = await Promise.all([
+  const [balances, payouts, returns, loans] = await Promise.all([
     step("balances", refreshNigeria),
     step("payouts", () => ajoPayouts(now)),
     step("cash_out_returns", () => returnCashOuts(now)),
+    step("loans", loanMinimums),
   ]);
-  const queued = (Array.isArray(payouts) && payouts.length > 0) || (Array.isArray(returns) && returns.length > 0);
+  const paid = (loans as { minimums_paid?: number })?.minimums_paid ?? 0;
+  const queued = (Array.isArray(payouts) && payouts.length > 0) || (Array.isArray(returns) && returns.length > 0) || paid > 0;
   if (queued) await kickChainWorker();
-  return json({ ok: true, expired, balances, payouts, returns, ms: Math.round(performance.now() - t0) });
+  return json({ ok: true, expired, balances, payouts, returns, loans, ms: Math.round(performance.now() - t0) });
 });

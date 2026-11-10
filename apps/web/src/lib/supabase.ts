@@ -25,4 +25,6 @@ export const DEMO_PASSWORD = import.meta.env.VITE_DEMO_LOGIN_PASSWORD as string 
 export const DEMO_SELVI_EMAIL = 'demo-selvi@example.com'
 export const DEMO_MEENA_EMAIL = 'demo-meena@example.com'
 export const DEMO_FUNMI_EMAIL = 'demo-funmi@example.com'
+/** Kemi: new to Plus (week 4 of 6), building her history toward a first loan. Created by `pnpm demo:reset ng`. */
+export const DEMO_KEMI_EMAIL = 'demo-kemi@example.com'
 export const DEMO_MAMA_BISI_EMAIL = 'demo-mamabisi@example.com'

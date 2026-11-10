@@ -1,5 +1,6 @@
 // pnpm warm: wake every Edge Function the demo uses, so the first tap of the demo doesn't pay for a
-// cold start. Calls GET /functions/v1/<fn>/health (no auth, no database, nothing secret) twice per
+// cold start. Calls GET /functions/v1/<fn>/health (no database, nothing secret; scheduler and
+// sync-events want the agent secret even there) twice per
 // function and prints whether the first call found it cold.
 //
 //   pnpm warm            once, right before the demo
@@ -16,7 +17,11 @@ const FUNCTIONS = ["agent-tools", "chain-worker", "agent-api", "voice-session", 
 async function ping(fn: string): Promise<{ ms: number; cold: boolean | null; status: number }> {
   const t0 = performance.now();
   try {
-    const r = await fetch(`${url}/functions/v1/${fn}/health`, { signal: AbortSignal.timeout(15_000) });
+    // scheduler and sync-events answer /health only with the agent secret (they run without a JWT check).
+    const r = await fetch(`${url}/functions/v1/${fn}/health`, {
+      headers: { "x-plus-secret": process.env.AGENT_SHARED_SECRET ?? "" },
+      signal: AbortSignal.timeout(15_000),
+    });
     const body = await r.json().catch(() => ({})) as { cold?: boolean };
     return { ms: Math.round(performance.now() - t0), cold: body.cold ?? null, status: r.status };
   } catch {

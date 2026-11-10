@@ -456,7 +456,9 @@ entrypoint = "./functions/sender-api/index.ts"
 
 [functions.sync-events]
 enabled = true
-verify_jwt = true
+# pg_cron calls it with x-plus-cron-secret and no JWT; jobGate (_shared/cron.ts) checks the secret
+# first, on every route (job-gate.test.ts). Approved 2026-11-10; see CLAUDE.md.
+verify_jwt = false
 import_map = "./functions/sync-events/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -467,7 +469,9 @@ entrypoint = "./functions/sync-events/index.ts"
 
 [functions.scheduler]
 enabled = true
-verify_jwt = true
+# pg_cron calls it with x-plus-cron-secret and no JWT; jobGate (_shared/cron.ts) checks the secret
+# first, on every route (job-gate.test.ts). Approved 2026-11-10; see CLAUDE.md.
+verify_jwt = false
 import_map = "./functions/scheduler/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -475,3 +479,36 @@ entrypoint = "./functions/scheduler/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/scheduler/*.html" ]
+
+[functions.chain-worker]
+enabled = true
+# pg_cron and the chain_outbox trigger call it with x-plus-cron-secret and no JWT; jobGate
+# (_shared/cron.ts) checks the secret first, on every route (job-gate.test.ts).
+# Approved 2026-11-10; see CLAUDE.md.
+verify_jwt = false
+import_map = "./functions/chain-worker/deno.json"
+entrypoint = "./functions/chain-worker/index.ts"
+
+[functions.agent-api]
+enabled = true
+# Checks the agent's own login (Supabase Auth) first, before any endpoint (login-gate.test.ts).
+# Approved 2026-11-10; see CLAUDE.md.
+verify_jwt = false
+import_map = "./functions/agent-api/deno.json"
+entrypoint = "./functions/agent-api/index.ts"
+
+[functions.helper-api]
+enabled = true
+# Checks the helper's own login (Supabase Auth) first, before any endpoint (login-gate.test.ts).
+# Approved 2026-11-10; see CLAUDE.md.
+verify_jwt = false
+import_map = "./functions/helper-api/deno.json"
+entrypoint = "./functions/helper-api/index.ts"
+
+[functions.voice-session]
+enabled = true
+# Checks her login, or a sign-up's signed onboarding token, first (login-gate.test.ts).
+# Approved 2026-11-10; see CLAUDE.md.
+verify_jwt = false
+import_map = "./functions/voice-session/deno.json"
+entrypoint = "./functions/voice-session/index.ts"

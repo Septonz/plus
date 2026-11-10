@@ -506,21 +506,23 @@ function NinStep({ st, doc, agent, busy, msg, onCheck, onSkip }: {
   const t1 = m.kyc.tiers[1]
   const t2 = m.kyc.tiers[2]
   const money = (n: number) => formatMoney(BigInt(n) * 100n, st.market)
+  // Nigeria: loans (piece 4) replace the advance; a verified identity is one of the loan steps.
+  const credit = m.lending ? 'counts toward a loan' : 'opens advances later'
   return (
-    <Panel k="addNin" why={`Your ${doc.name} lets you send and keep more, and opens advances later. Type it here; never say it out loud. Plus keeps only the last 4 numbers and a scrambled check, never the whole number.`}>
+    <Panel k="addNin" why={`Your ${doc.name} lets you send and keep more, and ${credit}. Type it here; never say it out loud. Plus keeps only the last 4 numbers and a scrambled check, never the whole number.`}>
       {agent && <Notice tone="info">Turn the screen to her. She types her {doc.name} herself.</Notice>}
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div className="rounded-card bg-surface p-4 shadow-card">
           <p className="text-xs font-semibold text-secondary">Now</p>
           <p className="num mt-1 text-base">{money(t1.dailyLimit)} a day</p>
           <p className="text-secondary">Hold {money(t1.balanceLimit)}</p>
-          <p className="text-secondary">No advances</p>
+          <p className="text-secondary">{m.lending ? 'Loan: not yet' : 'No advances'}</p>
         </div>
         <div className="rounded-card bg-accent-soft p-4">
           <p className="text-xs font-semibold text-accent-ink">With {doc.name}</p>
           <p className="num mt-1 text-base">{money(t2.dailyLimit)} a day</p>
           <p className="text-secondary">Hold {money(t2.balanceLimit)}</p>
-          <p className="text-secondary">Advances after {m.advance.eligibleAfterWeeks} weeks</p>
+          <p className="text-secondary">{m.lending ? `Loan after ${m.lending.unlock.weeks} weeks` : `Advances after ${m.advance.eligibleAfterWeeks} weeks`}</p>
         </div>
       </div>
       <Digits value={nin} length={doc.digits} group={[4, 8]} />

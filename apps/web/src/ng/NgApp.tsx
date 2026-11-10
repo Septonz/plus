@@ -12,7 +12,7 @@ import { settle, useScreenTools } from '../plus/screen'
 import { ENGLISH, LangContext } from '../plus/ui'
 import { VoiceButton } from '../plus/voice'
 import { NgConfirmSheet } from './confirm'
-import { AddCash, Advance, Ajo, CashOut, Home, Pay, Record, Settings, WalletDetail, type Detail } from './screens'
+import { AddCash, Ajo, CashOut, Home, Loan, Pay, Record, Settings, WalletDetail, type Detail } from './screens'
 import { MIC_WORDS, naira, W, yo } from './words'
 
 export type Wallet = { NGNT: bigint; USDC: bigint; updated_at: string | null }
@@ -57,7 +57,7 @@ const VOICE_SCREENS: Record<string, { tab?: Tab; detail?: Detail }> = {
   add_money: { detail: 'add_cash' },
   pay: { tab: 'pay' },
   ajo: { detail: 'group' },
-  advance: { detail: 'advance' },
+  loan: { detail: 'loan' },
   cash_out: { detail: 'cash_out' },
   activity: { tab: 'record' },
   profile: { tab: 'settings' },
@@ -68,7 +68,7 @@ const TABS: Tab[] = ['home', 'pay', 'record', 'settings']
 const DETAIL_TITLE: Record<Detail, [string, string | undefined]> = {
   wallet: [W.wallet.en, yo('wallet')],
   group: [W.ajo.en, yo('ajo')],
-  advance: [W.advance.en, yo('advance')],
+  loan: [W.loan.en, yo('loan')],
   add_cash: [W.addMoney.en, yo('addMoney')],
   cash_out: [W.cashOut.en, yo('cashOut')],
 }
@@ -97,7 +97,7 @@ export default function NgApp({ data }: { data: PlusData }) {
       setOpen(null)
       setTab(s as Tab)
       window.scrollTo({ top: 0 })
-    } else if (s === 'group' || s === 'advance' || s === 'add_cash' || s === 'cash_out') {
+    } else if (s === 'group' || s === 'loan' || s === 'add_cash' || s === 'cash_out') {
       openDetail(s, false)
     }
   }, [openDetail])
@@ -157,7 +157,7 @@ export default function NgApp({ data }: { data: PlusData }) {
           <CardDetail key={open} id={open} title={DETAIL_TITLE[open][0]} sub={DETAIL_TITLE[open][1]} fromPass={fromPass} onClose={() => setOpen(null)}>
             {open === 'wallet' && <WalletDetail wallet={wallet} version={data.version} onOpen={(d) => openDetail(d, false)} />}
             {open === 'group' && <Ajo {...props} />}
-            {open === 'advance' && <Advance {...props} />}
+            {open === 'loan' && <Loan {...props} />}
             {open === 'add_cash' && <AddCash {...props} onAnswer={onAnswer} />}
             {open === 'cash_out' && <CashOut {...props} shownCode={shownCode} onShowCode={setShownCode} />}
           </CardDetail>

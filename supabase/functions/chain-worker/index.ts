@@ -22,9 +22,9 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { createWalletOps, type OutboxRow, operationFor, railOf } from "../_shared/chain-ops.ts";
-import { mayRunJob } from "../_shared/cron.ts";
+import { jobGate } from "../_shared/cron.ts";
 import { refreshBalances } from "../_shared/ng-chain.ts";
-import { json, health } from "../_shared/http.ts";
+import { json } from "../_shared/http.ts";
 import { isNetworkError, OutcomeUnknownError, StellarSdk, SubmitRejectedError, submitTransaction, txHashHex, withRetry } from "../_shared/stellar.ts";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
@@ -429,9 +429,9 @@ async function dueSigners(only?: string): Promise<string[]> {
 declare const EdgeRuntime: { waitUntil(p: PromiseLike<unknown>): void };
 
 Deno.serve(async (req) => {
-  const up = health(req, "chain-worker");
-  if (up) return up;
-  if (!(await mayRunJob(req, db))) return json({ error: "unauthorized" }, 401);
+  // First, before every route (/health included): 401 without the cron or agent secret.
+  const gate = await jobGate(req, db, "chain-worker");
+  if (gate) return gate;
   if (!CONTRACT_ID) return json({ error: "not_configured" }, 503);
   let only: string | undefined;
   try {

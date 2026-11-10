@@ -29,6 +29,8 @@ export interface Market {
   groupSavings: { mode: "record" | "pooled"; localName: string };
   /** repayFromCashInBps: share of each cash-in that repays an open advance (Nigeria: on-chain, automatic). */
   advance: { min: number; max: number; feeBps: number; eligibleAfterWeeks: number; repayFromCashInBps: number };
+  /** Loans from a partner lender (Nigeria). null: not offered in this market yet. */
+  lending: Lending | null;
   /** claimable_code cash-outs: agents can claim at once; the user can take it back after returnAfterDays. */
   cashOutCode: { digits: number; returnAfterDays: number; maxAttempts: number } | null;
   /** Hours a helper's or agent's cash-in waits for the user's Yes before it expires. */
@@ -53,6 +55,42 @@ export interface Market {
   helperServices: string[];
 }
 
+/**
+ * The lending model (illustrative numbers; the partner lender sets the real ones). Amounts in major
+ * units (naira); rates in basis points.
+ *
+ * Unlock: account open `weeks`+, money in during `activeWeeks` of them, `minQualifyingTx`
+ * qualifying transactions (circular or back-and-forth transfers don't count), identity verified,
+ * good standing, and one verified asset (the collateral). Before that she sees her progress, and an
+ * estimate that is not an offer. Never the words "rejected" or "not eligible".
+ *
+ * The offer is the lowest of: this step's ladder amount, what she can afford, and her verified
+ * assets' lending value divided by the collateral this step needs.
+ */
+export interface Lending {
+  unlock: { weeks: number; activeWeeks: number; minQualifyingTx: number };
+  /** Why she got it: weights (percent) of the score shown on the offer. */
+  weights: { activity: number; assets: number; savings: number };
+  /** The rewards ladder: each repaid loan moves her up one step (the last step repeats). */
+  ladder: { max: number; costBps: number; collateralPct: number; approval: string }[];
+  /** Repayment: repayBps of every money-in, plus at least `minimum` every `everyDays`. */
+  repay: { fromMoneyInBps: number; minimum: number; everyDays: number };
+  /** Affordability: what she can repay over `weeks` from repayBps of her typical weekly money-in, plus the minimums. Rounded down to `roundTo`. */
+  affordability: { weeks: number; roundTo: number };
+  /** Lending value of a verified asset, by verification level (basis points of its estimated value). */
+  lendingValueBps: Record<AssetLevel, number>;
+  /** Missed payment path: a reminder with `graceDays`, then late (restructure offered), then borrowing frozen. */
+  graceDays: number;
+  /** "I need more time": the next minimum moves by this many days; new borrowing pauses until repaid. */
+  extensionDays: number;
+  /** Restructure: a smaller minimum over a longer time. */
+  restructuredMinimum: number;
+  /** The partner lender, as she sees it. */
+  lenderLabel: string;
+}
+
+export type AssetLevel = "registered" | "evidence_verified" | "community_verified" | "independently_verified";
+
 export interface Tier {
   /** What she must give for this tier. */
   needs: ("name" | "phone" | "selfie" | "id_document")[];
@@ -70,7 +108,7 @@ export interface Kyc {
   idDocument: { name: string; digits: number; wrongTestNumber: string } | null;
 }
 
-export type Screen = "home" | "pay" | "group" | "advance" | "record" | "add_money" | "add_cash" | "cash_out" | "settings";
+export type Screen = "home" | "pay" | "group" | "advance" | "loan" | "record" | "add_money" | "add_cash" | "cash_out" | "settings";
 
 export const SERVICES: readonly string[] = [
   "get_user",
@@ -117,6 +155,7 @@ export const MARKETS: Record<MarketId, Market> = {
     autoSave: { enabled: true, defaultBps: 1000 },
     groupSavings: { mode: "record", localName: "seettu" },
     advance: { min: 2000, max: 10000, feeBps: 150, eligibleAfterWeeks: 8, repayFromCashInBps: 1000 },
+    lending: null,
     cashOutCode: null,
     cashInExpiryHours: 24,
     screens: ["home", "pay", "group", "advance", "record", "add_money", "settings"],
@@ -153,10 +192,28 @@ export const MARKETS: Record<MarketId, Market> = {
     inboundCorridors: [],
     autoSave: { enabled: true, defaultBps: 1000 },
     groupSavings: { mode: "pooled", localName: "ajo" },
+    // The 1.5% advance is retired from the app (its contract functions stay); loans replace it.
     advance: { min: 5000, max: 30000, feeBps: 150, eligibleAfterWeeks: 8, repayFromCashInBps: 1000 },
+    lending: {
+      unlock: { weeks: 6, activeWeeks: 4, minQualifyingTx: 12 },
+      weights: { activity: 40, assets: 35, savings: 25 },
+      ladder: [
+        { max: 30000, costBps: 600, collateralPct: 150, approval: "within a day" },
+        { max: 50000, costBps: 500, collateralPct: 125, approval: "within hours" },
+        { max: 80000, costBps: 450, collateralPct: 100, approval: "in minutes" },
+        { max: 80000, costBps: 450, collateralPct: 50, approval: "in minutes" },
+      ],
+      repay: { fromMoneyInBps: 1000, minimum: 2500, everyDays: 14 },
+      affordability: { weeks: 12, roundTo: 5000 },
+      lendingValueBps: { registered: 0, evidence_verified: 3000, community_verified: 4500, independently_verified: 6000 },
+      graceDays: 3,
+      extensionDays: 14,
+      restructuredMinimum: 1500,
+      lenderLabel: "Partner lender (simulated)",
+    },
     cashOutCode: { digits: 6, returnAfterDays: 7, maxAttempts: 5 },
     cashInExpiryHours: 24,
-    screens: ["home", "add_cash", "pay", "group", "advance", "cash_out", "record", "settings"],
+    screens: ["home", "add_cash", "pay", "group", "loan", "cash_out", "record", "settings"],
     record: "native",
     pinThreshold: 5000,
     payDailyLimit: 200000,
