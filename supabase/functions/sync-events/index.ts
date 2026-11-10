@@ -9,8 +9,8 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { Buffer } from "node:buffer";
 import { createClient } from "@supabase/supabase-js";
-import { mayRunJob } from "../_shared/cron.ts";
-import { json, health } from "../_shared/http.ts";
+import { jobGate } from "../_shared/cron.ts";
+import { json } from "../_shared/http.ts";
 import { StellarSdk, withRetry } from "../_shared/stellar.ts";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
@@ -44,9 +44,9 @@ function cursorLedger(cursor: string | undefined): number {
 }
 
 Deno.serve(async (req) => {
-  const up = health(req, "sync-events");
-  if (up) return up;
-  if (!(await mayRunJob(req, db))) return json({ error: "unauthorized" }, 401);
+  // First, before every route (/health included): 401 without the cron or agent secret.
+  const gate = await jobGate(req, db, "sync-events");
+  if (gate) return gate;
   if (!CONTRACT_ID) return json({ error: "not_configured" }, 503);
   const server = new rpc.Server(RPC_URL);
   const started = Date.now();

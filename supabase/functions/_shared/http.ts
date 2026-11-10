@@ -49,7 +49,8 @@ const BOOTED_AT = Date.now();
 let healthHits = 0;
 
 /**
- * GET .../<function>/health: no auth, no database, nothing secret. Used by `pnpm warm` and the
+ * GET .../<function>/health: no database, nothing secret. No auth, except in scheduler and
+ * sync-events (verify_jwt off), where jobGate (cron.ts) checks the secret first. Used by `pnpm warm` and the
  * warm-up cron so no demo request hits a cold start. `cold` is true on the first call this
  * isolate has served.
  */

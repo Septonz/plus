@@ -18,8 +18,8 @@
 // Idempotent; answers the public address only. The issuer then funds it (pnpm demo:reset ng).
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
-import { mayRunJob } from "../_shared/cron.ts";
-import { DEMO_FUNCTIONS, health, json, kickChainWorker } from "../_shared/http.ts";
+import { jobGate } from "../_shared/cron.ts";
+import { DEMO_FUNCTIONS, json, kickChainWorker } from "../_shared/http.ts";
 import { contractReader, refreshBalances } from "../_shared/ng-chain.ts";
 import { payoutSplit } from "../_shared/tools-ng.ts";
 
@@ -169,7 +169,10 @@ async function warm() {
   const results = await Promise.all(DEMO_FUNCTIONS.filter((f) => f !== "scheduler").map(async (fn) => {
     const t = performance.now();
     try {
-      const r = await fetch(`${base}/${fn}/health`, { signal: AbortSignal.timeout(10_000) });
+      const r = await fetch(`${base}/${fn}/health`, {
+        headers: { "x-plus-secret": Deno.env.get("AGENT_SHARED_SECRET") ?? "" },
+        signal: AbortSignal.timeout(10_000),
+      });
       const body = await r.json().catch(() => ({})) as { cold?: boolean };
       return { fn, status: r.status, cold: body.cold ?? null, ms: Math.round(performance.now() - t) };
     } catch (e) {
@@ -215,9 +218,9 @@ async function provision(req: Request) {
 }
 
 Deno.serve(async (req) => {
-  const up = health(req, "scheduler");
-  if (up) return up;
-  if (!(await mayRunJob(req, db))) return json({ error: "unauthorized" }, 401);
+  // First, before every route (/health included): 401 without the cron or agent secret.
+  const gate = await jobGate(req, db, "scheduler");
+  if (gate) return gate;
   if (new URL(req.url).pathname.endsWith("/warm")) return json(await warm());
   if (new URL(req.url).pathname.endsWith("/provision")) return json(await provision(req));
   const now = new Date();

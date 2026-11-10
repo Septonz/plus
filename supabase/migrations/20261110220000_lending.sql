@@ -46,7 +46,7 @@ alter table public.assets enable row level security;
 revoke all on public.assets from anon, authenticated;
 grant select (id, user_id, type, description, estimated_value, level, status, created_at, updated_at) on public.assets to authenticated;
 create policy assets_own_read on public.assets
-  for select to authenticated using (user_id = (select public.current_plus_user_id()));
+  for select to authenticated using ((select private.is_staff()) or user_id = (select private.current_plus_user_id()));
 
 -- ---------------------------------------------------------------------------
 -- Compressed demo history (weekly summaries). Real weeks come from transactions.
@@ -100,7 +100,7 @@ alter table public.loans enable row level security;
 revoke all on public.loans from anon, authenticated;
 grant select on public.loans to authenticated;
 create policy loans_own_read on public.loans
-  for select to authenticated using (user_id = (select public.current_plus_user_id()));
+  for select to authenticated using ((select private.is_staff()) or user_id = (select private.current_plus_user_id()));
 
 create table public.loan_events (
   id bigint generated always as identity primary key,
@@ -117,7 +117,7 @@ alter table public.loan_events enable row level security;
 revoke all on public.loan_events from anon, authenticated;
 grant select on public.loan_events to authenticated;
 create policy loan_events_own_read on public.loan_events
-  for select to authenticated using (user_id = (select public.current_plus_user_id()));
+  for select to authenticated using ((select private.is_staff()) or user_id = (select private.current_plus_user_id()));
 
 -- ---------------------------------------------------------------------------
 -- Her weeks with Plus: week 1 starts at member_since. Real weeks from completed transactions,

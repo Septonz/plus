@@ -20,6 +20,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm markets:check
+      - run: pnpm functions:check-jwt
       - run: pnpm build
 
   contract:
@@ -49,7 +50,7 @@ jobs:
         with:
           deno-version: v2.x
 
-      - run: deno test --no-config --node-modules-dir=none --allow-env=PIN_PEPPER,USER_REF_SECRET supabase/functions/_shared/
+      - run: deno test --no-config --node-modules-dir=none --allow-env=PIN_PEPPER,USER_REF_SECRET,AGENT_SHARED_SECRET,ALLOWED_ORIGINS --allow-read=supabase/functions supabase/functions/_shared/
       - name: Type-check every function
         run: |
           for f in agent-tools agent-api voice-session helper-api payout-sim chain-worker sync-events scheduler sender-api; do

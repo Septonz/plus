@@ -920,7 +920,7 @@ export const ngLoanStatus: NgTool = async ({ user, store, now = new Date() }) =>
     return { ...base, text: "New borrowing is frozen after missed payments. Her record keeps building; it opens again once things are back on track.", view: "paused" };
   }
   if (!p.unlocked) {
-    const todo = p.checklist.filter((x) => !x.done).map((x) => `${x.label.toLowerCase()} (${x.detail})`);
+    const todo = p.checklist.filter((x) => !x.done).map((x) => `${x.label.charAt(0).toLowerCase()}${x.label.slice(1)} (${x.detail})`);
     return {
       ...base,
       view: "building",

@@ -79,13 +79,13 @@ Deno.serve(withCors(async (req) => {
   const pre = preflight(req);
   if (pre) return pre;
   const endpoint = new URL(req.url).pathname.split("/").filter(Boolean).pop() ?? "";
-  const body = await readJson(req);
-  if (body instanceof Response) return body;
-
+  // Her login first, before the body is read or any endpoint runs (verify_jwt is off; login-gate.test.ts).
   const token = bearer(req);
   if (!token) return json({ error: "unauthorized" }, 401);
   const { data: auth, error: authErr } = await db.auth.getUser(token);
   if (authErr || !auth.user) return json({ error: "unauthorized" }, 401);
+  const body = await readJson(req);
+  if (body instanceof Response) return body;
   const { data: helper } = await db.from("helpers").select("id, name, role, market_id, daily_limit, active, demo_login")
     .eq("auth_user_id", auth.user.id).maybeSingle();
   if (!helper || !helper.active) return json({ error: "not_a_helper" }, 403);

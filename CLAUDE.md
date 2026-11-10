@@ -6,6 +6,11 @@ Plus is a voice-first wallet on Stellar. See README.md for the folder map and AG
 - Never commit secrets. Keys live only in Supabase secrets or Vault. .env files are never committed, only .env.example.
 - The Supabase MCP server is for the dev project only.
 
+## Edge Functions
+- `verify_jwt` for every function is set explicitly in `supabase/config.toml`, and `pnpm functions:check-jwt` (CI) holds it to an approved list. Never change that list without the owner's approval.
+- Why: `supabase functions deploy` applies config.toml. On 2026-11-10 a full deploy turned the gateway JWT check on for scheduler and sync-events, and pg_cron (which sends only `x-plus-cron-secret`, no JWT) got 401s for 45 minutes.
+- Approved `verify_jwt = false`: agent-tools, scheduler, sync-events, chain-worker, agent-api, helper-api, voice-session. Each checks its own secret or login as the first step of every route: `jobGate` (`_shared/cron.ts`) for the cron functions, the login check for the rest. `job-gate.test.ts` and `login-gate.test.ts` prove it; keep them passing when adding a route.
+
 ## Soroban
 - Use `#[contractevent]`, not `env.events().publish`.
 - Return `Result` with a `#[contracterror]` enum instead of panicking.
