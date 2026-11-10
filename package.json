@@ -15,6 +15,7 @@
     "test:functions": "deno test --no-config --node-modules-dir=none --allow-env=PIN_PEPPER,USER_REF_SECRET,AGENT_SHARED_SECRET,ALLOWED_ORIGINS --allow-read=supabase/functions supabase/functions/_shared/",
     "e2e": "node scripts/e2e.ts",
     "e2e:ng": "node scripts/e2e-ng.ts",
+    "e2e:loan": "node scripts/e2e-loan.ts",
     "demo:new-user": "node scripts/demo-new-user.ts",
     "screens": "node scripts/screens.ts",
     "demo:logins": "node scripts/demo-logins.ts",

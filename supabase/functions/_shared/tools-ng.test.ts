@@ -86,7 +86,12 @@ function fakeStore(w: World): NgStore {
       const a = w.actions.get(id)!;
       if (a.status !== "pending") return Promise.resolve({ action: a, claimed: false });
       w.executed.push({ id, extra });
-      const done: Action = { ...a, status: "done", result: { ok: true, sending: true, amount: a.params.amount, transaction_id: "t1", repay: extra.repay ?? 0 } };
+      const moves = a.params.amount !== undefined;
+      const done: Action = {
+        ...a, status: "done",
+        result: moves ? { ok: true, sending: true, amount: a.params.amount, transaction_id: "t1", repay: extra.repay ?? 0 }
+          : { ok: true, sending: false, amount: null, transaction_id: null, next_due_at: a.params.new_due_at ?? null, minimum: a.params.minimum ?? null },
+      };
       w.actions.set(id, done);
       return Promise.resolve({ action: done, claimed: true });
     },
@@ -573,6 +578,10 @@ Deno.test("loans: repay and more time while a loan is open; one loan at a time",
   const more = await ngLoanMoreTime(ctx());
   assertEquals(more.ok, true);
   assertEquals(w.actions.get(String(more.action_id))!.kind, "loan_extension");
+  const yes = await ngConfirmAction(ctx({ action_id: more.action_id }, "app"));
+  assertEquals(yes.status, "done");
+  assertEquals(yes.transaction_id, null); // no money moves: the screen shows Done without waiting for a tick
+  assertMatch(String(yes.text), /next payment is now due/);
   const again = await ngLoanMoreTime(setup({ credit: { frozen_until: null, weeks: [], assets: [], loans: [{ ...open, extended_once: true }] } }).ctx());
   assertEquals(again.error, "already_extended");
 });

@@ -717,7 +717,9 @@ export const ngPrepareCashout: NgTool = async ({ user, store, args, now = new Da
 
 function doneText(a: Action): string {
   const r = a.result ?? {};
-  const amt = say(String(r.amount ?? a.params.amount));
+  // More time and smaller payments move no money: no amount to say.
+  const raw = r.amount ?? a.params.amount;
+  const amt = raw === undefined || raw === null ? "" : say(String(raw));
   const tail = " Sending on Stellar now; the tick shows on her screen in a few seconds.";
   switch (a.kind) {
     case "pay":
