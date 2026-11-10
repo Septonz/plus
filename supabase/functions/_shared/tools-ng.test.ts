@@ -10,6 +10,7 @@ import {
   type NgContext,
   type NgStore,
   ngConfirmAction,
+  ngHelp,
   ngNeedsPin,
   ngPrepareAdvance,
   ngPrepareAjo,
@@ -194,7 +195,9 @@ Deno.test("advance read-back states the fee in naira, no interest, no late fees,
   assertMatch(r.text, /fee is 300 naira/);
   assertMatch(r.text, /No interest and no late fees/);
   assertMatch(r.text, /10 percent of every cash-in/);
-  assertMatch(r.text, /check her screen and tap Yes/);
+  // Above ₦5,000 a voice yes is not enough: the PIN, on her screen.
+  assertMatch(r.text, /type her PIN there/);
+  assertEquals(r.requires_pin, true);
   const a = [...w.actions.values()][0];
   assertEquals(a.kind, "advance");
   assertEquals(a.params.amount, "2000000");
@@ -263,7 +266,7 @@ Deno.test("pay Iya Tunde: NGNT to her Stellar wallet, read back in naira", async
   assertEquals(capped.error, "daily_limit");
 });
 
-Deno.test("above ₦20,000 money leaving needs the PIN, typed on screen, never by voice", async () => {
+Deno.test("above ₦5,000 money leaving needs the PIN, typed on screen, never by voice", async () => {
   const { ctx } = setup({ available: N(100_000) });
   const store = ctx().store;
   const r = await ngPreparePay({ ...ctx({ payee: "Iya Tunde", amount: "25000" }), store });
@@ -274,6 +277,21 @@ Deno.test("above ₦20,000 money leaving needs the PIN, typed on screen, never b
   assertEquals(pinByVoice.error, "pin_not_allowed_by_voice");
   const app = await ngConfirmAction({ ...ctx({ action_id: r.action_id, pin: "1234" }, "app"), store });
   assertEquals(app.ok, true);
+  // ₦5,000 exactly: her spoken yes is enough.
+  const edge = await ngPreparePay({ ...ctx({ payee: "Iya Tunde", amount: "5000" }), store });
+  assertEquals(edge.requires_pin, false);
+  assertEquals((await ngConfirmAction({ ...ctx({ action_id: edge.action_id }), store })).ok, true);
+  const over = await ngPreparePay({ ...ctx({ payee: "Iya Tunde", amount: "5001" }), store });
+  assertEquals(over.requires_pin, true);
+});
+
+Deno.test("help: says what she can do, the voice-yes limit, and what is waiting first", async () => {
+  const { ctx } = setup();
+  const r = await ngHelp(ctx());
+  assertEquals(r.ok, true);
+  assertMatch(r.text, /pay a saved person/);
+  assertMatch(r.text, /up to 5,000 naira she confirms by saying yes/);
+  assertMatch(r.text, /move to any screen/);
 });
 
 Deno.test("ajo contribution: only if her part of this round is not paid yet", async () => {
@@ -451,7 +469,7 @@ Deno.test("pay someone not on Plus: a code they collect at an agent; the SMS sho
   assertEquals(app.cash_out_code, undefined); // her own cash-out code field stays empty
   // Only the HMAC was stored, bound to the sender.
   assertEquals(w.executed[1].extra.code_hash, await cashOutCodeHash("test-secret-0123456789abcdef0123456789abcdef", "u1", sms.code));
-  // Above ₦20,000 it needs the PIN like any money leaving her wallet.
+  // Above ₦5,000 it needs the PIN like any money leaving her wallet.
   const big = await ngPreparePay(ctx({ phone: "08035550101", amount: "25000" }));
   assertEquals(big.requires_pin, true);
 });

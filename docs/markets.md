@@ -20,7 +20,7 @@ India is the primary market. Nigeria is a smaller second pack that proves the co
 | Group savings | Seettu, recorded on-chain | Ajo, pooled in the contract |
 | Advance | ₹2,000 to ₹10,000, 1.5% fee, after 8 weeks | ₦5,000 to ₦30,000, 1.5% fee, after 8 weeks |
 | Record | Attested (on-chain hashes) | Native (on-chain history) |
-| PIN required above | ₹2,000 | ₦20,000 |
+| Voice "yes" up to, PIN on screen above | ₹500 | ₦5,000 |
 | Pay daily limit (`payDailyLimit`) | ₹10,000 | ₦200,000 |
 | ID check | Partner KYC (mock) | NIN (mock) |
 

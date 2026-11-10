@@ -117,9 +117,10 @@ function refuse(text: string, error: string, extra: Record<string, unknown> = {}
 const CHECK_SCREEN = "Ask her to check her screen and tap Yes, or say yes.";
 const PIN_ON_SCREEN = "Ask her to check her screen and type her PIN there. Never ask for the PIN out loud.";
 
-/** Money leaving her wallet above the market's PIN threshold needs the PIN, typed in the app. */
+/** Money moves up to the market's PIN threshold (₦5,000) take a spoken or tapped Yes; above it, the PIN, typed in the app. */
+export const NG_PIN_KINDS = ["pay", "pay_code", "group_contribution", "cash_out", "advance"];
 export function ngNeedsPin(a: Pick<Action, "kind" | "params">): boolean {
-  if (!["pay", "pay_code", "group_contribution", "cash_out"].includes(a.kind)) return false;
+  if (!NG_PIN_KINDS.includes(a.kind)) return false;
   return BigInt(String(a.params.amount ?? 0)) > BigInt(getMarket(M).pinThreshold) * 100n;
 }
 
@@ -660,7 +661,7 @@ export const ngPrepareAdvance: NgTool = async ({ user, store, args, ngntSac }) =
   });
   return {
     text: `Read back: an advance of ${say(amount)}. The fee is ${say(fee)}, one time. No interest and no late fees. ` +
-      `It pays itself back with ${pct} percent of every cash-in. ${CHECK_SCREEN}`,
+      `It pays itself back with ${pct} percent of every cash-in. ${confirmText(a)}`,
     ok: true,
     ...actionFields(a),
     amount_text: show(amount),
@@ -812,9 +813,43 @@ export const ngNewCashOutCode: NgTool = async ({ user, store, args, channel, cod
 };
 
 // ---------------------------------------------------------------------------
+// Help: what she can do, by voice or on the screen
+// ---------------------------------------------------------------------------
+
+/** "What can I do?": everything the app does, each one also by voice, and what is waiting for her. */
+export const ngHelp: NgTool = async ({ user, store }) => {
+  const [cash, pending] = await Promise.all([store.awaitingCashIns(user.id), store.pendingActions(user.id)]);
+  const pin = say(BigInt(getMarket(M).pinThreshold) * 100n);
+  const can = [
+    "check her balance and what came in",
+    "pay a saved person, or anyone by phone number (not on Plus: they get a code and collect cash at any agent)",
+    "pay her ajo and hear who collects this round",
+    "see her advance",
+    "cash out with a 6-digit code an agent redeems",
+    "add money: her bank account number for transfers, or cash with Mama Bisi",
+    "hear her record on Stellar",
+    "move to any screen: home, wallet, add money, pay, ajo, advance, cash out, activity, profile",
+  ];
+  const first: string[] = [];
+  for (const c of cash) first.push(`${c.helper_name} says she gave ${say(c.amount)} cash: is that right?`);
+  for (const a of pending.filter((x) => x.status === "pending")) first.push(`waiting for her Yes: ${a.readback}`);
+  return {
+    text: `She can do all of this by voice or on her screen: ${can.join("; ")}. ` +
+      `Money up to ${pin} she confirms by saying yes; above ${pin}, she types her PIN on the screen, never out loud.` +
+      (first.length ? ` First, waiting now: ${first.join("; ")}.` : "") +
+      " Offer two or three of these in one short sentence; don't read the whole list.",
+    ok: true,
+    can,
+    voice_yes_up_to_text: show(BigInt(getMarket(M).pinThreshold) * 100n),
+    waiting: first,
+  };
+};
+
+// ---------------------------------------------------------------------------
 
 export const NG_VOICE_TOOLS: Record<string, NgTool> = {
   get_user: ngGetUser,
+  help: ngHelp,
   get_balance: ngGetBalance,
   what_arrived: ngWhatArrived,
   prepare_pay: ngPreparePay,

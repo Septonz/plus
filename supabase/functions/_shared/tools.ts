@@ -690,10 +690,45 @@ export const updateSettings: Tool = async ({ user, store, args, channel }) => {
 };
 
 // ---------------------------------------------------------------------------
+// Help: what she can do, by voice or on the screen
+// ---------------------------------------------------------------------------
+
+/** "What can I do?": everything the app does, each one also by voice, and what is waiting for her. */
+export const help: Tool = async ({ user, store }) => {
+  const m = user.market_id;
+  const [cash, pending] = await Promise.all([store.awaitingCashIns(user.id), store.pendingActions(user.id)]);
+  const pin = say(BigInt(getMarket(m).pinThreshold) * 100n, m);
+  const can = [
+    "check her balance, her savings and what came in",
+    "pay a saved person: the flower wholesaler, the medical shop, and others",
+    "pay her seettu and see who has paid",
+    "change her auto-save percentage",
+    "see her advance",
+    "hear her record on Stellar",
+    "change the app's language (Tamil or English) and her trusted person",
+    "move to any screen: home, money, savings, seettu, advance, pay, activity, profile",
+  ];
+  const first: string[] = [];
+  for (const c of cash) first.push(`${c.helper_name} says she gave ${say(c.amount, m)} in cash: is that right?`);
+  for (const a of pending.filter((x) => x.status === "pending")) first.push(`waiting for her Yes: ${a.readback}`);
+  return {
+    text: `She can do all of this by voice or on her screen: ${can.join("; ")}. ` +
+      `Money up to ${pin} she confirms by saying yes; above ${pin}, she types her PIN on the screen, never out loud.` +
+      (first.length ? ` First, waiting now: ${first.join("; ")}.` : "") +
+      " Offer two or three of these in one short sentence; don't read the whole list.",
+    ok: true,
+    can,
+    voice_yes_up_to_text: show(BigInt(getMarket(m).pinThreshold) * 100n, m),
+    waiting: first,
+  };
+};
+
+// ---------------------------------------------------------------------------
 
 /** Tools the voice agent may call. */
 export const VOICE_TOOLS: Record<string, Tool> = {
   get_user: getUser,
+  help,
   get_balance: getBalance,
   what_arrived: whatArrived,
   set_auto_save: setAutoSave,
