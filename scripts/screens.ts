@@ -400,7 +400,7 @@ async function main() {
       await signedIn(page, "/agent", "plus-agent-auth", "demo-mamabisi@example.com");
       await page.waitText("Left today");
       await page.shot("60-agent-cash");
-      await page.click("Redeem code");
+      await page.click("Code");
       await page.shot("61-agent-redeem");
       await page.click("Register");
       await page.waitText("Register a customer");

@@ -11,6 +11,7 @@ import type { PendingAction, PlusData } from '../plus/data'
 import { settle, useScreenTools } from '../plus/screen'
 import { ENGLISH, LangContext } from '../plus/ui'
 import { VoiceButton } from '../plus/voice'
+import { Assets, requestPhoto } from './assets'
 import { NgConfirmSheet } from './confirm'
 import { AddCash, Ajo, CashOut, Home, Loan, Pay, Record, Settings, WalletDetail, type Detail } from './screens'
 import { MIC_WORDS, naira, W, yo } from './words'
@@ -58,6 +59,7 @@ const VOICE_SCREENS: Record<string, { tab?: Tab; detail?: Detail }> = {
   pay: { tab: 'pay' },
   ajo: { detail: 'group' },
   loan: { detail: 'loan' },
+  assets: { detail: 'assets' },
   cash_out: { detail: 'cash_out' },
   activity: { tab: 'record' },
   profile: { tab: 'settings' },
@@ -69,6 +71,7 @@ const DETAIL_TITLE: Record<Detail, [string, string | undefined]> = {
   wallet: [W.wallet.en, yo('wallet')],
   group: [W.ajo.en, yo('ajo')],
   loan: [W.loan.en, yo('loan')],
+  assets: [W.assets.en, yo('assets')],
   add_cash: [W.addMoney.en, yo('addMoney')],
   cash_out: [W.cashOut.en, yo('cashOut')],
 }
@@ -137,6 +140,12 @@ export default function NgApp({ data }: { data: PlusData }) {
       const r = await tool('simulate_bank_transfer', { amount: String(amount ?? ''), sender: 'Chidi Okeke' })
       return r.text
     },
+    take_photo: async ({ asset }) => {
+      setTab('home')
+      openDetail('assets', false)
+      await settle()
+      return await requestPhoto(asset === undefined ? undefined : String(asset))
+    },
     sign_out: async () => {
       window.setTimeout(() => void supabase?.auth.signOut(), 1500)
       return 'Signing her out now. Say goodbye.'
@@ -158,6 +167,7 @@ export default function NgApp({ data }: { data: PlusData }) {
             {open === 'wallet' && <WalletDetail wallet={wallet} version={data.version} onOpen={(d) => openDetail(d, false)} />}
             {open === 'group' && <Ajo {...props} />}
             {open === 'loan' && <Loan {...props} />}
+            {open === 'assets' && <Assets version={data.version} />}
             {open === 'add_cash' && <AddCash {...props} onAnswer={onAnswer} />}
             {open === 'cash_out' && <CashOut {...props} shownCode={shownCode} onShowCode={setShownCode} />}
           </CardDetail>

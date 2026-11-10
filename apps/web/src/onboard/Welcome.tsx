@@ -5,7 +5,7 @@ import { ConversationProvider } from '@elevenlabs/react'
 import { motion } from 'motion/react'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Button, Icon, ListGroup, Notice, Section, Spinner, softSpring } from '../ds/components'
-import { DEMO_FUNMI_EMAIL, DEMO_KEMI_EMAIL, DEMO_PASSWORD, DEMO_SELVI_EMAIL, supabase } from '../lib/supabase'
+import { DEMO_FUNMI_EMAIL, DEMO_AMAKA_EMAIL, DEMO_KEMI_EMAIL, DEMO_PASSWORD, DEMO_SELVI_EMAIL, supabase } from '../lib/supabase'
 import { tool } from '../plus/api'
 import { ENGLISH, LangContext } from '../plus/ui'
 import { W } from '../ng/words'
@@ -16,6 +16,7 @@ const SignIn = lazy(() => import('./Onboarding.tsx').then((m) => ({ default: m.S
 const DEMO = [
   { email: DEMO_FUNMI_EMAIL, label: 'Funmi', note: 'Nigeria · tomato seller in Ibadan · loan offer' },
   { email: DEMO_KEMI_EMAIL, label: 'Kemi', note: 'Nigeria · new to Plus, week 4 of 6' },
+  { email: DEMO_AMAKA_EMAIL, label: 'Amaka', note: 'Nigeria · confirms Kemi’s asset as a witness' },
   { email: DEMO_SELVI_EMAIL, label: 'Selvi', note: 'India · flower seller in Madurai' },
 ]
 
