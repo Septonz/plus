@@ -15,7 +15,8 @@ import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { hasValidAgentSecret } from "../_shared/auth.ts";
 import { callerFromBody } from "../_shared/caller.ts";
-import { bearer, json, kickChainWorker, preflight, readJson, health } from "../_shared/http.ts";
+import { bearer, json, kickChainWorker, preflight, readJson, health, withCors } from "../_shared/http.ts";
+import { demoLoginsEnabled, demoOff, demoRateLimited, MONEY_TOOLS } from "../_shared/demo.ts";
 import { hasSessionToken, verifySession } from "../_shared/session.ts";
 import { supabaseStore } from "../_shared/store.ts";
 import { supabaseNgStore } from "../_shared/store-ng.ts";
@@ -38,7 +39,7 @@ const PASSPHRASE = Deno.env.get("STELLAR_NETWORK_PASSPHRASE") ?? "Test SDF Netwo
 const EXPLORER = `https://stellar.expert/explorer/${PASSPHRASE.startsWith("Public") ? "public" : "testnet"}`;
 const CONTRACT_ID = Deno.env.get("PLUS_CONTRACT_ID") ?? "";
 const NGNT_SAC = Deno.env.get("NGNT_SAC_ID") ?? "";
-const USER_COLS = "id, market_id, name, language, kyc_tier, stellar_pub, auto_save_bps, ref_hash, trusted_contact_phone, member_since, virtual_account";
+const USER_COLS = "id, market_id, name, language, kyc_tier, stellar_pub, auto_save_bps, ref_hash, trusted_contact_phone, member_since, virtual_account, demo_login";
 
 const store: Store = supabaseStore(db);
 // Nigeria: the wallet is the account; money moves through the chain outbox.
@@ -95,7 +96,8 @@ async function agentFromBearer(req: Request): Promise<{ id: string; market_id: M
   if (!token) return null;
   const { data, error } = await db.auth.getUser(token);
   if (error || !data.user) return null;
-  const { data: h } = await db.from("helpers").select("id, market_id, role, active").eq("auth_user_id", data.user.id).maybeSingle();
+  const { data: h } = await db.from("helpers").select("id, market_id, role, active, demo_login").eq("auth_user_id", data.user.id).maybeSingle();
+  if (h?.demo_login && !demoLoginsEnabled()) return null;
   return h && h.active && h.role === "agent" ? { id: h.id as string, market_id: h.market_id as MarketId } : null;
 }
 
@@ -214,7 +216,7 @@ async function signIn(args: Record<string, unknown>): Promise<ToolResult> {
 // Router
 // ---------------------------------------------------------------------------
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   const up = health(req, "agent-tools");
   if (up) return up;
   const pre = preflight(req);
@@ -237,6 +239,8 @@ Deno.serve(async (req) => {
       return json(await startOnboarding(req, args));
     }
     if (tool === "sign_in") return json(await signIn(args));
+    // Public: whether the front door shows the demo people (DEMO_LOGINS_ENABLED).
+    if (tool === "demo_logins") return json({ enabled: demoLoginsEnabled() });
 
     const who = await identify(req, args);
     if ("error" in who) return who.error;
@@ -245,6 +249,13 @@ Deno.serve(async (req) => {
       return json({ ...r, latency_ms: Math.round(performance.now() - started) }, r.error === "unknown_tool" ? 404 : 200);
     }
     channel = who.channel;
+    // Demo people: refused when the showcase is off, and their money actions are rate-limited.
+    const off = demoOff(who.user);
+    if (off) return off;
+    if (MONEY_TOOLS.has(tool)) {
+      const limited = await demoRateLimited(db, who.user, tool);
+      if (limited) return limited;
+    }
     const probe = tool === "_time_record_of" && channel === "voice";
     const ng = who.user?.market_id === "ng";
     // Nigeria has its own tools; the app's settings tools (PIN, language) are shared.
@@ -289,4 +300,4 @@ Deno.serve(async (req) => {
     }),
   );
   return json({ ...result, latency_ms: latency }, status);
-});
+}));

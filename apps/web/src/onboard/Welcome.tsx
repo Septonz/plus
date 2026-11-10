@@ -1,8 +1,9 @@
 // The /app front door: open a new account (sign-up by voice or taps), sign in with phone + PIN,
 // or (demo) continue as one of the demo people.
 import { ConversationProvider } from '@elevenlabs/react'
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { DEMO_FUNMI_EMAIL, DEMO_PASSWORD, DEMO_SELVI_EMAIL, supabase } from '../lib/supabase'
+import { tool } from '../plus/api'
 import { BigButton, ENGLISH, Icon, LangContext, Notice, Spinner } from '../plus/ui'
 import { Y } from '../ng/words'
 import { ArtWelcome } from './art'
@@ -31,6 +32,15 @@ function Door() {
   const [view, setView] = useState<'home' | 'signup' | 'signin'>(() => (new URLSearchParams(window.location.search).get('signup') ? 'signup' : 'home'))
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The backend switch (DEMO_LOGINS_ENABLED): when it is off, the demo people are not offered.
+  const [demoOn, setDemoOn] = useState<boolean | null>(null)
+  useEffect(() => {
+    let live = true
+    void tool<{ enabled?: boolean }>('demo_logins').then((r) => live && setDemoOn(r.enabled !== false)).catch(() => live && setDemoOn(true))
+    return () => {
+      live = false
+    }
+  }, [])
 
   if (view === 'signup') {
     // The mic needs the voice SDK's provider (sign-up by voice).
@@ -67,7 +77,7 @@ function Door() {
         <Icon name="lock" /> <Y k="haveAccount" />
       </BigButton>
 
-      <section className="mt-2 space-y-3" aria-labelledby="demo-people">
+      {demoOn !== false && <section className="mt-2 space-y-3" aria-labelledby="demo-people">
         <h2 id="demo-people" className="flex items-center gap-3 text-base font-bold uppercase tracking-wide text-ink-soft">
           <span className="h-0.5 flex-1 bg-line" /> Demo people <span className="h-0.5 flex-1 bg-line" />
         </h2>
@@ -89,7 +99,7 @@ function Door() {
         ))}
         {error && <Notice tone="chili">{error}</Notice>}
         <p className="text-center text-base text-ink-soft">Stellar testnet. All money is simulated.</p>
-      </section>
+      </section>}
     </main>
   )
 }

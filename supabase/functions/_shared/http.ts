@@ -7,6 +7,39 @@ export const CORS_HEADERS = {
   "access-control-allow-methods": "POST, OPTIONS",
 };
 
+/**
+ * Browsers may call the functions only from these origins: the live app, local dev, and any
+ * extra ones in the ALLOWED_ORIGINS secret (comma-separated, e.g. a Vercel preview). Server
+ * callers (ElevenLabs webhooks, scripts, cron) send no Origin and are not affected.
+ */
+export const APP_ORIGINS: readonly string[] = [
+  "https://plus-wallet.vercel.app",
+  "http://localhost:5173",
+  "http://localhost:5199",
+  "http://localhost:4173",
+  "http://127.0.0.1:5173",
+  ...(Deno.env.get("ALLOWED_ORIGINS") ?? "").split(",").map((o) => o.trim()).filter(Boolean),
+];
+// Vercel previews of this project (plus-wallet-<hash>-<team>.vercel.app).
+const PREVIEW = /^https:\/\/plus-wallet-[a-z0-9-]+\.vercel\.app$/;
+
+export function allowedOrigin(origin: string | null): boolean {
+  return Boolean(origin) && (APP_ORIGINS.includes(origin!) || PREVIEW.test(origin!));
+}
+
+/** Wraps a handler: answers with the caller's origin when it is allowed, and with none otherwise. */
+export function withCors(handler: (req: Request) => Response | Promise<Response>): (req: Request) => Promise<Response> {
+  return async (req) => {
+    const res = await handler(req);
+    const origin = req.headers.get("origin");
+    if (!origin) return res;
+    const headers = new Headers(res.headers);
+    headers.set("access-control-allow-origin", allowedOrigin(origin) ? origin : "null");
+    headers.append("vary", "origin");
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+  };
+}
+
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...CORS_HEADERS } });
 }

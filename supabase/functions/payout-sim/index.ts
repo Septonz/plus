@@ -9,7 +9,7 @@
 // idempotency_key credits once.
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
-import { bearer, json, kickChainWorker, preflight, readJson, health } from "../_shared/http.ts";
+import { bearer, json, kickChainWorker, preflight, readJson, health, withCors } from "../_shared/http.ts";
 import { formatMoney, formatSpokenMoney } from "../_shared/markets.ts";
 import { parseMajorAmount } from "../_shared/payees.ts";
 
@@ -22,7 +22,7 @@ const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SE
 const STATE_TRANSFER_PAISE = 100_000n; // Rs 1,000
 const MAX_WAGES_PAISE = 2_000_000n; // Rs 20,000 per simulated payment
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   const up = health(req, "payout-sim");
   if (up) return up;
   const pre = preflight(req);
@@ -87,4 +87,4 @@ Deno.serve(async (req) => {
     balance_text: acct ? formatMoney(BigInt(acct.balance_paise), "in") : null,
     savings_text: acct ? formatMoney(BigInt(acct.savings_paise), "in") : null,
   });
-});
+}));

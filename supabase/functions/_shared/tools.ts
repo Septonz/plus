@@ -18,6 +18,8 @@ export type Channel = "voice" | "app";
 
 export interface User {
   id: string;
+  /** A named demo person (shared demo password): DEMO_LOGINS_ENABLED and the rate limit apply. */
+  demo_login?: boolean;
   market_id: MarketId;
   name: string | null;
   language: string;

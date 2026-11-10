@@ -12,6 +12,9 @@ Selvi sells flowers in Madurai and gets a ₹1,000 monthly state transfer into h
 
 Funmi sells tomatoes at Bodija market in Ibadan and has no bank account. Her Plus wallet on Stellar is her account: she hands cash to Mama Bisi, a Plus cash agent at the market, says Yes in her app, and naira (test NGNT) lands in her wallet. She talks to Plus in Pidgin or Yoruba, pays her supplier, pays her ajo (held by the contract, paid out on time), takes a small advance with one fee said out loud (no interest, no late fees, 10% of each cash-in repays it), and cashes out with a 6-digit code. The demo ends with a switch to India: the same agent for people who do have bank accounts.
 
+**Live:** https://plus-wallet.vercel.app (Stellar testnet, all money simulated). The front door has
+one-tap demo logins for the fictional demo people; `/agent` is the cash-agent page.
+
 ## The Nigeria demo
 
 ### Funmi's 60-second script
@@ -150,6 +153,16 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   test number, tier 2, wallet on Stellar; `--tier 1`, `--name`, `--fund 5000`, `--free` to only
   print the next free number for a live sign-up). Prints the phone, a test PIN, the account number
   and the Stellar Expert links.
+- **Public demo logins.** The front door's demo buttons share one password
+  (`VITE_DEMO_LOGIN_PASSWORD`, in the public bundle on purpose) that only opens the named demo
+  people: Funmi, Kemi, Selvi, Mama Bisi and Meena. Staff (/demo), partner and admin logins keep
+  their own passwords. `pnpm demo:logins` sets it (and flags those rows). The backend checks the
+  Supabase secret `DEMO_LOGINS_ENABLED`; after the showcase, switch them off in one command:
+  `npx supabase secrets set DEMO_LOGINS_ENABLED=false --project-ref qoqmnjzfjhpemwleipth`.
+  Money actions by a demo person are rate-limited (15 per 10 minutes, 120 a day). Run
+  `pnpm demo:reset ng` before every rehearsal.
+- **Deploys.** Vercel project `plus-wallet` (root `apps/web`) redeploys on every merge to `main`;
+  pull requests get preview URLs (allowed by the Edge Function CORS list).
 - `pnpm screens`: phone-size screenshots of every screen into `docs/screens/` (headless Chrome,
   no extra installs; needs `pnpm --filter web dev --port 5199`).
 

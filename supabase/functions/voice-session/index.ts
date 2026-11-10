@@ -19,14 +19,15 @@
 // never leaves the server.
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
-import { bearer, json, preflight, health } from "../_shared/http.ts";
+import { bearer, json, preflight, health, withCors } from "../_shared/http.ts";
+import { demoOff } from "../_shared/demo.ts";
 import { hasSessionToken, mintSession, verifySession } from "../_shared/session.ts";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   const up = health(req, "voice-session");
   if (up) return up;
   const pre = preflight(req);
@@ -52,9 +53,11 @@ Deno.serve(async (req) => {
     if (!token) return json({ error: "unauthorized" }, 401);
     const { data: auth, error: authErr } = await db.auth.getUser(token);
     if (authErr || !auth.user) return json({ error: "unauthorized" }, 401);
-    const { data, error } = await db.from("users").select("id, name, language, market_id").eq("auth_user_id", auth.user.id).maybeSingle();
+    const { data, error } = await db.from("users").select("id, name, language, market_id, demo_login").eq("auth_user_id", auth.user.id).maybeSingle();
     if (error) return json({ error: "internal" }, 500);
     if (!data) return json({ error: "no_plus_account" }, 403);
+    const off = demoOff(data);
+    if (off) return off;
     user = data;
   }
 
@@ -89,4 +92,4 @@ Deno.serve(async (req) => {
     language: user.language,
     onboarding: user.id.startsWith("ob:"),
   });
-});
+}));

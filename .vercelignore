@@ -1,0 +1,17 @@
+# CLI uploads: only what the web build needs. Never env files or local state.
+.env
+.env.*
+!.env.example
+node_modules
+/target
+/dist
+/.stellar
+/.mcp.json
+/.claude
+/contracts
+/supabase
+/docs
+/agent
+/scripts/.seed-state.json
+/scripts/.demo-reset-state.json
+*.log

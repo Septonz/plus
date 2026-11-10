@@ -23,7 +23,8 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { agentCashInCheck, agentCashInReadback, cashOutRedeemable, normalizeNgPhone, sameHex } from "../_shared/agent.ts";
-import { bearer, json, kickChainWorker, preflight, readJson, health } from "../_shared/http.ts";
+import { bearer, json, kickChainWorker, preflight, readJson, health, withCors } from "../_shared/http.ts";
+import { demoOff, demoRateLimited, MONEY_TOOLS } from "../_shared/demo.ts";
 import { formatMoney, getMarket } from "../_shared/markets.ts";
 import { horizonBalances } from "../_shared/ng-chain.ts";
 import { parseMajorAmount } from "../_shared/payees.ts";
@@ -231,7 +232,7 @@ async function matchCode(phone: string, userId: string | null, code: string) {
   return { hit };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   const up = health(req, "agent-api");
   if (up) return up;
   const pre = preflight(req);
@@ -244,10 +245,16 @@ Deno.serve(async (req) => {
   if (!token) return json({ error: "unauthorized" }, 401);
   const { data: auth, error: authErr } = await db.auth.getUser(token);
   if (authErr || !auth.user) return json({ error: "unauthorized" }, 401);
-  const { data: row } = await db.from("helpers").select("id, name, role, market_id, daily_limit, active, stellar_pub")
+  const { data: row } = await db.from("helpers").select("id, name, role, market_id, daily_limit, active, stellar_pub, demo_login")
     .eq("auth_user_id", auth.user.id).maybeSingle();
   if (!row || !row.active || row.role !== "agent" || row.market_id !== "ng") return json({ error: "not_an_agent" }, 403);
   const a = row as Agent;
+  const off = demoOff(row);
+  if (off) return off;
+  if (MONEY_TOOLS.has(endpoint)) {
+    const limited = await demoRateLimited(db, row as { id: string; demo_login: boolean }, endpoint);
+    if (limited) return limited;
+  }
 
   try {
     if (endpoint === "me") return json(await me(a));
@@ -314,4 +321,4 @@ Deno.serve(async (req) => {
     console.error(`agent-api ${endpoint} failed`, err instanceof Error ? err.message : err);
     return json({ error: "internal" }, 500);
   }
-});
+}));
