@@ -21,7 +21,7 @@
 // agent-tools / payout-sim / agent-api. It answers 202 at once and drains in the background.
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
-import { type OutboxRow, operationFor, railOf } from "../_shared/chain-ops.ts";
+import { createWalletOps, type OutboxRow, operationFor, railOf } from "../_shared/chain-ops.ts";
 import { mayRunJob } from "../_shared/cron.ts";
 import { refreshBalances } from "../_shared/ng-chain.ts";
 import { json, health } from "../_shared/http.ts";
@@ -48,14 +48,22 @@ const FEE = "1000"; // stroops; testnet
 const servers = RPC_URLS.map((u) => new rpc.Server(u));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** The secret key for a signing account: Supabase secret PARTNER_SECRET or STELLAR_SECRET_<NAME>. */
-function secretFor(signer: string): string | undefined {
-  return signer === "partner" ? Deno.env.get("PARTNER_SECRET") : Deno.env.get(`STELLAR_SECRET_${signer.toUpperCase()}`);
+/**
+ * The secret key for a signing account: Supabase secret PARTNER_SECRET or STELLAR_SECRET_<NAME>
+ * (partner, funmi, agent_ng), otherwise Vault (wallets opened by sign-up, and anchor_ng). Never logged.
+ */
+async function secretFor(signer: string): Promise<string | undefined> {
+  const env = signer === "partner" ? Deno.env.get("PARTNER_SECRET") : Deno.env.get(`STELLAR_SECRET_${signer.toUpperCase()}`);
+  if (env) return env;
+  if (signer === "partner") return undefined;
+  const { data, error } = await db.rpc("wallet_key_get", { p_signer: signer });
+  if (error) throw new Error(`key lookup for ${signer}: ${error.message}`);
+  return (data as string | null) ?? undefined;
 }
 
 let partnerKp: InstanceType<typeof Keypair> | null = null;
 function partnerKey() {
-  const secret = secretFor("partner");
+  const secret = Deno.env.get("PARTNER_SECRET");
   if (!secret) throw new Error("PARTNER_SECRET is not set (partner pays fees and sponsors reserves)");
   partnerKp ??= Keypair.fromSecret(secret);
   return partnerKp;
@@ -153,6 +161,8 @@ const backoffMs = (attempts: number) => Math.min(30 * 60_000, 15_000 * 2 ** Math
 async function markDone(row: OutboxRow, hash: string) {
   await update(row.id, { status: "done", tx_hash: hash, done_at: new Date().toISOString(), last_error: null });
   const txId = row.args.transaction_id ? String(row.args.transaction_id) : null;
+  // Paying another Plus user: her incoming row is the same Stellar transaction.
+  const peerId = row.args.peer_transaction_id ? String(row.args.peer_transaction_id) : null;
   const refresh = new Set<string>(Array.isArray(row.args.refresh_user_ids) ? (row.args.refresh_user_ids as string[]) : []);
   let stellarTx = false;
   if (txId) {
@@ -161,6 +171,10 @@ async function markDone(row: OutboxRow, hash: string) {
       stellarTx = true;
       refresh.add(t.user_id as string);
     }
+  }
+  if (peerId) {
+    const { data: p } = await db.from("transactions").select("user_id").eq("id", peerId).maybeSingle();
+    if (p) refresh.add(p.user_id as string);
   }
   // Nigeria: the balance cache first, then the tick (so "available" never counts money twice).
   if (refresh.size > 0) {
@@ -175,6 +189,7 @@ async function markDone(row: OutboxRow, hash: string) {
     await db.from("transactions").update(stellarTx ? { chain_tx_hash: hash, tx_hash: hash, status: "completed" } : { chain_tx_hash: hash })
       .eq("id", txId);
   }
+  if (peerId) await db.from("transactions").update({ chain_tx_hash: hash, tx_hash: hash, status: "completed" }).eq("id", peerId);
   // Rows waiting on this one (possibly on other accounts) can start now.
   const { data: next } = await db.from("chain_outbox").select("signer").eq("after_id", row.id).neq("status", "done");
   for (const r of next ?? []) wake(r.signer as string);
@@ -189,8 +204,10 @@ async function markFailed(row: OutboxRow, attempts: number, message: string, has
     ...(hash ? { tx_hash: hash } : {}),
   });
   // Out of retries: the money never moved. The Stellar transaction row says so (no tick, no spend).
-  if (attempts >= MAX_ATTEMPTS && row.args.transaction_id) {
-    await db.from("transactions").update({ status: "failed" }).eq("id", String(row.args.transaction_id)).eq("rail", "stellar").eq("status", "pending");
+  if (attempts >= MAX_ATTEMPTS) {
+    for (const id of [row.args.transaction_id, row.args.peer_transaction_id]) {
+      if (id) await db.from("transactions").update({ status: "failed" }).eq("id", String(id)).eq("rail", "stellar").eq("status", "pending");
+    }
   }
 }
 
@@ -239,13 +256,24 @@ async function submitRow(kp: InstanceType<typeof Keypair>, seq: { next: bigint |
     const sponsor = row.kind === "claimable_create" && row.signer !== "partner";
     const b = new TransactionBuilder(new Account(kp.publicKey(), seq.next.toString()), { fee: FEE, networkPassphrase: PASSPHRASE })
       .setTimeout(TX_TIMEOUT_SECS);
-    if (sponsor) b.addOperation(Operation.beginSponsoringFutureReserves({ sponsoredId: kp.publicKey(), source: partner.publicKey() }));
-    b.addOperation(operationFor(row, CONTRACT_ID));
-    if (sponsor) b.addOperation(Operation.endSponsoringFutureReserves({}));
+    // A new wallet: partner's transaction, co-signed by the new account (its key from Vault).
+    let coSigner: InstanceType<typeof Keypair> | null = null;
+    if (row.kind === "create_wallet") {
+      const s = await secretFor(String(row.args.signer ?? ""));
+      if (!s) throw new Error(`no key for new wallet ${String(row.args.signer)}`);
+      coSigner = Keypair.fromSecret(s);
+      if (coSigner.publicKey() !== row.args.pub) throw new Error("new wallet key does not match its address");
+      for (const op of createWalletOps(row.args, partner.publicKey())) b.addOperation(op);
+    } else {
+      if (sponsor) b.addOperation(Operation.beginSponsoringFutureReserves({ sponsoredId: kp.publicKey(), source: partner.publicKey() }));
+      b.addOperation(operationFor(row, CONTRACT_ID));
+      if (sponsor) b.addOperation(Operation.endSponsoringFutureReserves({}));
+    }
     const built = b.build();
     const inner = rail === "rpc" ? await onRpc((s) => s.prepareTransaction(built)) : built; // simulation: contract errors throw here
     inner.sign(kp);
     if (sponsor) inner.sign(partner);
+    if (coSigner) inner.sign(coSigner);
     // Plus pays the network fee for every account other than partner (fee bump). The fee source's
     // sequence number is not used, so this never interferes with partner's own queue.
     const tx = row.signer === "partner"
@@ -309,7 +337,7 @@ async function nextRow(signer: string): Promise<OutboxRow | null> {
 
 async function drainSigner(signer: string, started: number): Promise<Stats> {
   const stats: Stats = { signer, resolved: 0, done: 0, failed: 0, ms: [] };
-  const secret = secretFor(signer);
+  const secret = await secretFor(signer);
   if (!secret) {
     stats.blocked = "no secret configured";
     return stats;

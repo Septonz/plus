@@ -21,6 +21,11 @@ import { supabaseStore } from "../_shared/store.ts";
 import { supabaseNgStore } from "../_shared/store-ng.ts";
 import { APP_TOOLS, type Channel, type Store, type Tool, type ToolResult, type User, VOICE_TOOLS } from "../_shared/tools.ts";
 import { NG_APP_TOOLS, NG_VOICE_TOOLS, type NgTool } from "../_shared/tools-ng.ts";
+import type { MarketId } from "../_shared/markets.ts";
+import { finishCheck, normalizePhone, OB_TOOLS, type ObChannel, type ObSession } from "../_shared/onboarding.ts";
+import { signInToken, supabaseOnboardingStore } from "../_shared/store-onboarding.ts";
+import { mintSession } from "../_shared/session.ts";
+import { verifyPin } from "../_shared/pin.ts";
 
 // Provided by the Supabase Edge Runtime.
 declare const EdgeRuntime: { waitUntil(p: PromiseLike<unknown>): void };
@@ -33,11 +38,15 @@ const PASSPHRASE = Deno.env.get("STELLAR_NETWORK_PASSPHRASE") ?? "Test SDF Netwo
 const EXPLORER = `https://stellar.expert/explorer/${PASSPHRASE.startsWith("Public") ? "public" : "testnet"}`;
 const CONTRACT_ID = Deno.env.get("PLUS_CONTRACT_ID") ?? "";
 const NGNT_SAC = Deno.env.get("NGNT_SAC_ID") ?? "";
-const USER_COLS = "id, market_id, name, language, kyc_tier, stellar_pub, auto_save_bps, ref_hash, trusted_contact_phone";
+const USER_COLS = "id, market_id, name, language, kyc_tier, stellar_pub, auto_save_bps, ref_hash, trusted_contact_phone, member_since, virtual_account";
 
 const store: Store = supabaseStore(db);
 // Nigeria: the wallet is the account; money moves through the chain outbox.
 const ngStore = supabaseNgStore(db, CONTRACT_ID);
+const obStore = supabaseOnboardingStore(db);
+const SESSION_SECRET = Deno.env.get("VOICE_SESSION_SECRET") ?? "";
+const PIN_SECRET = Deno.env.get("PIN_PEPPER") ?? "";
+const ONBOARDING_TTL_SECS = 2 * 60 * 60;
 
 // ---------------------------------------------------------------------------
 // Timing probe (not a voice tool): how long one contract read takes from here.
@@ -75,13 +84,51 @@ async function timeRecordOf(user: User): Promise<ToolResult> {
 // Identity
 // ---------------------------------------------------------------------------
 
-type Identity = { channel: Channel; user: User | null } | { error: Response };
+type Identity =
+  | { channel: Channel; user: User | null }
+  | { onboarding: ObSession; obChannel: ObChannel }
+  | { error: Response };
+
+/** The agent (helper) behind a bearer token, for agent-assisted sign-up. */
+async function agentFromBearer(req: Request): Promise<{ id: string; market_id: MarketId } | null> {
+  const token = bearer(req);
+  if (!token) return null;
+  const { data, error } = await db.auth.getUser(token);
+  if (error || !data.user) return null;
+  const { data: h } = await db.from("helpers").select("id, market_id, role, active").eq("auth_user_id", data.user.id).maybeSingle();
+  return h && h.active && h.role === "agent" ? { id: h.id as string, market_id: h.market_id as MarketId } : null;
+}
+
+const EXPIRED = () => json({ error: "invalid_onboarding", text: "This sign-up has expired. Start again." }, 401);
+
+/** A sign-up in progress: the signed onboarding token (sub "ob:<id>"). An agent's sign-up also needs her login. */
+async function onboardingFrom(req: Request, token: unknown): Promise<Identity | null> {
+  if (!hasSessionToken(token)) return null;
+  const check = await verifySession(token, SESSION_SECRET);
+  if (!check.ok || !check.userId.startsWith("ob:")) return { error: EXPIRED() };
+  const s = await obStore.session(check.userId.slice(3));
+  if (!s || s.finished_at || new Date(s.expires_at) < new Date()) return { error: EXPIRED() };
+  if (s.helper_id) {
+    const agent = await agentFromBearer(req);
+    if (!agent || agent.id !== s.helper_id) return { error: json({ error: "unauthorized" }, 401) };
+    return { onboarding: s, obChannel: "agent" };
+  }
+  return { onboarding: s, obChannel: "app" };
+}
 
 async function identify(req: Request, args: Record<string, unknown>): Promise<Identity> {
+  const ob = await onboardingFrom(req, args.onboarding_token);
+  if (ob) return ob;
   if (hasValidAgentSecret(req)) {
     if (hasSessionToken(args.plus_session)) {
       const check = await verifySession(args.plus_session, Deno.env.get("VOICE_SESSION_SECRET") ?? "");
       if (!check.ok) return { error: json({ error: `${check.error}_session` }, 401) };
+      // The voice agent guiding a sign-up: the session is bound to the onboarding, not to a user.
+      if (check.userId.startsWith("ob:")) {
+        const s = await obStore.session(check.userId.slice(3));
+        if (!s || s.finished_at) return { error: json({ error: "invalid_session" }, 401) };
+        return { onboarding: s, obChannel: "voice" };
+      }
       const { data, error } = await db.from("users").select(USER_COLS).eq("id", check.userId).maybeSingle();
       if (error) throw error;
       if (!data) return { error: json({ error: "invalid_session" }, 401) };
@@ -109,9 +156,58 @@ async function identify(req: Request, args: Record<string, unknown>): Promise<Id
 function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(args).filter(([k]) =>
-      !/pin|secret|otp|password|session|caller|phone/i.test(k)
+      !/pin|secret|otp|password|session|caller|phone|token|code|nin|id_number|selfie/i.test(k)
     ),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Sign-up and sign-in (never logged to tool_calls: phone numbers, codes and PINs stay out)
+// ---------------------------------------------------------------------------
+
+async function startOnboarding(req: Request, args: Record<string, unknown>): Promise<ToolResult> {
+  if (!SESSION_SECRET) return { text: "Sign-up is not set up yet.", ok: false, error: "not_configured" };
+  const agent = await agentFromBearer(req);
+  const market: MarketId = agent?.market_id ?? (args.market === "in" ? "in" : "ng");
+  const s = await obStore.createSession(market, agent?.id ?? null);
+  const { token, expiresAt } = await mintSession(`ob:${s.id}`, SESSION_SECRET, { ttlSecs: ONBOARDING_TTL_SECS });
+  const status = await OB_TOOLS.onboarding_status({ store: obStore, session: s, channel: agent ? "agent" : "app", args: {}, secret: PIN_SECRET, explorer: EXPLORER });
+  return { ...status, onboarding_token: token, expires_at: new Date(expiresAt * 1000).toISOString() };
+}
+
+async function runOnboarding(tool: string, s: ObSession, obChannel: ObChannel, args: Record<string, unknown>): Promise<ToolResult> {
+  const ctx = { store: obStore, session: s, channel: obChannel, args, secret: PIN_SECRET, explorer: EXPLORER };
+  if (tool === "finish_onboarding") {
+    if (obChannel === "voice") return { text: "She finishes on her screen.", ok: false, error: "app_only" };
+    const notYet = await finishCheck(ctx);
+    if (notYet) return notYet;
+    await obStore.updateSession(s.id, { finished_at: new Date().toISOString() });
+    if (obChannel === "agent") {
+      return { text: "Her account is ready. She signs in on her own phone with her number and PIN.", ok: true, finished: true };
+    }
+    return { text: "Welcome to Plus.", ok: true, finished: true, sign_in_token: await signInToken(db, s.user_id!) };
+  }
+  const t = OB_TOOLS[tool];
+  if (!t) return { text: "Not a sign-up step.", ok: false, error: "unknown_tool" };
+  const r = await t(ctx);
+  // A wallet was queued: start the worker now so the tick comes in seconds.
+  if (tool === "create_wallet" && r.ok !== false) EdgeRuntime.waitUntil(kickChainWorker());
+  return r;
+}
+
+/** Returning user: phone number + PIN (same PIN lockout as payments) -> a one-time sign-in token. */
+async function signIn(args: Record<string, unknown>): Promise<ToolResult> {
+  const market: MarketId = args.market === "in" ? "in" : "ng";
+  const phone = normalizePhone(market, args.phone);
+  const pin = typeof args.pin === "string" ? args.pin : "";
+  const wrong = { text: "That number and PIN don't match. Try again.", ok: false, error: "wrong_login" };
+  if (!phone || !/^[0-9]{4,6}$/.test(pin)) return wrong;
+  const { data: u } = await db.from("users").select("id").eq("wa_phone", phone).is("archived_at", null).maybeSingle();
+  if (!u) return wrong;
+  const check = await verifyPin(db, u.id as string, pin);
+  if (check.outcome === "locked") return { text: "Too many wrong PINs. Try again in 15 minutes.", ok: false, error: "pin_locked" };
+  if (!check.ok) return wrong;
+  return { text: "Welcome back.", ok: true, sign_in_token: await signInToken(db, u.id as string) };
 }
 
 // ---------------------------------------------------------------------------
@@ -136,8 +232,18 @@ Deno.serve(async (req) => {
   let userId: string | null = null;
   let channel: Channel | null = null;
   try {
+    // No login at all: open a sign-up (an agent's login makes it agent-assisted), or sign in.
+    if (tool === "start_onboarding" && !hasSessionToken(args.onboarding_token) && !hasSessionToken(args.plus_session)) {
+      return json(await startOnboarding(req, args));
+    }
+    if (tool === "sign_in") return json(await signIn(args));
+
     const who = await identify(req, args);
     if ("error" in who) return who.error;
+    if ("onboarding" in who) {
+      const r = await runOnboarding(tool, who.onboarding, who.obChannel, args);
+      return json({ ...r, latency_ms: Math.round(performance.now() - started) }, r.error === "unknown_tool" ? 404 : 200);
+    }
     channel = who.channel;
     const probe = tool === "_time_record_of" && channel === "voice";
     const ng = who.user?.market_id === "ng";

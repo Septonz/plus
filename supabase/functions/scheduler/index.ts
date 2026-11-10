@@ -11,6 +11,11 @@
 //
 // POST .../scheduler/warm (cron every 5 minutes): pings every demo function's /health so none of
 // them is cold during a demo. Does nothing unless the Supabase secret DEMO_WARM is "true".
+//
+// POST .../scheduler/provision { "signer": "anchor_ng" } (x-plus-secret): give a system account
+// (the partner bank's anchor, which pays bank transfers into wallets) a wallet: a new key straight
+// into Vault, and a partner-sponsored account with an NGNT trustline queued on partner's queue.
+// Idempotent; answers the public address only. The issuer then funds it (pnpm demo:reset ng).
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { mayRunJob } from "../_shared/cron.ts";
@@ -34,7 +39,10 @@ async function expireActions() {
 }
 
 async function refreshNigeria() {
-  const users = must(await db.from("users").select("id").eq("market_id", "ng").not("stellar_pub", "is", null), "ng users") as { id: string }[];
+  const users = must(
+    await db.from("users").select("id").eq("market_id", "ng").not("stellar_pub", "is", null).is("archived_at", null),
+    "ng users",
+  ) as { id: string }[];
   const ms = await refreshBalances(db, users.map((u) => u.id));
   ms.sort((a, b) => a - b);
   return { wallets: users.length, horizon_ms_p50: ms[Math.floor(ms.length / 2)] ?? null };
@@ -163,11 +171,45 @@ async function warm() {
   return { ok: true, warmed: results };
 }
 
+const SYSTEM_SIGNERS = new Set(["anchor_ng"]);
+
+async function provision(req: Request) {
+  let signer = "";
+  try {
+    signer = String((await req.json())?.signer ?? "");
+  } catch {
+    // no body
+  }
+  if (!SYSTEM_SIGNERS.has(signer)) return { ok: false, error: "unknown_signer" };
+  const { StellarSdk } = await import("../_shared/stellar.ts");
+  let pub: string;
+  const existing = must(await db.rpc("wallet_key_get", { p_signer: signer }), "wallet_key_get") as string | null;
+  if (existing) pub = StellarSdk.Keypair.fromSecret(existing).publicKey();
+  else {
+    const kp = StellarSdk.Keypair.random();
+    must(await db.rpc("wallet_key_put", { p_signer: signer, p_secret: kp.secret() }), "wallet_key_put");
+    pub = kp.publicKey();
+  }
+  const out = must(
+    await db.rpc("chain_enqueue_on", {
+      p_signer: "partner",
+      p_kind: "create_wallet",
+      p_ref: `create_wallet:${signer}`,
+      p_args: { pub, signer, trustlines: ["NGNT"] },
+    }),
+    "enqueue",
+  ) as number;
+  await kickChainWorker();
+  const { data: row } = await db.from("chain_outbox").select("status, tx_hash").eq("id", out).single();
+  return { ok: true, signer, pub, outbox_id: out, status: row?.status, tx_hash: row?.tx_hash ?? null };
+}
+
 Deno.serve(async (req) => {
   const up = health(req, "scheduler");
   if (up) return up;
   if (!(await mayRunJob(req, db))) return json({ error: "unauthorized" }, 401);
   if (new URL(req.url).pathname.endsWith("/warm")) return json(await warm());
+  if (new URL(req.url).pathname.endsWith("/provision")) return json(await provision(req));
   const now = new Date();
   const t0 = performance.now();
   const expired = await step("expire", expireActions);

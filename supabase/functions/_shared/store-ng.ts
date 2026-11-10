@@ -4,11 +4,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { contractReader, refreshBalances } from "./ng-chain.ts";
 import { verifyPin as verifyPinRow } from "./pin.ts";
-import type { CashOut, NgGroup, NgStore, NgTx } from "./tools-ng.ts";
+import type { Payee } from "./payees.ts";
+import type { CashOut, NgGroup, NgStore, NgTx, PlusPeer } from "./tools-ng.ts";
 import type { Action, CashIn } from "./tools.ts";
 
 const ACTION_COLS = "id, user_id, kind, params, readback, status, result, expires_at, created_by, created_at";
-const TX_COLS = "id, kind, source, amount, status, created_at, chain_tx_hash";
+const TX_COLS = "id, kind, source, amount, status, created_at, chain_tx_hash, counterparty";
 const OUT_KINDS = ["pay", "group_contribution", "cash_out"];
 
 function must<T>(r: { data: T | null; error: { message: string } | null }, what: string): T {
@@ -41,7 +42,7 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
     },
     verifyPin: (userId, pin) => verifyPinRow(db, userId, pin),
     async payees(userId) {
-      return must(await db.from("payees").select("id, name, stellar_address").eq("user_id", userId).order("name"), "payees");
+      return must(await db.from("payees").select("id, name, stellar_address, phone").eq("user_id", userId).order("name"), "payees");
     },
     async paidSince(userId, sinceIso) {
       const rows = must(
@@ -139,7 +140,7 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
     },
     async cashOuts(userId) {
       return must(
-        await db.from("cash_out_codes").select("id, action_id, amount, status, expires_at, created_at").eq("user_id", userId)
+        await db.from("cash_out_codes").select("id, action_id, amount, status, expires_at, created_at, recipient_name").eq("user_id", userId)
           .order("created_at", { ascending: false }).limit(20),
         "cashOuts",
       ) as CashOut[];
@@ -151,6 +152,34 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
         "setCashOutCode",
       ) as { id: string }[];
       return rows.length === 1;
+    },
+    async plusUserByPhone(phone) {
+      const r = must(
+        await db.from("users").select("id, name, market_id, kyc_tier, stellar_pub").eq("wa_phone", phone).is("archived_at", null).maybeSingle(),
+        "plusUserByPhone",
+      );
+      return r as PlusPeer | null;
+    },
+    async pendingIncoming(userId) {
+      const rows = must(
+        await db.from("transactions").select("amount").eq("user_id", userId).eq("status", "pending").eq("rail", "stellar").in("kind", ["incoming", "advance"]),
+        "pendingIncoming",
+      ) as { amount: number | string }[];
+      return rows.reduce((s, r) => s + BigInt(r.amount), 0n);
+    },
+    async savePayee(userId, p) {
+      return must(
+        await db.from("payees").upsert({ user_id: userId, name: p.name, phone: p.phone, stellar_address: p.stellar_address }, { onConflict: "user_id,phone" })
+          .select("id, name, stellar_address, phone").single(),
+        "savePayee",
+      ) as Payee;
+    },
+    async bankTransferIn(userId, amount, repay, ref, sender) {
+      const r = must(
+        await db.rpc("ng_bank_transfer_in", { p_user_id: userId, p_amount: Number(amount), p_repay: Number(repay), p_ref: ref, p_sender: sender }),
+        "ng_bank_transfer_in",
+      ) as { transaction_id: string; repay?: number };
+      return { transaction_id: r.transaction_id, repay: BigInt(r.repay ?? 0) };
     },
     chain: contractReader(contractId),
   };

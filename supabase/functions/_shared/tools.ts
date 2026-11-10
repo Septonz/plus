@@ -9,6 +9,7 @@
 // pending action and returns the read-back; confirm_action executes it once (atomic claim in the
 // database, stored result on retries). Above the market's PIN threshold only the app's PIN pad
 // can confirm: the voice channel can neither confirm it nor pass a PIN.
+import { advanceAllowed, spendAllowed } from "./tiers.ts";
 import { formatMoney, formatSpokenMoney, getMarket, type MarketId } from "./markets.ts";
 import { matchPayee, parseMajorAmount, type Payee } from "./payees.ts";
 import type { PinOutcome } from "./pin.ts";
@@ -25,6 +26,10 @@ export interface User {
   auto_save_bps: number;
   ref_hash: string | null;
   trusted_contact_phone: string | null;
+  /** When she joined Plus (advances open after the market's eligibleAfterWeeks). */
+  member_since?: string | null;
+  /** Nigeria: her account number at the partner bank (simulated), for transfers in. */
+  virtual_account?: string | null;
 }
 
 export interface Account {
@@ -421,7 +426,8 @@ export const advanceStatus: Tool = async ({ user, store }) => {
     if (e.type === "repayment_recorded") return s - chainToMinor(e.data?.amount);
     return s;
   }, 0n);
-  const eligible = limit >= minMinor && owed <= 0n;
+  const blocked = advanceAllowed(user);
+  const eligible = limit >= minMinor && owed <= 0n && !blocked;
   const fee = (a: bigint) => (a * BigInt(rules.feeBps)) / 10000n;
   const options: { amount_minor: string; amount_text: string; cost_minor: string; cost_text: string }[] = [];
   for (let a = minMinor; a <= limit; a += 100000n) {
@@ -434,6 +440,7 @@ export const advanceStatus: Tool = async ({ user, store }) => {
     ? `She has an advance open: ${say(owed, m)} still to repay.`
     : eligible
     ? `She can take an advance of up to ${say(limit, m)}. It costs ${rules.feeBps / 100}%: ${say(fee(limit), m)} on ${say(limit, m)}. No advance is open.`
+    : blocked ? blocked.text
     : `She can't take an advance yet. It opens after ${rules.eligibleAfterWeeks} weeks of money coming in through Plus.`;
   return {
     text,
@@ -498,13 +505,9 @@ export const preparePay: Tool = async ({ user, store, args, now = new Date() }) 
       balance_text: show(acct.balance_paise, m),
     });
   }
-  const cap = BigInt(getMarket(m).payDailyLimit) * 100n;
-  if (paidToday + amount > cap) {
-    const left = cap > paidToday ? cap - paidToday : 0n;
-    return refuse(`That is over today's limit. She can pay up to ${say(left, m)} more today.`, "daily_limit", {
-      left_today_text: show(left, m),
-    });
-  }
+  // Her KYC tier's daily limit (the lower of it and the market's).
+  const overLimit = spendAllowed(user, amount, paidToday);
+  if (overLimit) return overLimit;
   const readback = `${show(amount, m)} to ${payee.name}`;
   const a = await store.createAction({
     user_id: user.id,
@@ -538,10 +541,8 @@ export const prepareGroupContribution: Tool = async ({ user, store, now = new Da
   if (!acct || big(acct.balance_paise) < amount) {
     return refuse(`Not enough money for the ${local}: she has ${say(acct?.balance_paise ?? 0, m)} to spend.`, "insufficient_funds");
   }
-  const cap = BigInt(getMarket(m).payDailyLimit) * 100n;
-  if ((await store.paidSince(user.id, dayStart(m, now))) + amount > cap) {
-    return refuse("That is over today's limit.", "daily_limit");
-  }
+  const overLimit = spendAllowed(user, amount, await store.paidSince(user.id, dayStart(m, now)));
+  if (overLimit) return overLimit;
   const a = await store.createAction({
     user_id: user.id,
     kind: "group_contribution",

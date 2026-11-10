@@ -10,13 +10,17 @@
 //   POST /functions/v1/voice-session/status  -> { configured }  (no ElevenLabs call)
 // The app asks this first and shows "Voice coming soon" when her market's agent isn't set up
 // (for example ELEVENLABS_AGENT_ID_NG not set yet); once the secret exists it works, no code change.
+// Sign-up by voice: before she has a login, the app sends { onboarding_token } instead. The
+// plus_session minted then is bound to the sign-up ("ob:<id>"), not to a user, so the agent can only
+// run the sign-up steps (it can never set the PIN or hear the ID number or the phone code).
+//
 // The app starts the ElevenLabs session with the signed URL and passes plus_session as a dynamic
 // variable; every tool call sends it back to agent-tools, which checks it. The ElevenLabs API key
 // never leaves the server.
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { bearer, json, preflight, health } from "../_shared/http.ts";
-import { mintSession } from "../_shared/session.ts";
+import { hasSessionToken, mintSession, verifySession } from "../_shared/session.ts";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -29,13 +33,30 @@ Deno.serve(async (req) => {
   if (pre) return pre;
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
-  const token = bearer(req);
-  if (!token) return json({ error: "unauthorized" }, 401);
-  const { data: auth, error: authErr } = await db.auth.getUser(token);
-  if (authErr || !auth.user) return json({ error: "unauthorized" }, 401);
-  const { data: user, error } = await db.from("users").select("id, name, language, market_id").eq("auth_user_id", auth.user.id).maybeSingle();
-  if (error) return json({ error: "internal" }, 500);
-  if (!user) return json({ error: "no_plus_account" }, 403);
+  let body: Record<string, unknown> = {};
+  try {
+    body = await req.json();
+  } catch {
+    // no body
+  }
+  let user: { id: string; name: string | null; language: string; market_id: string } | null = null;
+  if (hasSessionToken(body.onboarding_token)) {
+    // A sign-up in progress (no login yet).
+    const check = await verifySession(body.onboarding_token, Deno.env.get("VOICE_SESSION_SECRET") ?? "");
+    if (!check.ok || !check.userId.startsWith("ob:")) return json({ error: "invalid_onboarding" }, 401);
+    const { data: s } = await db.from("onboarding_sessions").select("id, market_id, name, language, finished_at").eq("id", check.userId.slice(3)).maybeSingle();
+    if (!s || s.finished_at) return json({ error: "invalid_onboarding" }, 401);
+    user = { id: check.userId, name: s.name, language: s.language ?? "en", market_id: s.market_id };
+  } else {
+    const token = bearer(req);
+    if (!token) return json({ error: "unauthorized" }, 401);
+    const { data: auth, error: authErr } = await db.auth.getUser(token);
+    if (authErr || !auth.user) return json({ error: "unauthorized" }, 401);
+    const { data, error } = await db.from("users").select("id, name, language, market_id").eq("auth_user_id", auth.user.id).maybeSingle();
+    if (error) return json({ error: "internal" }, 500);
+    if (!data) return json({ error: "no_plus_account" }, 403);
+    user = data;
+  }
 
   const apiKey = Deno.env.get("ELEVENLABS_API_KEY");
   // One ElevenLabs agent per market: Nigeria users get the Pidgin/Yoruba "Plus Nigeria" agent.
@@ -66,5 +87,6 @@ Deno.serve(async (req) => {
     expires_at: new Date(session.expiresAt * 1000).toISOString(),
     name: user.name,
     language: user.language,
+    onboarding: user.id.startsWith("ob:"),
   });
 });

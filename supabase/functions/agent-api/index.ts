@@ -15,6 +15,11 @@
 //
 // Cash-out: the customer shows a 6-digit code. Only its HMAC is stored; five wrong codes lock it.
 // redeem_code queues the agent's claim of the claimable balance (after she has handed over cash).
+// The same codes pay people who are not on Plus: Funmi pays a phone number, they get a code by SMS
+// (simulated) and collect the cash here with their phone number and the code.
+//
+// Registering a customer (sign-up at the agent) goes through agent-tools/start_onboarding with the
+// agent's login: the same steps as in the app, with the customer answering on this screen.
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { agentCashInCheck, agentCashInReadback, cashOutRedeemable, normalizeNgPhone, sameHex } from "../_shared/agent.ts";
@@ -24,6 +29,7 @@ import { horizonBalances } from "../_shared/ng-chain.ts";
 import { parseMajorAmount } from "../_shared/payees.ts";
 import { cashOutCodeHash } from "../_shared/tools-ng.ts";
 import { dayStart } from "../_shared/tools.ts";
+import { receiveAllowed } from "../_shared/tiers.ts";
 
 declare const EdgeRuntime: { waitUntil(p: PromiseLike<unknown>): void };
 
@@ -91,10 +97,10 @@ async function me(a: Agent) {
     : [];
   const byId = new Map(txs.map((t) => [t.id, t]));
   const redeemed = must(
-    await db.from("cash_out_codes").select("id, amount, redeemed_at, claim_outbox_id, users(name)").eq("redeemed_by", a.id)
+    await db.from("cash_out_codes").select("id, amount, redeemed_at, claim_outbox_id, recipient_name, users(name)").eq("redeemed_by", a.id)
       .order("redeemed_at", { ascending: false }).limit(10),
     "redeemed",
-  ) as unknown as { id: string; amount: number; redeemed_at: string; claim_outbox_id: number | null; users: { name: string | null } | null }[];
+  ) as unknown as { id: string; amount: number; redeemed_at: string; claim_outbox_id: number | null; recipient_name: string | null; users: { name: string | null } | null }[];
   const outIds = redeemed.map((r) => r.claim_outbox_id).filter((x): x is number => x !== null);
   const outs = outIds.length
     ? must(await db.from("chain_outbox").select("id, status, tx_hash").in("id", outIds), "claims") as { id: number; status: string; tx_hash: string | null }[]
@@ -126,7 +132,7 @@ async function me(a: Agent) {
       const o = r.claim_outbox_id !== null ? outById.get(r.claim_outbox_id) : undefined;
       return {
         id: r.id,
-        name: r.users?.name ?? "Customer",
+        name: r.recipient_name ? `${r.recipient_name} (from ${r.users?.name ?? "a Plus user"})` : r.users?.name ?? "Customer",
         amount_text: show(r.amount),
         at: r.redeemed_at,
         status: o?.status === "done" ? "on_stellar" : "sending",
@@ -136,11 +142,23 @@ async function me(a: Agent) {
   };
 }
 
-async function customer(phoneRaw: unknown) {
+type Customer = { id: string; name: string | null; stellar_pub: string | null; kyc_tier: number; market_id: "ng" };
+
+async function customer(phoneRaw: unknown): Promise<Customer | null> {
   const phone = typeof phoneRaw === "string" ? normalizeNgPhone(phoneRaw) : null;
   if (!phone) return null;
-  const { data } = await db.from("users").select("id, name, stellar_pub").eq("market_id", "ng").eq("wa_phone", phone).maybeSingle();
-  return data as { id: string; name: string | null; stellar_pub: string | null } | null;
+  const { data } = await db.from("users").select("id, name, stellar_pub, kyc_tier, market_id").eq("market_id", "ng").eq("wa_phone", phone)
+    .is("archived_at", null).maybeSingle();
+  return data as Customer | null;
+}
+
+/** Her balance plus money already on its way in (kobo), for her tier's balance limit. */
+async function heldAndIncoming(userId: string): Promise<bigint> {
+  const [{ data: b }, { data: pend }] = await Promise.all([
+    db.from("wallet_balances").select("amount").eq("user_id", userId).eq("asset", "NGNT").maybeSingle(),
+    db.from("transactions").select("amount").eq("user_id", userId).eq("status", "pending").eq("rail", "stellar").in("kind", ["incoming", "advance"]),
+  ]);
+  return BigInt(b?.amount ?? 0) + (pend ?? []).reduce((s, r) => s + BigInt(r.amount), 0n);
 }
 
 const ERRORS: Record<string, [number, string]> = {
@@ -154,7 +172,9 @@ const ERRORS: Record<string, [number, string]> = {
   too_many_attempts: [423, "Too many wrong codes. Ask her to make a new code in her app."],
   not_redeemable: [409, "That code was already used."],
   not_on_chain_yet: [409, "That cash-out is still being sent. Try again in a few seconds."],
-  no_cash_out: [404, "She has no cash-out waiting."],
+  no_cash_out: [404, "No cash-out or payment code is waiting for this number."],
+  balance_limit: [409, "Her wallet can't hold that much at her level."],
+  signup_not_finished: [409, "Her account is not open yet."],
 };
 
 function fail(error: string, extra: Record<string, unknown> = {}) {
@@ -162,17 +182,41 @@ function fail(error: string, extra: Record<string, unknown> = {}) {
   return json({ error: ERRORS[error] ? error : "internal", text, ...extra }, status);
 }
 
-/** Find her waiting cash-out that matches the code. Wrong codes count against every waiting one. */
-async function matchCode(userId: string, code: string) {
-  const list = must(
-    await db.from("cash_out_codes").select("id, amount, status, expires_at, attempts, code_hash, create_outbox_id").eq("user_id", userId)
-      .eq("status", "issued").order("created_at", { ascending: false }).limit(10),
-    "cash-outs",
-  ) as { id: string; amount: number; status: string; expires_at: string; attempts: number; code_hash: string; create_outbox_id: number | null }[];
+type WaitingCode = {
+  id: string;
+  user_id: string;
+  amount: number;
+  status: string;
+  expires_at: string;
+  attempts: number;
+  code_hash: string;
+  create_outbox_id: number | null;
+  recipient_name: string | null;
+};
+const CODE_COLS = "id, user_id, amount, status, expires_at, attempts, code_hash, create_outbox_id, recipient_name";
+
+/**
+ * Codes waiting for this phone number: her own cash-outs (a Plus user), and money someone paid to this
+ * number by code. Wrong codes count against every waiting one. Each code's HMAC is keyed by the
+ * account that made it.
+ */
+async function matchCode(phone: string, userId: string | null, code: string) {
+  const [own, paid] = await Promise.all([
+    userId
+      ? db.from("cash_out_codes").select(CODE_COLS).eq("user_id", userId).is("recipient_phone", null).eq("status", "issued").order("created_at", { ascending: false }).limit(10)
+      : Promise.resolve({ data: [], error: null }),
+    db.from("cash_out_codes").select(CODE_COLS).eq("recipient_phone", phone).eq("status", "issued").order("created_at", { ascending: false }).limit(10),
+  ]);
+  const list = [...(must(own, "cash-outs") as WaitingCode[]), ...(must(paid, "paid codes") as WaitingCode[])];
   if (list.length === 0) return { error: "no_cash_out" as const };
   if (!/^\d{6}$/.test(code)) return { error: "wrong_code" as const };
-  const hash = await cashOutCodeHash(CODE_SECRET, userId, code);
-  const hit = list.find((c) => sameHex(c.code_hash, hash));
+  let hit: WaitingCode | undefined;
+  for (const c of list) {
+    if (sameHex(c.code_hash, await cashOutCodeHash(CODE_SECRET, c.user_id, code))) {
+      hit = c;
+      break;
+    }
+  }
   if (!hit) {
     let left = MAX_ATTEMPTS;
     for (const c of list) {
@@ -215,6 +259,9 @@ Deno.serve(async (req) => {
       if (amount === null) return fail("invalid_amount");
       const who = await customer(body.phone);
       if (!who?.stellar_pub) return fail("not_a_customer");
+      // Her tier's balance limit: cash that would take her wallet over it is refused before anything is recorded.
+      const full = receiveAllowed(who, await heldAndIncoming(who.id), amount);
+      if (full) return json({ error: full.error, text: full.text }, 409);
 
       const [used, held, f] = await Promise.all([usedToday(a), committed(a), floatOf(a)]);
       const check = agentCashInCheck({ used, limit: BigInt(a.daily_limit), float: f.float, committed: held, amount });
@@ -241,13 +288,15 @@ Deno.serve(async (req) => {
     }
 
     if (endpoint === "check_code" || endpoint === "redeem_code") {
-      const who = await customer(body.phone);
-      if (!who) return fail("not_a_customer");
+      const phone = typeof body.phone === "string" ? normalizeNgPhone(body.phone) : null;
+      if (!phone) return fail("not_a_customer");
+      const who = await customer(phone);
       const code = typeof body.code === "string" ? body.code.replace(/\s/g, "") : "";
-      const m = await matchCode(who.id, code);
+      const m = await matchCode(phone, who?.id ?? null, code);
       if ("error" in m) return fail(m.error!, "attempts_left" in m ? { attempts_left: m.attempts_left } : {});
       if (endpoint === "check_code") {
-        return json({ ok: true, cash_out_id: m.hit.id, name: who.name, amount_text: show(m.hit.amount), text: `Code is right. Give ${who.name ?? "her"} ${show(m.hit.amount)} in cash, then tap Done.` });
+        const name = m.hit.recipient_name ?? who?.name ?? "them";
+        return json({ ok: true, cash_out_id: m.hit.id, name, amount_text: show(m.hit.amount), text: `Code is right. Give ${name} ${show(m.hit.amount)} in cash, then tap Done.` });
       }
       const { data: out } = await db.from("chain_outbox").select("status, result").eq("id", m.hit.create_outbox_id).maybeSingle();
       const balanceId = out?.status === "done" ? (out.result as { balance_id?: string } | null)?.balance_id ?? null : null;

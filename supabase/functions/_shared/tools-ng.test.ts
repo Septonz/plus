@@ -18,6 +18,10 @@ import {
   newCashOutCode,
   payoutSplit,
   ngGroupStatus,
+  ngAdvanceStatus,
+  ngSavePayee,
+  ngSimulateBankTransfer,
+  type PlusPeer,
 } from "./tools-ng.ts";
 
 const FUNMI = "GA6K725VCN45F4LWZYEL3H7J5CIGGL2IUXDWZH5X75GYWQQJNPAYGW6M";
@@ -34,12 +38,19 @@ type World = {
   group: ChainGroup | null;
   actions: Map<string, Action>;
   executed: { id: string; extra: Record<string, unknown> }[];
+  /** Other Plus users by phone, with their balances. */
+  peers: Map<string, PlusPeer & { balance: bigint }>;
+  saved: { name: string; phone: string; stellar_address: string | null }[];
+  bankIns: { amount: bigint; repay: bigint; ref: string }[];
 };
 
 function fakeStore(w: World): NgStore {
   let n = 0;
   return {
-    balances: () => Promise.resolve({ NGNT: w.available, USDC: 0n, updated_at: "2026-11-09T00:00:00Z" }),
+    balances: (id) => {
+      const peer = [...w.peers.values()].find((p) => p.id === id);
+      return Promise.resolve({ NGNT: peer ? peer.balance : w.available, USDC: 0n, updated_at: "2026-11-09T00:00:00Z" });
+    },
     refreshBalances: () => Promise.resolve(),
     available: () => Promise.resolve(w.available),
     hasPin: () => Promise.resolve(true),
@@ -86,6 +97,19 @@ function fakeStore(w: World): NgStore {
     agentWallets: () => Promise.resolve([AGENT]),
     cashOuts: () => Promise.resolve([]),
     setCashOutCode: () => Promise.resolve(true),
+    plusUserByPhone: (phone) => {
+      const p = w.peers.get(phone);
+      return Promise.resolve(p ? { id: p.id, name: p.name, market_id: p.market_id, kyc_tier: p.kyc_tier, stellar_pub: p.stellar_pub } : null);
+    },
+    pendingIncoming: () => Promise.resolve(0n),
+    savePayee: (_u, p) => {
+      w.saved.push(p);
+      return Promise.resolve({ id: `p${w.saved.length + 1}`, name: p.name, phone: p.phone, stellar_address: p.stellar_address });
+    },
+    bankTransferIn: (_u, amount, repay, ref) => {
+      w.bankIns.push({ amount, repay, ref });
+      return Promise.resolve({ transaction_id: "bank-t1", repay });
+    },
     chain: {
       group: () => Promise.resolve(w.group),
       advanceOf: () => Promise.resolve(w.advance),
@@ -114,10 +138,26 @@ function setup(over: Partial<World> = {}) {
     },
     actions: new Map(),
     executed: [],
+    peers: new Map(),
+    saved: [],
+    bankIns: [],
     ...over,
   };
-  const ctx = (args: Record<string, unknown> = {}, channel: "voice" | "app" = "voice"): NgContext => ({
-    user: { id: "u1", market_id: "ng", name: "Funmi", language: "en", kyc_tier: 1, stellar_pub: FUNMI, auto_save_bps: 0, ref_hash: null, trusted_contact_phone: null },
+  const ctx = (args: Record<string, unknown> = {}, channel: "voice" | "app" = "voice", user: Partial<NgContext["user"]> = {}): NgContext => ({
+    user: {
+      id: "u1",
+      market_id: "ng",
+      name: "Funmi",
+      language: "en",
+      kyc_tier: 2,
+      member_since: "2026-06-01T00:00:00Z",
+      virtual_account: "9000010001",
+      stellar_pub: FUNMI,
+      auto_save_bps: 0,
+      ref_hash: null,
+      trusted_contact_phone: null,
+      ...user,
+    },
     channel,
     store: fakeStore(w),
     args,
@@ -324,4 +364,129 @@ Deno.test("ajo ticks link to each member's own contribution on Stellar", async (
   assertEquals(m[1].url, null); // Funmi has not paid this round
   assertEquals(m[2].paid_this_round, true);
   assertEquals(m[2].url, null); // paid on the contract, event not indexed yet: no link rather than a wrong one
+});
+
+// --- KYC tiers -----------------------------------------------------------------------------------------
+
+Deno.test("tier limits: tier 0 moves nothing, tier 1 caps the day at ₦50,000, tier 2 at ₦200,000", async () => {
+  const { ctx } = setup({ available: N(400_000) });
+  const t0 = await ngPreparePay(ctx({ payee: "Iya Tunde", amount: "100" }, "voice", { kyc_tier: 0 }));
+  assertEquals(t0.error, "signup_not_finished");
+  const t1ok = await ngPreparePay(ctx({ payee: "Iya Tunde", amount: "50000" }, "voice", { kyc_tier: 1 }));
+  assertEquals(t1ok.ok, true);
+  const t1over = await ngPreparePay(ctx({ payee: "Iya Tunde", amount: "50001" }, "voice", { kyc_tier: 1 }));
+  assertEquals(t1over.error, "daily_limit");
+  assertMatch(t1over.text, /NIN raises the limit/);
+  const t2 = await ngPreparePay(ctx({ payee: "Iya Tunde", amount: "150000" }, "voice", { kyc_tier: 2 }));
+  assertEquals(t2.ok, true);
+  const cash = await ngPrepareCashout(ctx({ amount: "60000" }, "voice", { kyc_tier: 1 }));
+  assertEquals(cash.error, "daily_limit");
+});
+
+Deno.test("tier limits: no advances at tier 1, and only after 8 weeks at tier 2", async () => {
+  const { ctx } = setup();
+  const t1 = await ngPrepareAdvance(ctx({ amount: "10000" }, "voice", { kyc_tier: 1 }));
+  assertEquals(t1.error, "tier_too_low");
+  const status1 = await ngAdvanceStatus(ctx({}, "voice", { kyc_tier: 1 }));
+  assertEquals(status1.eligible, false);
+  assertMatch(status1.text, /NIN is checked/);
+  const fresh = await ngPrepareAdvance(ctx({ amount: "10000" }, "voice", { kyc_tier: 2, member_since: new Date(Date.now() - 3 * 7 * 86_400_000).toISOString() }));
+  assertEquals(fresh.error, "too_new");
+  assertMatch(fresh.text, /5 more weeks/);
+  const ok = await ngPrepareAdvance(ctx({ amount: "10000" }));
+  assertEquals(ok.ok, true);
+});
+
+Deno.test("tier limits: a payment that would take the recipient over their balance limit is refused", async () => {
+  const peers = new Map([["+2347000000201", { id: "u2", name: "Bola", market_id: "ng" as const, kyc_tier: 1, stellar_pub: TUNDE, balance: N(295_000) }]]);
+  const { ctx } = setup({ peers });
+  const r = await ngPreparePay(ctx({ phone: "0700 000 0201", amount: "10000" }));
+  assertEquals(r.error, "recipient_full");
+  assertMatch(r.text, /Bola's wallet/);
+  const fits = await ngPreparePay(ctx({ phone: "0700 000 0201", amount: "5000" }));
+  assertEquals(fits.ok, true);
+});
+
+// --- paying anyone by phone --------------------------------------------------------------------------------
+
+Deno.test("pay a Plus user by phone: NGNT straight to their wallet, their side recorded too", async () => {
+  const peers = new Map([["+2347000000201", { id: "u2", name: "Bola", market_id: "ng" as const, kyc_tier: 2, stellar_pub: TUNDE, balance: 0n }]]);
+  const { w, ctx } = setup({ peers });
+  const r = await ngPreparePay(ctx({ phone: "+234 700 000 0201", amount: "2500" }));
+  assertEquals(r.ok, true);
+  assertEquals(r.kind, "pay");
+  assertMatch(r.text, /Bola is on Plus/);
+  const a = [...w.actions.values()][0];
+  assertEquals(a.params.to, TUNDE);
+  assertEquals(a.params.to_user_id, "u2");
+  assertEquals(a.params.phone, "+2347000000201");
+  const self = await ngPreparePay(setup({ peers: new Map([["+2347000000101", { id: "u1", name: "Funmi", market_id: "ng" as const, kyc_tier: 2, stellar_pub: FUNMI, balance: 0n }]]) }).ctx({ phone: "07000000101", amount: "100" }));
+  assertEquals(self.error, "own_number");
+  const bad = await ngPreparePay(ctx({ phone: "12345", amount: "100" }));
+  assertEquals(bad.error, "invalid_phone");
+});
+
+Deno.test("pay someone not on Plus: a code they collect at an agent; the SMS shows on her screen, never to voice", async () => {
+  const { w, ctx } = setup({ available: N(100_000) });
+  const r = await ngPreparePay(ctx({ phone: "0803 555 0101", name: "Mama Ngozi", amount: "3000" }));
+  assertEquals(r.ok, true);
+  assertEquals(r.kind, "pay_code");
+  assertMatch(r.text, /not on Plus yet/);
+  const a = [...w.actions.values()][0];
+  assertEquals(a.params.claimants, [AGENT]);
+  assertEquals(a.params.phone, "+2348035550101");
+  const store = ctx().store;
+  const byVoice = await ngConfirmAction({ ...ctx({ action_id: r.action_id }), store });
+  assertEquals(byVoice.ok, true);
+  assertEquals(byVoice.pay_code_sms, undefined);
+  assertEquals(byVoice.cash_out_code, undefined);
+  assertMatch(String(w.executed[0].extra.code_hash), /^[0-9a-f]{64}$/);
+
+  const r2 = await ngPreparePay(ctx({ phone: "08035550101", amount: "1000" }));
+  const app = await ngConfirmAction({ ...ctx({ action_id: r2.action_id }, "app"), store });
+  const sms = app.pay_code_sms as { to: string; code: string; text: string };
+  assertEquals(sms.to, "+2348035550101");
+  assertMatch(sms.code, /^\d{6}$/);
+  assertMatch(sms.text, /Funmi sent you ₦1,000/);
+  assertEquals(app.cash_out_code, undefined); // her own cash-out code field stays empty
+  // Only the HMAC was stored, bound to the sender.
+  assertEquals(w.executed[1].extra.code_hash, await cashOutCodeHash("test-secret-0123456789abcdef0123456789abcdef", "u1", sms.code));
+  // Above ₦20,000 it needs the PIN like any money leaving her wallet.
+  const big = await ngPreparePay(ctx({ phone: "08035550101", amount: "25000" }));
+  assertEquals(big.requires_pin, true);
+});
+
+Deno.test("save this person after a payment: by phone, with their wallet if they are on Plus", async () => {
+  const peers = new Map([["+2347000000201", { id: "u2", name: "Bola", market_id: "ng" as const, kyc_tier: 2, stellar_pub: TUNDE, balance: 0n }]]);
+  const { w, ctx } = setup({ peers });
+  const r = await ngSavePayee(ctx({ name: "Bola (pepper)", phone: "07000000201" }, "app"));
+  assertEquals(r.ok, true);
+  assertEquals(w.saved[0], { name: "Bola (pepper)", phone: "+2347000000201", stellar_address: TUNDE });
+  const outsider = await ngSavePayee(ctx({ name: "Mama Ngozi", phone: "08035550101" }, "app"));
+  assertEquals(outsider.ok, true);
+  assertEquals(w.saved[1].stellar_address, null);
+  assertEquals((await ngSavePayee(ctx({ name: "X", phone: "0803" }, "app"))).error, "invalid_phone");
+});
+
+// --- bank transfer in ------------------------------------------------------------------------------------
+
+Deno.test("bank transfer in: demo button only, inside her balance limit, 10% repays an open advance", async () => {
+  const { w, ctx } = setup();
+  const voice = await ngSimulateBankTransfer(ctx({ amount: "5000" }));
+  assertEquals(voice.error, "app_only");
+  const r = await ngSimulateBankTransfer(ctx({ amount: "5000", sender: "Chidi Okeke" }, "app"));
+  assertEquals(r.ok, true);
+  assertMatch(r.text, /bank transfer from Chidi Okeke/);
+  assertEquals(w.bankIns[0].amount, N(5_000));
+  assertEquals(w.bankIns[0].repay, 0n);
+
+  const withAdvance = setup({ advance: { principal_minor: N(10_000), fee_minor: N(150), owed_minor: N(10_150), opened_at: new Date() } });
+  const r2 = await ngSimulateBankTransfer(withAdvance.ctx({ amount: "5000" }, "app"));
+  assertEquals(withAdvance.w.bankIns[0].repay, N(500));
+  assertMatch(r2.text, /500 naira of it pays back her advance/);
+
+  const full = await ngSimulateBankTransfer(setup({ available: N(480_000) }).ctx({ amount: "50000" }, "app"));
+  assertEquals(full.error, "balance_limit");
+  const noWallet = await ngSimulateBankTransfer(ctx({ amount: "100" }, "app", { stellar_pub: null }));
+  assertEquals(noWallet.error, "no_wallet");
 });

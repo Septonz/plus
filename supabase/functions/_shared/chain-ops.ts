@@ -1,12 +1,13 @@
 // What each chain_outbox row turns into on Stellar. Pure (no network), so it is unit-tested.
 //   attest, group_record, contract            -> one Soroban contract call, sent through RPC
 //   payment, claimable_create, claimable_claim -> one classic operation, sent through Horizon
+//   create_wallet                              -> a partner-sponsored account with trustlines (Horizon)
 import { Buffer } from "node:buffer";
 import { StellarSdk } from "./stellar.ts";
 
 const { Contract, Operation, Asset, Claimant, nativeToScVal, Address, xdr } = StellarSdk;
 
-export type OutboxKind = "attest" | "group_record" | "contract" | "payment" | "claimable_create" | "claimable_claim";
+export type OutboxKind = "attest" | "group_record" | "contract" | "payment" | "claimable_create" | "claimable_claim" | "create_wallet";
 export type OutboxRow = {
   id: number;
   kind: OutboxKind;
@@ -21,7 +22,7 @@ export type OutboxRow = {
   result: Record<string, unknown> | null;
 };
 
-export const CLASSIC_KINDS = new Set<OutboxKind>(["payment", "claimable_create", "claimable_claim"]);
+export const CLASSIC_KINDS = new Set<OutboxKind>(["payment", "claimable_create", "claimable_claim", "create_wallet"]);
 export const railOf = (kind: OutboxKind): "horizon" | "rpc" => (CLASSIC_KINDS.has(kind) ? "horizon" : "rpc");
 
 /** Testnet assets by code. Issuers are public (docs/deployments.md); override with env if redeployed. */
@@ -85,6 +86,23 @@ export function scVal(a: ContractArg) {
 
 const ATTEST_KIND: Record<string, number> = { received: 0, saved: 1, paid: 2 };
 
+/**
+ * A new user's wallet, in one transaction from partner: partner sponsors every reserve (the account
+ * and its trustlines), so she never needs XLM; the account then trusts NGNT and USDC. Partner signs
+ * as source and sponsor, the new account signs its own trustlines and the end of the sponsorship.
+ */
+export function createWalletOps(args: Record<string, unknown>, sponsor: string) {
+  const pub = account(args.pub, "new wallet");
+  const lines = (Array.isArray(args.trustlines) ? args.trustlines : ["NGNT", "USDC"]).map(String);
+  if (lines.length === 0 || lines.length > 4) throw new Error("bad trustlines");
+  return [
+    Operation.beginSponsoringFutureReserves({ sponsoredId: pub, source: account(sponsor, "sponsor") }),
+    Operation.createAccount({ destination: pub, startingBalance: "0" }),
+    ...lines.map((code) => Operation.changeTrust({ asset: assetOf(code), source: pub })),
+    Operation.endSponsoringFutureReserves({ source: pub }),
+  ];
+}
+
 /** The single operation for a row. Contract calls need the contract id. */
 export function operationFor(row: Pick<OutboxRow, "kind" | "args">, contractId: string) {
   const a = row.args;
@@ -117,6 +135,8 @@ export function operationFor(row: Pick<OutboxRow, "kind" | "args">, contractId: 
       if (claimants.length === 0 || claimants.length > 10) throw new Error("bad claimants");
       return Operation.createClaimableBalance({ asset: assetOf(a.asset), amount: stroopsToAmount(a.amount), claimants });
     }
+    case "create_wallet":
+      throw new Error("create_wallet has several operations: use createWalletOps");
     case "claimable_claim":
       if (typeof a.balance_id !== "string" || !/^[0-9a-f]{72}$/.test(a.balance_id)) throw new Error("bad balance id");
       return Operation.claimClaimableBalance({ balanceId: a.balance_id });

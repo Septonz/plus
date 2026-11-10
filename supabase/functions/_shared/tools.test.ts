@@ -29,7 +29,8 @@ const SELVI: User = {
   market_id: "in",
   name: "Selvi",
   language: "ta",
-  kyc_tier: 1,
+  kyc_tier: 2, // the partner bank has done full KYC
+  member_since: "2026-06-01T00:00:00Z",
   stellar_pub: null,
   auto_save_bps: 1000,
   ref_hash: "ab".repeat(32),
