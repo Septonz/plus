@@ -29,6 +29,9 @@ import { formatMoney, getMarket } from "../_shared/markets.ts";
 import { horizonBalances } from "../_shared/ng-chain.ts";
 import { parseMajorAmount } from "../_shared/payees.ts";
 import { cashOutCodeHash } from "../_shared/tools-ng.ts";
+import { valueMinor } from "../_shared/assets.ts";
+import { supabaseAssetStore } from "../_shared/store-assets.ts";
+import { levelWords } from "../_shared/lending.ts";
 import { dayStart } from "../_shared/tools.ts";
 import { receiveAllowed } from "../_shared/tiers.ts";
 
@@ -43,6 +46,7 @@ const CODE_SECRET = Deno.env.get("CASHOUT_CODE_SECRET") ?? "";
 const NG = getMarket("ng");
 const MAX_ATTEMPTS = NG.cashOutCode?.maxAttempts ?? 5;
 const show = (kobo: bigint | number) => formatMoney(BigInt(kobo), "ng");
+const assets = supabaseAssetStore(db);
 
 type Agent = { id: string; name: string; role: string; market_id: "ng"; daily_limit: number; active: boolean; stellar_pub: string | null };
 
@@ -314,6 +318,32 @@ Deno.serve(withCors(async (req) => {
       }
       EdgeRuntime.waitUntil(kickChainWorker());
       return json({ ok: true, text: `Done. ${show(m.hit.amount)} is coming to your float on Stellar.`, ...(await me(a)) });
+    }
+
+    // Asset checks (piece 5): customers who asked her to confirm an asset, and inspections waiting in her market.
+    if (endpoint === "asset_requests") {
+      const rs = await assets.requestsFor({ helper_id: a.id }, a.market_id);
+      return json({
+        ok: true,
+        requests: rs.map((r) => ({ ...r, estimated_value: String(r.estimated_value), value_text: show(r.estimated_value), level_text: levelWords(r.level) })),
+      });
+    }
+
+    if (endpoint === "asset_answer") {
+      const id = typeof body.request_id === "string" ? body.request_id : "";
+      if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: "bad_request" }, 400);
+      const confirm = body.confirm === true;
+      const value = body.value === undefined || body.value === null || body.value === "" ? null : valueMinor(body.value);
+      if (body.value !== undefined && body.value !== null && body.value !== "" && value === null) return fail("invalid_amount");
+      const note = typeof body.note === "string" ? body.note : null;
+      const r = await assets.answer(id, { helper_id: a.id }, a.market_id, confirm, note, value);
+      if (!r.ok) return json({ error: "not_found", text: "That request is no longer waiting." }, 404);
+      const lvl = r.asset ? levelWords(r.asset.level) : "";
+      return json({
+        ok: true,
+        text: confirm ? `Confirmed. It is now ${lvl}.` : "Marked as not confirmed. Thank you for checking.",
+        ...(await me(a)),
+      });
     }
 
     return json({ error: "unknown_endpoint", endpoint }, 404);

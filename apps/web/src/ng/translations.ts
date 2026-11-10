@@ -68,6 +68,16 @@ export const W = {
   smallerPayments: { en: 'Smaller payments', yo: 'Ìsanwó kékeré' }, // check
   nobodyElse: { en: 'Plus never contacts anyone else about your loan.', yo: 'Plus kò ní kàn sí ẹlòmíì nípa owó tí o yá.' }, // check
 
+  // Assets (piece 5)
+  assets: { en: 'Assets', yo: 'Ohun ìní' }, // check
+  addAsset: { en: 'Add something you own', yo: 'Fi ohun tí o ní kún un' }, // check
+  takeAssetPhoto: { en: 'Take the photo', yo: 'Ya fọ́tò náà' }, // check
+  askWitnesses: { en: 'Ask two people to confirm', yo: 'Ní kí ènìyàn méjì jẹ́rìí' }, // check
+  askInspection: { en: 'Ask an agent to inspect it', yo: 'Ní kí aṣojú wò ó' }, // check
+  confirmForThem: { en: 'Someone asked you to confirm', yo: 'Ẹnìkan ní kí o jẹ́rìí' }, // check
+  iConfirm: { en: 'Yes, I have seen it', yo: 'Bẹ́ẹ̀ni, mo ti rí i' }, // check
+  cantConfirm: { en: "I can't confirm", yo: 'Mi ò lè jẹ́rìí' }, // check
+
   // Cash out
   showCode: { en: 'Show the agent this code', yo: 'Fi kóòdù yìí han aṣojú' },
   newCode: { en: 'Show code', yo: 'Fi kóòdù hàn' },

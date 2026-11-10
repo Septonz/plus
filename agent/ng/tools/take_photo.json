@@ -1,0 +1,19 @@
+{
+  "tool_config": {
+    "type": "client",
+    "name": "take_photo",
+    "description": "Open the camera on her screen to take a live photo of an asset (saved with the time and an approximate place). Only in the Plus app. The photo is never described or sent by voice; she taps the shutter herself. Returns whether it was saved and the asset's new level.",
+    "expects_response": true,
+    "response_timeout_secs": 120,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "asset": {
+          "type": "string",
+          "description": "Which asset, in her words. Leave out if she has only one."
+        }
+      },
+      "required": []
+    }
+  }
+}

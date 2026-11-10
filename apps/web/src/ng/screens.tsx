@@ -12,6 +12,7 @@ import { tool, type ToolResult } from '../plus/api'
 import type { PendingAction, PlusData } from '../plus/data'
 import { useSays } from '../plus/screen'
 import { CopyButton, ErrorState, LoadingList, TextField } from '../plus/ui'
+import { WitnessRequests } from './assets'
 import { CodeBox } from './confirm'
 import { useTool, type Go, type Wallet } from './NgApp'
 import { forScreen, naira, W, when, yo } from './words'
@@ -49,11 +50,14 @@ function Waiting({ data, onAnswer }: { data: PlusData; onAnswer: (a: PendingActi
 
 // ---------------------------------------------------------------------------- Home
 
-export type Detail = 'wallet' | 'group' | 'loan' | 'add_cash' | 'cash_out'
+export type Detail = 'wallet' | 'group' | 'loan' | 'assets' | 'add_cash' | 'cash_out'
 
 export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Props & { onAnswer: (a: PendingAction) => void; open: Detail | null; onOpen: (d: Detail) => void }) {
   const ajo = useTool('group_status', version)
   const loan = useTool('loan_status', version)
+  const assets = useTool('my_assets', version)
+  const owned = ((assets?.assets ?? []) as Row[]).filter((a) => a.status !== 'released')
+  const verified = owned.filter((a) => a.status === 'active' && a.level !== 'registered').length
   const rec = useTool('my_record', version)
   const latest = ((rec?.recent ?? []) as Row[]).filter((t) => t.kind !== 'adjustment').slice(0, 5)
   const sending = data.txs.filter((t) => t.status === 'pending').length
@@ -67,7 +71,8 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
       (loan?.ok ? `Loan: ${loanLine(loan)}. ` : '') +
       (cashIns.length ? `Waiting for her answer: ${cashIns.map((a) => a.readback).join('; ')}. ` : '') +
       (latest.length ? `Latest: ${latest.slice(0, 3).map((t) => `${String(t.label)} ${t.outgoing ? '-' : '+'}${String(t.amount_text)}`).join(', ')}. ` : '') +
-      'Cards: Wallet, Ajo, Loan. Tabs: Home, Pay, Activity, Profile.',
+      (assets?.ok ? `Assets: ${owned.length} registered, ${verified} verified. ` : '') +
+      'Cards: Wallet, Ajo, Loan, Assets. Tabs: Home, Pay, Activity, Profile.',
   )
 
   return (
@@ -83,6 +88,7 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
       </header>
 
       <Waiting data={data} onAnswer={onAnswer} />
+      <WitnessRequests version={version} compact />
 
       <CardStack>
         <Pass
@@ -126,6 +132,14 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
           {loan?.view === 'building' ? <Progress pct={(Number(loan.week) / Number(loan.weeks_needed)) * 100} label={`Week ${String(loan.week)} of ${String(loan.weeks_needed)}`} /> : null}
           {loan?.view === 'repay' ? <Progress pct={Number((loan.loan as Row).progress)} label={`${String((loan.loan as Row).repaid_text)} of ${String((loan.loan as Row).total_text)} repaid`} /> : null}
         </Pass>
+        <Pass
+          id="assets"
+          icon="assets"
+          title={W.assets.en}
+          sub={assets ? (owned.length ? `${verified} of ${owned.length} verified` : 'Add what you own') : ' '}
+          hidden={open === 'assets'}
+          onOpen={() => onOpen('assets')}
+        />
       </CardStack>
 
       <Section title="Recent activity" action={latest.length > 0 && <button onClick={() => go('record')} className="min-h-11 px-1 text-base font-medium text-accent-ink">See all</button>}>

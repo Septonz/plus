@@ -56,6 +56,7 @@ const ANCHOR_MIN = 2_000_000n; // naira: the partner bank's anchor pays bank tra
 const LENDING_MIN = 1_000_000n; // naira: the partner lender's lending account pays loans out from this
 const KEMI_PHONE = "+2347000000401"; // a test number
 const KEMI_EMAIL = "demo-kemi@example.com";
+const AMAKA_EMAIL = "demo-amaka@example.com"; // Amaka witnesses Kemi's asset (piece 5)
 const SELVI_SPEND = 235_000n; // paise
 const SELVI_SAVED = 141_500n; // paise
 
@@ -319,6 +320,42 @@ async function ensureKemi(): Promise<{ id: string; created: boolean }> {
   return { id: u.id, created: true };
 }
 
+/**
+ * Amaka: with Plus 20 weeks, verified ID, good standing, so she can witness an asset. Gets the demo
+ * login demo-amaka@example.com (shared demo password).
+ */
+async function ensureAmaka(): Promise<string> {
+  const u = must(await db.from("users").select("id, auth_user_id").eq("stellar_pub", pub("amaka")).is("archived_at", null).single(), "Amaka") as
+    { id: string; auth_user_id: string | null };
+  const attrs = { email: AMAKA_EMAIL, email_confirm: true, password: process.env.VITE_DEMO_LOGIN_PASSWORD!, app_metadata: { demo: true, plus_role: "user" } };
+  let authId = u.auth_user_id;
+  if (authId) {
+    const { error } = await db.auth.admin.updateUserById(authId, attrs);
+    if (error) throw new Error(`Amaka's demo login: ${error.message}`);
+  } else {
+    const { data, error } = await db.auth.admin.createUser(attrs);
+    if (error) throw new Error(`Amaka's demo login: ${error.message}`);
+    authId = data.user.id;
+  }
+  must(await db.from("users").update({
+    auth_user_id: authId, demo_login: true, kyc_tier: 2, borrowing_frozen_until: null,
+    member_since: new Date(Date.now() - 20 * 7 * 86_400_000).toISOString(),
+  }).eq("id", u.id), "Amaka");
+  return u.id;
+}
+
+/** Kemi's assets from the last demo: released, and anything still waiting for a witness cancelled. */
+async function releaseAssets(userId: string, who: string) {
+  const mine = must(await db.from("assets").select("id").eq("user_id", userId).neq("status", "released"), "assets") as { id: string }[];
+  if (mine.length) {
+    const ids = mine.map((a) => a.id);
+    must(await db.from("asset_witnesses").update({ status: "cancelled", answered_at: new Date().toISOString() }).in("asset_id", ids).eq("status", "requested"), "cancel witnesses");
+    must(await db.from("assets").update({ status: "released", confidence: 0 }).in("id", ids), "release assets");
+    must(await db.from("asset_events").insert(ids.map((asset_id) => ({ asset_id, kind: "status", note: "released by the demo reset" }))), "asset events");
+  }
+  console.log(`  ${who}: ${mine.length} asset(s) released by the reset`);
+}
+
 async function resetNigeria() {
   const NGNT = new Asset("NGNT", pub("issuer"));
   const NGNT_SAC = NGNT.contractId(PASSPHRASE);
@@ -410,6 +447,15 @@ async function resetNigeria() {
     [4, { money_in: 9_000n, tx: 2, saved: 0n }],
   ]));
   console.log(`  week 4 of 6; money in during 3 weeks; ${kn} weeks seeded; no verified asset yet`);
+  await releaseAssets(kemi.id, "Kemi");
+
+  console.log("\n4d. Amaka (can witness Kemi's asset)");
+  const amaka = await ensureAmaka();
+  must(await db.from("asset_witnesses").update({ status: "cancelled", answered_at: new Date().toISOString() })
+    .eq("witness_user_id", amaka).eq("status", "requested"), "Amaka's waiting requests");
+  must(await db.from("payees").upsert({ user_id: kemi.id, name: "Amaka", stellar_address: pub("amaka") }, { onConflict: "user_id,name" }), "Kemi's payee Amaka");
+  const { data: ok } = await db.rpc("asset_witness_eligible", { p_user_id: amaka });
+  console.log(`  ${AMAKA_EMAIL}: tier 2, 20 weeks with Plus, ${ok ? "can witness" : "NOT eligible to witness"}; Kemi's saved payee`);
 
   console.log("\n5. Ajo round");
   const links = must(await db.from("group_members").select("group_id, groups!inner(id, name, onchain_id, mode, amount, period_secs, created_at)")

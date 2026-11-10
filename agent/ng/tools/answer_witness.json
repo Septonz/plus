@@ -1,0 +1,43 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "answer_witness",
+    "description": "Her answer to a witness request: confirm only if she knows the asset exists and belongs to them.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/answer_witness",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "request_id": {
+            "type": "string",
+            "description": "The request id from witness_requests."
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "true if she confirms, false if she can't."
+          }
+        },
+        "required": [
+          "request_id",
+          "confirm"
+        ]
+      }
+    }
+  }
+}

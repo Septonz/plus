@@ -1,0 +1,48 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "register_asset",
+    "description": "Register something she owns for her business. Ask what it is and roughly what it is worth in naira. No money moves; no confirm needed.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/register_asset",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "type": {
+            "type": "string",
+            "description": "stock, tools, machine, motorcycle or livestock (her words are fine: okada, goats, generator)."
+          },
+          "description": {
+            "type": "string",
+            "description": "A few words: \"stall stock, tomatoes\", \"okada for deliveries\"."
+          },
+          "value": {
+            "type": "string",
+            "description": "Rough value in whole naira, digits only (\"90000\")."
+          }
+        },
+        "required": [
+          "type",
+          "description",
+          "value"
+        ]
+      }
+    }
+  }
+}

@@ -12,6 +12,8 @@ import type { ChainAdvance, ContractReader } from "./ng-types.ts";
 import { matchPayee, parseMajorAmount, type Payee } from "./payees.ts";
 import type { PinOutcome } from "./pin.ts";
 import { normalizePhone } from "./onboarding.ts";
+import type { AssetStore } from "./assets.ts";
+import { ASSET_TOOLS } from "./tools-assets.ts";
 import { advanceAllowed, receiveAllowed, spendAllowed, tierSummary } from "./tiers.ts";
 import { type Action, ACTION_TTL_SECS, type CashIn, type Channel, dayStart, type ToolResult, type User } from "./tools.ts";
 
@@ -115,6 +117,8 @@ export interface NgContext {
   ngntSac: string;
   /** HMAC key for cash-out codes (Supabase secret CASHOUT_CODE_SECRET). */
   codeSecret: string;
+  /** Her assets and witness requests (piece 5). */
+  assets?: AssetStore;
 }
 
 export type NgTool = (ctx: NgContext) => Promise<ToolResult>;
@@ -1066,10 +1070,11 @@ export const ngHelp: NgTool = async ({ user, store }) => {
     "pay a saved person, or anyone by phone number (not on Plus: they get a code and collect cash at any agent)",
     "pay her ajo and hear who collects this round",
     "see her loan: her progress, her offer and why, repay, or ask for more time",
+    "register what she owns for her business (stock, tools, a machine, a motorcycle, livestock) and get it verified: a live photo, two witnesses, an agent's inspection",
     "cash out with a 6-digit code an agent redeems",
     "add money: her bank account number for transfers, or cash with Mama Bisi",
     "hear her record on Stellar",
-    "move to any screen: home, wallet, add money, pay, ajo, loan, cash out, activity, profile",
+    "move to any screen: home, wallet, add money, pay, ajo, loan, assets, cash out, activity, profile",
   ];
   const first: string[] = [];
   for (const c of cash) first.push(`${c.helper_name} says she gave ${say(c.amount)} cash: is that right?`);
@@ -1110,6 +1115,7 @@ export const NG_VOICE_TOOLS: Record<string, NgTool> = {
   my_record: ngMyRecord,
   group_status: ngGroupStatus,
   cash_outs: ngCashOuts,
+  ...ASSET_TOOLS,
 };
 
 export const NG_APP_TOOLS: Record<string, NgTool> = {

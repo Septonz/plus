@@ -5,6 +5,7 @@
 //   cash-out on Stellar. Codes sent to someone not on Plus (pay by phone) work the same way.
 //   Register a customer: the same sign-up as the app, run on Mama Bisi's screen with the customer
 //   answering (she types her own PIN and NIN). A kiosk would be this screen on a shared tablet.
+//   Asset checks: customers who asked her to confirm an asset, and inspections in her market.
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import {
   AmountDisplay, Button, Card, EmptyState, Icon, ListGroup, ListRow, Notice, NumPad, PageHeader, Section, Segmented, Spinner,
@@ -76,7 +77,7 @@ function Phone({ value, onChange }: { value: string; onChange: (v: string) => vo
 
 function Signed() {
   const [me, setMe] = useState<Me | null>(null)
-  const [tab, setTab] = useState<'cash' | 'code' | 'register'>(() => (new URLSearchParams(window.location.search).get('tab') === 'register' ? 'register' : 'cash'))
+  const [tab, setTab] = useState<'cash' | 'code' | 'register' | 'assets'>(() => (new URLSearchParams(window.location.search).get('tab') === 'register' ? 'register' : 'cash'))
   const [phone, setPhone] = useState('+2340000000501') // Funmi (demo number)
   const [amount, setAmount] = useState('')
   const [code, setCode] = useState('')
@@ -174,10 +175,10 @@ function Signed() {
         label="What do you want to do?"
         value={tab}
         onChange={(t) => { setTab(t); setMsg(null) }}
-        options={[['cash', 'Record cash'], ['code', 'Redeem code'], ['register', 'Register']]}
+        options={[['cash', 'Cash in'], ['code', 'Code'], ['register', 'Register'], ['assets', 'Assets']]}
       />
 
-      {tab === 'register' ? (
+      {tab === 'assets' ? <AssetChecks /> : tab === 'register' ? (
         <Card>
           <Suspense fallback={<p className="flex items-center gap-2 py-6 text-lg text-secondary" role="status"><Spinner /> Loading…</p>}>
             <Onboarding mode="agent" onExit={() => setTab('cash')} />
@@ -254,5 +255,67 @@ function Signed() {
         </>
       )}
     </div>
+  )
+}
+
+type AssetRequest = {
+  id: string; kind: 'community' | 'inspection'; owner_name: string; description: string; type: string
+  estimated_value: string; value_text: string; level_text: string; status: string; evidence_at: string | null; photo_url: string | null
+}
+
+/** Customers who asked Mama Bisi to confirm an asset, and inspections waiting in her market. */
+function AssetChecks() {
+  const [list, setList] = useState<AssetRequest[] | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [value, setValue] = useState<Record<string, string>>({})
+  const [msg, setMsg] = useState<{ tone: Tone; text: string } | null>(null)
+  const load = useCallback(async () => {
+    const r = await call<{ requests?: AssetRequest[] }>('agent-api/asset_requests').catch(() => ({ requests: [] }))
+    setList(r.requests ?? [])
+  }, [])
+  useEffect(() => {
+    void load()
+  }, [load])
+  async function answer(q: AssetRequest, confirm: boolean) {
+    setBusy(q.id)
+    setMsg(null)
+    const v = q.kind === 'inspection' && confirm ? value[q.id] ?? String(BigInt(q.estimated_value) / 100n) : undefined
+    const r = await call<Answer>('agent-api/asset_answer', { request_id: q.id, confirm, ...(v ? { value: v } : {}) })
+      .catch(() => ({ error: 'network', text: 'No connection. Try again.' }) as Answer)
+    setBusy(null)
+    setMsg({ tone: r.ok ? 'success' : 'danger', text: r.text ?? r.error ?? 'Error' })
+    void load()
+  }
+  if (!list) return <LoadingList rows={2} />
+  return (
+    <Section title="Asset checks">
+      {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+      {list.length === 0 ? (
+        <EmptyState icon="shield" title="Nothing to check">When a customer asks you to confirm something they own, or an inspection is needed nearby, it shows here.</EmptyState>
+      ) : list.map((q) => (
+        <Card key={q.id} className="space-y-3">
+          <p className="flex items-center gap-2 text-sm font-medium text-secondary">
+            <Icon name={q.kind === 'inspection' ? 'shield' : 'group'} /> {q.kind === 'inspection' ? 'Inspection: go and see it in person' : 'Asked you to confirm'}
+          </p>
+          {q.photo_url ? <img src={q.photo_url} alt={q.description} className="aspect-[4/3] w-full rounded-control object-cover" /> : null}
+          <p className="text-xl font-medium">{q.owner_name}: {q.description}</p>
+          <p className="text-base text-secondary">
+            They say about {q.value_text} · now {q.level_text}{q.evidence_at ? ` · photo ${when(q.evidence_at)}` : ''}
+          </p>
+          {q.kind === 'inspection' && (
+            <label className="block">
+              <span className="text-base font-medium">Value you saw (naira)</span>
+              <input inputMode="numeric" className="mt-1 min-h-11 w-full rounded-control bg-fill px-3 text-lg num"
+                value={value[q.id] ?? String(BigInt(q.estimated_value) / 100n)}
+                onChange={(e) => setValue((v) => ({ ...v, [q.id]: e.target.value.replace(/\D/g, '').slice(0, 9) }))} />
+            </label>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <Button variant="plain" loading={busy === q.id} onClick={() => void answer(q, false)}>{q.kind === 'inspection' ? 'Not as described' : "Can't confirm"}</Button>
+            <Button loading={busy === q.id} onClick={() => void answer(q, true)}>{q.kind === 'inspection' ? 'Inspected' : 'I have seen it'}</Button>
+          </div>
+        </Card>
+      ))}
+    </Section>
   )
 }

@@ -16,6 +16,7 @@
     "e2e": "node scripts/e2e.ts",
     "e2e:ng": "node scripts/e2e-ng.ts",
     "e2e:loan": "node scripts/e2e-loan.ts",
+    "e2e:assets": "node scripts/e2e-assets.ts",
     "demo:new-user": "node scripts/demo-new-user.ts",
     "screens": "node scripts/screens.ts",
     "demo:logins": "node scripts/demo-logins.ts",
