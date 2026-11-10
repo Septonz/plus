@@ -60,6 +60,10 @@ Two demo users (naira, illustrative numbers), both with demo login buttons.
 - [ ] `pnpm demo:reset ng` resets Kemi and Funmi to their starting states (Funmi: no loan open,
   offer available; Kemi: week 4 of 6).
 - [ ] README: both demo users, a 60-second demo script, and a plain list of what's simulated.
+- [ ] `pnpm warm` reaches every function, including payout-sim: payout-sim's `/health` gets the same
+  cron-secret check (or staff login) as the others instead of the gateway JWT. Update the approved
+  `verify_jwt` list and its CI check (`pnpm functions:check-jwt`) to match (approved 2026-11-10).
+  Confirm a warmed first click on "simulate transfer received" responds in under 1 second.
 
 ## Piece 7: Send to a bank account (Nigeria)
 
