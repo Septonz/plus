@@ -114,6 +114,19 @@ export const T = {
   statusConfirmed: { ta: 'உறுதி ஆச்சு', en: 'Confirmed' },
   statusRejected: { ta: 'இல்லன்னு சொன்னாங்க', en: 'She said No' },
   statusExpired: { ta: 'நேரம் முடிஞ்சது', en: 'Expired' },
+
+  // Redesign (tabs, passes, plain words instead of chain words)
+  activity: { ta: 'நடந்தவை', en: 'Activity' },
+  profile: { ta: 'சுயவிவரம்', en: 'Profile' },
+  wallet: { ta: 'உங்க கணக்கு', en: 'Your wallet' },
+  savings: { ta: 'சேமிப்பு', en: 'Savings' },
+  recentActivity: { ta: 'சமீபத்தில நடந்தவை', en: 'Recent activity' },
+  seeAll: { ta: 'எல்லாம் பாருங்க', en: 'See all' },
+  confirming: { ta: 'உறுதி ஆகுது…', en: 'Confirming…' },
+  recordsCheckable: { ta: 'பதிவுகள், ஒவ்வொன்னும் சரிபார்க்கலாம்', en: 'records, each one checkable' },
+  privacyPlain: { ta: 'உங்க பேரு அதுல இல்ல, ஒரு குறியீடு மட்டும்', en: 'Your name is never on it, only a code' },
+  autoSaveOn: { ta: 'தானா சேமிப்பு', en: 'auto-save' },
+  demoNote: { ta: 'டெமோ · சோதனை பணம் மட்டும்', en: 'Demo · test money only' },
 } as const
 
 export type Key = keyof typeof T

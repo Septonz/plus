@@ -1,23 +1,25 @@
 // The /app front door: open a new account (sign-up by voice or taps), sign in with phone + PIN,
-// or (demo) continue as one of the demo people.
+// or (demo) continue as one of the demo people. A quiet hero: the wordmark, one line of purpose and
+// a wallet card drawn in CSS (no illustrations).
 import { ConversationProvider } from '@elevenlabs/react'
+import { motion } from 'motion/react'
 import { lazy, Suspense, useEffect, useState } from 'react'
+import { Button, Icon, ListGroup, Notice, Section, Spinner, softSpring } from '../ds/components'
 import { DEMO_FUNMI_EMAIL, DEMO_PASSWORD, DEMO_SELVI_EMAIL, supabase } from '../lib/supabase'
 import { tool } from '../plus/api'
-import { BigButton, ENGLISH, Icon, LangContext, Notice, Spinner } from '../plus/ui'
-import { Y } from '../ng/words'
-import { ArtWelcome } from './art'
+import { ENGLISH, LangContext } from '../plus/ui'
+import { W } from '../ng/words'
 
 const Onboarding = lazy(() => import('./Onboarding.tsx'))
 const SignIn = lazy(() => import('./Onboarding.tsx').then((m) => ({ default: m.SignIn })))
 
 const DEMO = [
-  { email: DEMO_FUNMI_EMAIL, label: 'Funmi', note: 'Nigeria · tomato seller, Ibadan · wallet on Stellar' },
-  { email: DEMO_SELVI_EMAIL, label: 'Selvi', note: 'India · flower seller, Madurai · bank account' },
+  { email: DEMO_FUNMI_EMAIL, label: 'Funmi', note: 'Nigeria · tomato seller in Ibadan' },
+  { email: DEMO_SELVI_EMAIL, label: 'Selvi', note: 'India · flower seller in Madurai' },
 ]
 
 const Loading = () => (
-  <div className="grid min-h-dvh place-items-center text-4xl text-brick" role="status" aria-label="Loading"><Spinner /></div>
+  <div className="grid min-h-dvh place-items-center text-3xl text-secondary" role="status" aria-label="Loading"><Spinner /></div>
 )
 
 export default function Welcome() {
@@ -25,6 +27,33 @@ export default function Welcome() {
     <LangContext.Provider value={ENGLISH}>
       <Door />
     </LangContext.Provider>
+  )
+}
+
+/** The wallet card, drawn in CSS only: the market gradient, a soft glow, the wordmark. */
+function WalletCard() {
+  return (
+    <motion.div
+      initial={{ y: 16, opacity: 0, rotate: -2 }}
+      animate={{ y: 0, opacity: 1, rotate: -2 }}
+      transition={softSpring}
+      aria-hidden="true"
+      className="relative mx-auto aspect-[1.586] w-full max-w-[20rem] overflow-hidden rounded-card p-5 text-white shadow-lift"
+      style={{ background: 'var(--wallet)' }}
+    >
+      <span className="absolute -right-12 -top-16 size-48 rounded-full bg-white/10 blur-2xl" />
+      <span className="absolute -bottom-20 -left-10 size-48 rounded-full bg-black/10 blur-2xl" />
+      <span className="relative flex h-full flex-col justify-between">
+        <span className="flex items-center justify-between">
+          <span className="text-lg font-semibold tracking-tight">Plus</span>
+          <Icon name="wallet" className="text-xl text-white/70" />
+        </span>
+        <span>
+          <span className="block text-sm text-white/70">Wallet</span>
+          <span className="num block text-4xl font-light">₦26,400</span>
+        </span>
+      </span>
+    </motion.div>
   )
 }
 
@@ -63,43 +92,43 @@ function Door() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-5 px-4 pb-10 pt-8">
-      <div className="text-center">
-        <img src="/icons/icon-192.png" alt="" className="mx-auto size-20 rounded-[1.5rem] shadow-lift" />
-        <h1 className="mt-3 text-5xl font-extrabold text-brick">Plus</h1>
-        <p className="mt-1 text-2xl font-bold">Your money, by voice</p>
-      </div>
-      <ArtWelcome />
-      <BigButton className="min-h-20 w-full text-2xl" onClick={() => setView('signup')}>
-        <Icon name="userPlus" /> <Y k="openAccount" sub="text-cream/80" />
-      </BigButton>
-      <BigButton tone="white" className="w-full" onClick={() => setView('signin')}>
-        <Icon name="lock" /> <Y k="haveAccount" />
-      </BigButton>
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-8 px-4 pb-10 pt-[max(env(safe-area-inset-top),3rem)]">
+      <header className="space-y-2 text-center">
+        <h1 className="text-5xl font-semibold tracking-[-0.04em]">Plus</h1>
+        <p className="text-lg text-secondary">Your money, by voice. Save, pay and borrow fairly.</p>
+      </header>
 
-      {demoOn !== false && <section className="mt-2 space-y-3" aria-labelledby="demo-people">
-        <h2 id="demo-people" className="flex items-center gap-3 text-base font-bold uppercase tracking-wide text-ink-soft">
-          <span className="h-0.5 flex-1 bg-line" /> Demo people <span className="h-0.5 flex-1 bg-line" />
-        </h2>
-        {DEMO.map((p) => (
-          <button
-            key={p.email}
-            onClick={() => void demo(p.email)}
-            disabled={busy !== null}
-            className="flex min-h-16 w-full items-center gap-3 rounded-control bg-white px-4 py-3 text-left shadow-card active:bg-sand disabled:opacity-60"
-          >
-            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-sand text-2xl text-brick">
-              {busy === p.email ? <Spinner /> : <Icon name="person" />}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-xl font-bold">Continue as {p.label}</span>
-              <span className="block text-base text-ink-soft">{p.note}</span>
-            </span>
-          </button>
-        ))}
-        {error && <Notice tone="chili">{error}</Notice>}
-        <p className="text-center text-base text-ink-soft">Stellar testnet. All money is simulated.</p>
-      </section>}
+      <WalletCard />
+
+      <div className="space-y-3">
+        <Button className="w-full" onClick={() => setView('signup')}>{W.openAccount.en}</Button>
+        <Button variant="secondary" className="w-full" onClick={() => setView('signin')}>{W.haveAccount.en}</Button>
+      </div>
+
+      {demoOn !== false && (
+        <Section title="Demo people">
+          <ListGroup>
+            {DEMO.map((p) => (
+              <li key={p.email}>
+                <button
+                  onClick={() => void demo(p.email)}
+                  disabled={busy !== null}
+                  className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-fill disabled:opacity-60"
+                >
+                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-accent-soft text-base font-semibold text-accent-ink" aria-hidden="true">{p.label[0]}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-lg font-medium leading-snug">Continue as {p.label}</span>
+                    <span className="block truncate text-sm text-secondary">{p.note}</span>
+                  </span>
+                  {busy === p.email ? <Spinner className="text-secondary" /> : <Icon name="chevron" className="text-lg text-secondary" />}
+                </button>
+              </li>
+            ))}
+          </ListGroup>
+          {error && <Notice tone="danger">{error}</Notice>}
+          <p className="px-1 pt-1 text-center text-sm text-secondary">Stellar testnet. All money is simulated.</p>
+        </Section>
+      )}
     </main>
   )
 }

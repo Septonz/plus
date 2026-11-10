@@ -5,9 +5,13 @@
 //   Right: a live feed of the Stellar transactions behind what the phone does (Funmi, Mama Bisi, the
 //         ajo pot, the advance pool; Selvi's record in India), each with the seconds from her Yes to
 //         confirmed on-chain and a Stellar Expert link. Read through the staff-only demo_feed().
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+// Always dark and cinematic (whatever the projector laptop's setting): the dark tokens are set on
+// the page's root element, so every design-system component below reads them.
+import { AnimatePresence, motion } from 'motion/react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { formatMoney } from '@plus/markets'
+import { Button, Icon, Notice, Segmented, Spinner, spring } from '../ds/components'
 import { supabase } from '../lib/supabase'
 import { useSession } from '../plus/auth'
 
@@ -32,15 +36,56 @@ type FeedRow = {
   automatic: boolean
 }
 
+/** The dark tokens, forced for this page only (same values as tokens.css dark mode). */
+const DARK = {
+  colorScheme: 'dark',
+  '--canvas': '#000000',
+  '--surface': '#161618',
+  '--surface-2': '#1d1d20',
+  '--fill': '#26262a',
+  '--fill-strong': '#333338',
+  '--hairline': '#2a2a2e',
+  '--label': '#f4f4f6',
+  '--secondary': '#a3a4ad',
+  '--glass': 'rgb(22 22 24 / 0.72)',
+  '--scrim': 'rgb(0 0 0 / 0.55)',
+  '--success': '#4cc38a',
+  '--success-soft': '#11291d',
+  '--warning': '#f0b45a',
+  '--warning-soft': '#2b2112',
+  '--danger': '#f2877d',
+  '--danger-soft': '#2e1614',
+  '--info': '#8db6f2',
+  '--info-soft': '#14213a',
+  '--shadow-card': '0 0 0 1px rgb(255 255 255 / 0.05)',
+  '--shadow-lift': '0 0 0 1px rgb(255 255 255 / 0.06), 0 24px 48px -20px rgb(0 0 0 / 0.8)',
+  '--accent': '#16815a',
+  '--accent-strong': '#1a9467',
+  '--accent-ink': '#5cc99a',
+  '--accent-soft': '#10271d',
+} as CSSProperties
+
+const STAGE_BG = 'radial-gradient(1200px 700px at 18% 10%, rgb(22 129 90 / 0.18), transparent 60%), radial-gradient(900px 600px at 90% 100%, rgb(79 71 214 / 0.14), transparent 60%), linear-gradient(180deg, #050506 0%, #000 100%)'
+
+function Dark({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return (
+    <div style={{ ...DARK, background: STAGE_BG }} className={`min-h-dvh text-label ${className}`}>
+      {children}
+    </div>
+  )
+}
+
 export default function DemoPage() {
   const { session, ready } = useSession()
-  if (!ready) return null
+  if (!ready) return <Dark>{null}</Dark>
   if (!session) return <StaffLogin />
   if (session.user.app_metadata?.role !== 'staff') return <NotStaff session={session} />
   return <Stage />
 }
 
 // ---------------------------------------------------------------------------
+
+const field = 'mt-1.5 block min-h-14 w-full rounded-control border border-hairline bg-surface-2 px-4 text-lg text-label focus:border-accent focus:outline-none'
 
 function StaffLogin() {
   const [email, setEmail] = useState('')
@@ -57,35 +102,34 @@ function StaffLogin() {
     if (error) setError(error.message)
   }
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-cream p-6 text-ink">
-      <form onSubmit={submit} className="w-full max-w-md space-y-4 rounded-3xl bg-white p-8 shadow-[0_3px_0_0_var(--color-sand-deep)]">
-        <h1 className="text-4xl font-extrabold text-brick">Plus · demo view</h1>
-        <p className="text-lg text-ink-soft">Staff login (created with <code>pnpm staff:create</code>).</p>
+    <Dark className="flex items-center justify-center p-6">
+      <form onSubmit={submit} className="w-full max-w-md space-y-5 rounded-sheet border border-hairline bg-surface/80 p-8 shadow-lift backdrop-blur-xl">
+        <div>
+          <p className="text-sm font-medium uppercase tracking-wide text-secondary">Staff</p>
+          <h1 className="text-3xl font-semibold">Plus · demo view</h1>
+          <p className="mt-1 text-base text-secondary">Staff login (created with <code className="font-mono">pnpm staff:create</code>).</p>
+        </div>
         <label className="block">
-          <span className="text-lg font-bold">Email</span>
-          <input type="email" required autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 block min-h-14 w-full rounded-2xl border-2 border-sand-deep px-4 text-xl" />
+          <span className="text-base font-medium text-secondary">Email</span>
+          <input type="email" required autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} className={field} />
         </label>
         <label className="block">
-          <span className="text-lg font-bold">Password</span>
-          <input type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 block min-h-14 w-full rounded-2xl border-2 border-sand-deep px-4 text-xl" />
+          <span className="text-base font-medium text-secondary">Password</span>
+          <input type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className={field} />
         </label>
-        {error && <p className="rounded-2xl bg-chili-soft p-3 text-lg font-semibold text-chili">{error}</p>}
-        <button disabled={busy} className="min-h-16 w-full rounded-2xl bg-brick text-2xl font-extrabold text-cream disabled:opacity-60">
-          {busy ? 'Signing in…' : 'Sign in'}
-        </button>
+        {error && <Notice tone="danger">{error}</Notice>}
+        <Button type="submit" className="w-full" loading={busy}>{busy ? 'Signing in…' : 'Sign in'}</Button>
       </form>
-    </main>
+    </Dark>
   )
 }
 
 function NotStaff({ session }: { session: Session }) {
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-cream p-6 text-center text-ink">
-      <p className="text-2xl font-bold">{session.user.email} is not a staff login.</p>
-      <button onClick={() => void supabase?.auth.signOut()} className="min-h-14 rounded-2xl bg-brick px-6 text-xl font-bold text-cream">Sign out</button>
-    </main>
+    <Dark className="flex flex-col items-center justify-center gap-5 p-6 text-center">
+      <p className="text-2xl font-medium">{session.user.email} is not a staff login.</p>
+      <Button variant="secondary" onClick={() => void supabase?.auth.signOut()}>Sign out</Button>
+    </Dark>
   )
 }
 
@@ -103,25 +147,30 @@ function Stage() {
     setMarket(m)
     setMounted((s) => new Set(s).add(m))
   }
+  // The accent follows the country on stage.
+  const accent = market === 'in'
+    ? ({ '--accent': '#4f47d6', '--accent-strong': '#6159e4', '--accent-ink': '#a9a4fb', '--accent-soft': '#1b1940' } as CSSProperties)
+    : {}
   return (
-    <div className="flex h-dvh flex-col bg-cream text-ink">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b-4 border-sand-deep bg-white px-8 py-4">
-        <div>
-          <h1 className="text-4xl font-extrabold text-brick">Plus <span className="font-bold text-ink">· live on Stellar</span></h1>
-          <p className="text-xl text-ink-soft">{PEOPLE[market].name}: {PEOPLE[market].story}</p>
+    <div style={{ ...DARK, ...accent, background: STAGE_BG }} className="flex h-dvh flex-col text-label">
+      <header className="flex flex-wrap items-center justify-between gap-6 border-b border-white/5 px-8 py-5">
+        <div className="min-w-0">
+          <h1 className="text-3xl font-semibold tracking-tight">
+            Plus <span className="font-light text-secondary">· live on Stellar</span>
+          </h1>
+          <AnimatePresence mode="wait">
+            <motion.p key={market} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-1 text-lg text-secondary">
+              {PEOPLE[market].name}: {PEOPLE[market].story}
+            </motion.p>
+          </AnimatePresence>
         </div>
-        <div role="radiogroup" aria-label="Country" className="inline-flex rounded-full bg-sand p-1.5">
-          {(['ng', 'in'] as const).map((m) => (
-            <button key={m} role="radio" aria-checked={market === m} onClick={() => choose(m)}
-              className={`min-h-14 rounded-full px-8 text-2xl font-extrabold ${market === m ? 'bg-brick text-cream shadow' : 'text-ink-soft'}`}>
-              {PEOPLE[m].flag}
-            </button>
-          ))}
+        <div className="w-72">
+          <Segmented label="Country" value={market} onChange={choose} options={[['ng', PEOPLE.ng.flag], ['in', PEOPLE.in.flag]]} />
         </div>
-        <button onClick={() => void supabase?.auth.signOut()} className="text-lg font-semibold text-ink-soft underline">Sign out</button>
+        <Button variant="plain" size="sm" onClick={() => void supabase?.auth.signOut()}>Sign out</Button>
       </header>
 
-      <main className="grid min-h-0 flex-1 grid-cols-1 gap-8 p-6 lg:grid-cols-[auto_1fr]">
+      <main className="grid min-h-0 flex-1 grid-cols-1 gap-10 p-8 lg:grid-cols-[auto_1fr]">
         <section aria-label={`${PEOPLE[market].name}'s phone`} className="flex h-[80vh] min-h-0 justify-center lg:h-auto">
           {(['ng', 'in'] as const).map((m) => mounted.has(m) && (
             <Phone key={m} src={`/app?as=${m === 'ng' ? 'funmi' : 'selvi'}`} title={`${PEOPLE[m].name}'s Plus app`} hidden={m !== market} />
@@ -133,14 +182,17 @@ function Stage() {
   )
 }
 
-/** A 390 × 844 phone, scaled to the height available. */
+const FRAME_W = 390 + 2 * 14
+const FRAME_H = 844 + 2 * 14
+
+/** A 390 × 844 phone in a realistic frame (bezel, edge highlight, island), scaled to the height available. */
 function Phone({ src, title, hidden }: { src: string; title: string; hidden: boolean }) {
   const box = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
   useLayoutEffect(() => {
     const el = box.current
     if (!el) return
-    const fit = () => setScale(Math.min(1.25, Math.max(0.4, (el.clientHeight - 8) / 868)))
+    const fit = () => setScale(Math.min(1.2, Math.max(0.4, (el.clientHeight - 16) / FRAME_H)))
     fit()
     const ro = new ResizeObserver(fit)
     ro.observe(el)
@@ -148,10 +200,27 @@ function Phone({ src, title, hidden }: { src: string; title: string; hidden: boo
   }, [])
   return (
     // display:none keeps the iframe loaded (and signed in), so switching country is instant.
-    <div ref={box} className={`h-full justify-center ${hidden ? 'hidden' : 'flex'}`} aria-hidden={hidden}>
-      <div style={{ width: 414 * scale, height: 868 * scale }}>
-        <div className="origin-top-left rounded-[3.25rem] border-[12px] border-ink bg-ink shadow-2xl" style={{ width: 414, height: 868, transform: `scale(${scale})` }}>
-          <iframe src={src} title={title} allow="microphone" className="size-full rounded-[2.5rem] bg-cream" style={{ width: 390, height: 844 }} />
+    <div ref={box} className={`h-full items-center justify-center ${hidden ? 'hidden' : 'flex'}`} aria-hidden={hidden}>
+      <div style={{ width: FRAME_W * scale, height: FRAME_H * scale }}>
+        <div
+          className="relative origin-top-left rounded-[3.5rem] p-[14px]"
+          style={{
+            width: FRAME_W,
+            height: FRAME_H,
+            transform: `scale(${scale})`,
+            background: 'linear-gradient(145deg, #3a3a3e 0%, #1a1a1c 35%, #0c0c0d 65%, #2a2a2d 100%)',
+            boxShadow: '0 0 0 1px rgb(255 255 255 / 0.08), inset 0 0 0 1.5px rgb(255 255 255 / 0.12), inset 0 0 0 6px #050505, 0 60px 120px -30px rgb(0 0 0 / 0.9), 0 30px 60px -20px rgb(22 129 90 / 0.15)',
+          }}
+        >
+          <div className="relative size-full overflow-hidden rounded-[2.75rem] bg-black">
+            <iframe src={src} title={title} allow="microphone" className="block size-full border-0 bg-canvas" style={{ width: 390, height: 844 }} />
+            <span aria-hidden className="pointer-events-none absolute left-1/2 top-[11px] h-[30px] w-[118px] -translate-x-1/2 rounded-full bg-black" />
+          </div>
+          {/* side buttons */}
+          <span aria-hidden className="absolute -left-[3px] top-[150px] h-8 w-[3px] rounded-l bg-[#2a2a2d]" />
+          <span aria-hidden className="absolute -left-[3px] top-[205px] h-14 w-[3px] rounded-l bg-[#2a2a2d]" />
+          <span aria-hidden className="absolute -left-[3px] top-[272px] h-14 w-[3px] rounded-l bg-[#2a2a2d]" />
+          <span aria-hidden className="absolute -right-[3px] top-[230px] h-20 w-[3px] rounded-r bg-[#2a2a2d]" />
         </div>
       </div>
     </div>
@@ -159,15 +228,6 @@ function Phone({ src, title, hidden }: { src: string; title: string; hidden: boo
 }
 
 // ---------------------------------------------------------------------------
-
-const ACCOUNT_STYLE: Record<string, string> = {
-  Funmi: 'bg-brick text-cream',
-  'Mama Bisi': 'bg-saffron text-ink',
-  'Ajo pot': 'bg-leaf text-white',
-  'Advance pool': 'bg-ink text-cream',
-  'Seettu record': 'bg-leaf text-white',
-  'Advance record': 'bg-ink text-cream',
-}
 
 const ATTEST_WORDS: Record<string, string> = { pay: 'payment', incoming: 'money in', saved: 'saved', group_contribution: 'seettu', cash_out: 'cash out' }
 
@@ -227,46 +287,68 @@ function Feed({ market }: { market: Market }) {
   }, [rows])
 
   return (
-    <section aria-label="Stellar transactions" className="flex min-h-0 flex-col rounded-[2rem] bg-white shadow-[0_3px_0_0_var(--color-sand-deep)]">
-      <div className="flex flex-wrap items-end justify-between gap-2 border-b-2 border-sand px-6 py-4">
-        <h2 className="text-3xl font-extrabold">On Stellar, as it happens</h2>
-        {median && <p className="text-2xl text-ink-soft">Yes → confirmed: <b className="text-leaf">{median.value.toFixed(1)} s</b> median of {median.n}</p>}
+    <section aria-label="Stellar transactions" className="flex min-h-0 flex-col overflow-hidden rounded-sheet border border-white/[0.06] bg-surface/70 shadow-lift backdrop-blur-xl">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-hairline px-7 py-5">
+        <div>
+          <p className="text-sm font-medium uppercase tracking-wide text-secondary">Stellar testnet</p>
+          <h2 className="text-2xl font-semibold">On Stellar, as it happens</h2>
+        </div>
+        {median && (
+          <p className="text-right">
+            <span className="block text-sm text-secondary">Yes → confirmed, median of {median.n}</span>
+            <span className="num font-mono text-3xl font-light text-success">{median.value.toFixed(1)} s</span>
+          </p>
+        )}
       </div>
-      {error && <p className="m-4 rounded-2xl bg-chili-soft p-4 text-xl text-chili">{error}</p>}
-      <ol className="min-h-0 flex-1 divide-y-2 divide-sand overflow-y-auto" aria-live="polite">
-        {rows === null && <li className="p-6 text-2xl text-ink-soft">Loading…</li>}
-        {rows?.length === 0 && <li className="p-6 text-2xl text-ink-soft">Nothing yet. Tap something on the phone.</li>}
-        {rows?.map((r) => {
-          const amount = r.amount_minor !== null ? formatMoney(BigInt(Math.abs(Number(r.amount_minor))), market) : null
-          const done = r.status === 'done'
-          return (
-            <li key={r.id} className={`grid grid-cols-[auto_1fr_auto] items-center gap-x-5 gap-y-1 px-6 py-4 transition-colors ${fresh.has(r.id) ? 'bg-turmeric/25' : ''}`}>
-              <span className={`row-span-2 rounded-2xl px-4 py-2 text-xl font-extrabold ${ACCOUNT_STYLE[r.account] ?? 'bg-sand text-ink'}`}>{r.account}</span>
-              <p className="text-2xl font-bold">{describe(r, market)}{amount && <span className="text-brick"> · {amount}</span>}</p>
-              <p className="row-span-2 text-right text-2xl font-extrabold">
-                {done ? (
-                  <span className="text-leaf">✓ {r.automatic ? 'automatic' : `${Number(r.seconds).toFixed(1)} s`}</span>
-                ) : r.status === 'failed' ? (
-                  <span className="text-chili">retrying</span>
-                ) : (
-                  <span className="animate-pulse text-saffron">⏳ sending</span>
-                )}
-              </p>
-              <p className="text-lg text-ink-soft">
-                {new Date(r.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
-                {done && !r.automatic && ' · from her Yes to confirmed on-chain'}
-                {r.tx_hash && (
-                  <>
-                    {' · '}
-                    <a href={`${EXPERT}/tx/${r.tx_hash}`} target="_blank" rel="noreferrer" className="font-bold text-brick underline">
-                      Stellar Expert {r.tx_hash.slice(0, 8)}↗
+      {error && <div className="m-5"><Notice tone="danger">{error}</Notice></div>}
+      <div className="grid grid-cols-[6.5rem_7rem_1fr_6rem_6.5rem] gap-4 border-b border-hairline px-7 py-2 font-mono text-xs uppercase tracking-wider text-secondary">
+        <span>Time</span><span>Account</span><span>What happened</span><span className="text-right">Yes → ✓</span><span className="text-right">Tx</span>
+      </div>
+      <ol className="min-h-0 flex-1 overflow-y-auto font-mono" aria-live="polite">
+        {rows === null && <li className="flex items-center gap-2 px-7 py-6 text-lg text-secondary"><Spinner /> Loading…</li>}
+        {rows?.length === 0 && <li className="px-7 py-6 text-lg text-secondary">Nothing yet. Tap something on the phone.</li>}
+        <AnimatePresence initial={false}>
+          {rows?.map((r) => {
+            const amount = r.amount_minor !== null ? formatMoney(BigInt(Math.abs(Number(r.amount_minor))), market) : null
+            const done = r.status === 'done'
+            return (
+              <motion.li
+                key={r.id}
+                layout
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={spring}
+                className={`grid grid-cols-[6.5rem_7rem_1fr_6rem_6.5rem] items-baseline gap-4 border-b border-white/[0.04] px-7 py-3.5 text-base transition-colors duration-1000 ${fresh.has(r.id) ? 'bg-accent-soft' : ''}`}
+              >
+                <span className="num text-secondary">{new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                <span className="truncate text-accent-ink">{r.account}</span>
+                <span className="min-w-0 font-sans text-lg">
+                  {describe(r, market)}
+                  {amount && <span className="num font-mono text-secondary"> · {amount}</span>}
+                </span>
+                <span className="num text-right">
+                  {done ? (
+                    <span className="text-success">{r.automatic ? 'auto' : `${Number(r.seconds).toFixed(1)} s`}</span>
+                  ) : r.status === 'failed' ? (
+                    <span className="text-danger">retrying</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-warning"><Spinner /> sending</span>
+                  )}
+                </span>
+                <span className="text-right">
+                  {r.tx_hash ? (
+                    <a href={`${EXPERT}/tx/${r.tx_hash}`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1 text-secondary hover:text-label" aria-label={`Open transaction ${r.tx_hash.slice(0, 8)} on Stellar Expert`}>
+                      {r.tx_hash.slice(0, 6)}… <Icon name="link" className="text-sm" />
                     </a>
-                  </>
-                )}
-              </p>
-            </li>
-          )
-        })}
+                  ) : (
+                    <span className="text-secondary">—</span>
+                  )}
+                </span>
+              </motion.li>
+            )
+          })}
+        </AnimatePresence>
       </ol>
     </section>
   )

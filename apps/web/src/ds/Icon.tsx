@@ -1,0 +1,68 @@
+// One thin-stroke icon set (Lucide) at one weight everywhere. Screens name icons by meaning
+// ('pay', 'advance'); this is the only place that maps a meaning to a glyph.
+import {
+  Activity, ArrowDownLeft, ArrowUpRight, Banknote, BadgeCheck, Camera, Check, ChevronLeft, ChevronRight, CircleAlert,
+  CircleUser, Copy, Delete, ExternalLink, Flower2, Globe, HandCoins, House, IdCard, Info, Landmark, Lock, LogOut,
+  MessageSquare, Mic, Package, PiggyBank, Plus, QrCode, ReceiptText, RotateCw, ScanFace, Search, Settings, ShieldCheck,
+  Smartphone, Sparkles, Square, Star, Stethoscope, TrendingUp, TriangleAlert, User, UserPlus, Users, Wallet, X,
+  type LucideIcon,
+} from 'lucide-react'
+
+const ICONS: Record<string, LucideIcon> = {
+  mic: Mic,
+  stop: Square,
+  home: House,
+  pay: ArrowUpRight,
+  in: ArrowDownLeft,
+  group: Users,
+  advance: HandCoins,
+  loan: HandCoins,
+  record: ReceiptText,
+  activity: Activity,
+  add: Plus,
+  settings: Settings,
+  profile: CircleUser,
+  back: ChevronLeft,
+  chevron: ChevronRight,
+  check: Check,
+  verified: BadgeCheck,
+  x: X,
+  star: Star,
+  flower: Flower2,
+  medical: Stethoscope,
+  person: User,
+  bank: Landmark,
+  hand: Banknote,
+  cash: Banknote,
+  globe: Globe,
+  wages: Wallet,
+  gov: Landmark,
+  lock: Lock,
+  link: ExternalLink,
+  backspace: Delete,
+  copy: Copy,
+  phone: Smartphone,
+  camera: Camera,
+  face: ScanFace,
+  id: IdCard,
+  shield: ShieldCheck,
+  sms: MessageSquare,
+  wallet: Wallet,
+  savings: PiggyBank,
+  assets: Package,
+  growth: TrendingUp,
+  refresh: RotateCw,
+  userPlus: UserPlus,
+  alert: TriangleAlert,
+  error: CircleAlert,
+  info: Info,
+  star4: Sparkles,
+  code: QrCode,
+  search: Search,
+  signOut: LogOut,
+}
+
+export function Icon({ name, className = '', strokeWidth = 1.6 }: { name: string; className?: string; strokeWidth?: number }) {
+  const C = ICONS[name] ?? Sparkles
+  return <C aria-hidden="true" strokeWidth={strokeWidth} absoluteStrokeWidth={false} className={`inline-block size-[1.15em] shrink-0 ${className}`} />
+}

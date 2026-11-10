@@ -1,5 +1,6 @@
 import { StrictMode, lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
+import { MotionConfig } from 'motion/react'
 import './index.css'
 import App from './App.tsx'
 
@@ -21,8 +22,10 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Suspense fallback={null}>
-      <Page />
-    </Suspense>
+    <MotionConfig reducedMotion="user">
+      <Suspense fallback={null}>
+        <Page />
+      </Suspense>
+    </MotionConfig>
   </StrictMode>,
 )

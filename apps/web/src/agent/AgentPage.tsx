@@ -6,10 +6,14 @@
 //   Register a customer: the same sign-up as the app, run on Mama Bisi's screen with the customer
 //   answering (she types her own PIN and NIN). A kiosk would be this screen on a shared tablet.
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import {
+  AmountDisplay, Button, Card, EmptyState, Icon, ListGroup, ListRow, Notice, NumPad, PageHeader, Section, Segmented, Spinner,
+  VerifiedMark, applyKey, useMarketAccent,
+} from '../ds/components'
 import { DEMO_MAMA_BISI_EMAIL, supabase } from '../lib/supabase'
 import { call, newKey } from '../plus/api'
 import { DemoChoice, useSession } from '../plus/auth'
-import { applyKey, BigButton, Card, EmptyState, Icon, Keypad, LoadingList, Notice, Spinner } from '../plus/ui'
+import { LoadingList } from '../plus/ui'
 import { naira, when } from '../ng/words'
 
 type Item = { id: string; name: string; amount_text: string; status: string; at: string; url: string | null }
@@ -30,20 +34,23 @@ type Me = {
 const Onboarding = lazy(() => import('../onboard/Onboarding.tsx'))
 
 type Answer = Partial<Me> & { ok?: boolean; error?: string; text?: string; amount_text?: string; attempts_left?: number }
+type Tone = 'success' | 'danger' | 'neutral'
 
+/** Status of a cash-in or redeemed code: label and colour. Confirmed ones show the verified tick. */
 const STATUS: Record<string, [string, string]> = {
-  awaiting_user: ['Waiting for her Yes', 'bg-sand text-ink'],
-  confirmed: ['Sending…', 'bg-sand text-ink'],
-  on_stellar: ['✓ On Stellar', 'bg-leaf-soft text-leaf'],
-  sending: ['Sending…', 'bg-sand text-ink'],
-  rejected: ['She said No', 'bg-chili-soft text-chili'],
-  expired: ['Expired', 'bg-sand text-ink-soft'],
+  awaiting_user: ['Waiting for her Yes', 'text-warning'],
+  confirmed: ['Sending…', 'text-secondary'],
+  on_stellar: ['Verified on Stellar', 'text-success'],
+  sending: ['Sending…', 'text-secondary'],
+  rejected: ['She said No', 'text-danger'],
+  expired: ['Expired', 'text-secondary'],
 }
 
 export default function AgentPage() {
+  useMarketAccent('ng')
   const { session, ready } = useSession()
   return (
-    <div className="min-h-dvh bg-cream text-ink">
+    <div className="min-h-dvh bg-canvas text-label">
       {!ready ? null : session ? <Signed /> : (
         <DemoChoice people={[{ email: DEMO_MAMA_BISI_EMAIL, label: 'Continue as Mama Bisi', note: 'Plus cash agent · Bodija market, Ibadan' }]} />
       )}
@@ -54,14 +61,14 @@ export default function AgentPage() {
 function Phone({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <label className="block">
-      <span className="text-xl font-bold">Their phone</span>
+      <span className="text-base font-medium text-secondary">Their phone</span>
       <input
         inputMode="tel"
         autoComplete="off"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="0803 123 4567"
-        className="mt-2 block min-h-16 w-full rounded-control border-2 border-line bg-white px-4 text-2xl font-bold focus:border-brick"
+        className="num mt-1.5 block min-h-14 w-full rounded-control border border-hairline bg-surface-2 px-4 text-xl text-label transition-colors focus:border-accent focus:bg-surface focus:outline-none"
       />
     </label>
   )
@@ -76,7 +83,7 @@ function Signed() {
   const [checked, setChecked] = useState<string | null>(null)
   const [key, setKey] = useState(() => newKey('agent'))
   const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState<{ tone: 'leaf' | 'chili' | 'sand'; text: string } | null>(null)
+  const [msg, setMsg] = useState<{ tone: Tone; text: string } | null>(null)
 
   const load = useCallback(async () => setMe(await call<Me>('agent-api/me')), [])
   useEffect(() => {
@@ -98,20 +105,20 @@ function Signed() {
     // One idempotency key per entry: a double tap or a retry records it once.
     const r = await send('record_cash_in', { phone, amount, idempotency_key: key })
     if (r.ok) {
-      setMsg({ tone: 'leaf', text: r.text ?? '' })
+      setMsg({ tone: 'success', text: r.text ?? '' })
       setAmount('')
       setKey(newKey('agent'))
-    } else setMsg({ tone: 'chili', text: r.text ?? r.error ?? 'Error' })
+    } else setMsg({ tone: 'danger', text: r.text ?? r.error ?? 'Error' })
   }
 
   async function check() {
     const r = await send('check_code', { phone, code })
     if (r.ok) {
       setChecked(r.amount_text ?? null)
-      setMsg({ tone: 'sand', text: r.text ?? '' })
+      setMsg({ tone: 'neutral', text: r.text ?? '' })
     } else {
       setChecked(null)
-      setMsg({ tone: 'chili', text: `${r.text ?? r.error}${typeof r.attempts_left === 'number' ? ` ${r.attempts_left} tries left.` : ''}` })
+      setMsg({ tone: 'danger', text: `${r.text ?? r.error}${typeof r.attempts_left === 'number' ? ` ${r.attempts_left} tries left.` : ''}` })
     }
   }
 
@@ -120,115 +127,132 @@ function Signed() {
     setChecked(null)
     if (r.ok) {
       setCode('')
-      setMsg({ tone: 'leaf', text: r.text ?? '' })
-    } else setMsg({ tone: 'chili', text: r.text ?? r.error ?? 'Error' })
+      setMsg({ tone: 'success', text: r.text ?? '' })
+    } else setMsg({ tone: 'danger', text: r.text ?? r.error ?? 'Error' })
   }
 
   if (!me) {
     return (
       <div className="mx-auto max-w-md space-y-4 px-4 pt-6">
-        <p className="flex items-center gap-2 text-xl font-bold text-ink-soft" role="status"><Spinner /> Loading your float…</p>
+        <p className="flex items-center gap-2 text-lg text-secondary" role="status"><Spinner /> Loading your float…</p>
         <LoadingList rows={3} />
       </div>
     )
   }
   if (me.error) {
     return (
-      <div className="mx-auto max-w-md p-6">
-        <Notice tone="chili">{me.error === 'not_an_agent' ? 'This login is not a Plus cash agent.' : me.text ?? me.error}</Notice>
-        <BigButton tone="white" className="mt-4 w-full" onClick={() => void supabase?.auth.signOut()}>Sign out</BigButton>
+      <div className="mx-auto max-w-md space-y-4 p-6">
+        <Notice tone="danger">{me.error === 'not_an_agent' ? 'This login is not a Plus cash agent.' : me.text ?? me.error}</Notice>
+        <Button variant="secondary" className="w-full" onClick={() => void supabase?.auth.signOut()}>Sign out</Button>
       </div>
     )
   }
 
+  const items = tab === 'cash' ? me.recent : me.redeemed
   return (
-    <div className="mx-auto max-w-md space-y-5 px-4 pb-16 pt-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <p className="text-base font-bold uppercase tracking-wide text-saffron">Plus cash agent</p>
-          <h1 className="text-3xl font-extrabold">{me.agent.name}</h1>
-        </div>
-        <button onClick={() => void supabase?.auth.signOut()} className="min-h-12 shrink-0 rounded-full border-2 border-line bg-white px-4 text-base font-bold active:bg-sand">Sign out</button>
-      </header>
+    <div className="mx-auto max-w-md space-y-6 px-4 pb-16 pt-[max(env(safe-area-inset-top),1.25rem)]">
+      <PageHeader
+        title={me.agent.name}
+        sub="Plus cash agent · Bodija market"
+        right={<Button variant="secondary" size="sm" onClick={() => void supabase?.auth.signOut()}>Sign out</Button>}
+      />
 
-      <Card className="bg-brick! text-cream shadow-lift!">
-        <p className="text-lg font-semibold">Float on Stellar</p>
-        <p className="mt-1 text-4xl font-extrabold text-turmeric">{me.float_text}</p>
-        <p className="mt-1 text-base text-cream/80">
-          {me.float_free_text} free · {me.left_today_text} left today (limit {me.limit_text})
-        </p>
-        {me.wallet_url && <a href={me.wallet_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-base font-bold text-cream underline">See float on Stellar Expert</a>}
+      <Card>
+        <div className="flex items-start justify-between gap-3">
+          <AmountDisplay text={me.float_text} size="lg" label="Float" />
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-accent-soft text-xl text-accent-ink"><Icon name="wallet" /></span>
+        </div>
+        <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-hairline pt-3 text-sm">
+          <div><dt className="text-secondary">Free</dt><dd className="num font-medium">{me.float_free_text}</dd></div>
+          <div><dt className="text-secondary">Left today</dt><dd className="num font-medium">{me.left_today_text}</dd></div>
+          <div><dt className="text-secondary">Daily limit</dt><dd className="num font-medium">{me.limit_text}</dd></div>
+        </dl>
+        {me.wallet_url && <div className="mt-3"><VerifiedMark url={me.wallet_url} /></div>}
       </Card>
 
-      <div className="grid grid-cols-3 gap-2" role="tablist">
-        {([['cash', 'add', 'Record cash'], ['code', 'hand', 'Redeem code'], ['register', 'userPlus', 'Register']] as const).map(([t, icon, label]) => (
-          <button key={t} role="tab" aria-selected={tab === t} onClick={() => { setTab(t); setMsg(null) }}
-            className={`flex min-h-24 flex-col items-center justify-center gap-1 rounded-control px-1 text-center text-lg font-extrabold leading-tight ${tab === t ? 'bg-brick text-cream' : 'bg-white shadow-card active:bg-sand'}`}>
-            <Icon name={icon} className="text-3xl" /> {label}
-          </button>
-        ))}
-      </div>
+      <Segmented
+        label="What do you want to do?"
+        value={tab}
+        onChange={(t) => { setTab(t); setMsg(null) }}
+        options={[['cash', 'Record cash'], ['code', 'Redeem code'], ['register', 'Register']]}
+      />
 
       {tab === 'register' ? (
         <Card>
-          <Suspense fallback={<p className="flex items-center gap-2 py-6 text-xl font-bold" role="status"><Spinner /> Loading…</p>}>
+          <Suspense fallback={<p className="flex items-center gap-2 py-6 text-lg text-secondary" role="status"><Spinner /> Loading…</p>}>
             <Onboarding mode="agent" onExit={() => setTab('cash')} />
           </Suspense>
         </Card>
-      ) : (<>
-      <Card>
-        <Phone value={phone} onChange={setPhone} />
-        {tab === 'cash' ? (
-          <>
-            <p className="mt-4 text-xl font-bold">Cash she gave you</p>
-            <p className="my-3 text-center text-5xl font-extrabold text-brick" aria-live="polite">{naira(BigInt(amount || '0') * 100n)}</p>
-            <Keypad onKey={(k) => setAmount((a) => applyKey(a, k, 7))} />
-            <BigButton className="mt-4 w-full" onClick={record} disabled={!amount || !phone || busy}>
-              <Icon name="hand" /> Record cash
-            </BigButton>
-            <p className="mt-2 text-base text-ink-soft">Nothing moves until she says Yes in her Plus app.</p>
-          </>
-        ) : (
-          <>
-            <p className="mt-4 text-xl font-bold">Her 6-digit code</p>
-            <p className="my-3 text-center font-mono text-5xl font-extrabold tracking-[0.2em]" aria-live="polite">{code.padEnd(6, '·')}</p>
-            <p className="-mt-1 mb-3 text-center text-base text-ink-soft">Her own cash-out code, or a code someone sent to this phone.</p>
-            <Keypad onKey={(k) => { setCode((c) => applyKey(c, k, 6, true)); setChecked(null) }} />
-            {checked ? (
-              <BigButton tone="leaf" className="mt-4 w-full" onClick={redeem} disabled={busy}>
-                <Icon name="check" /> I gave her {checked}. Done
-              </BigButton>
-            ) : (
-              <BigButton className="mt-4 w-full" onClick={check} disabled={code.length !== 6 || !phone || busy}>Check code</BigButton>
-            )}
-          </>
-        )}
-        {msg && <div className="mt-3"><Notice tone={msg.tone}>{msg.text}</Notice></div>}
-      </Card>
-
-      <h2 className="text-2xl font-extrabold">{tab === 'cash' ? 'Recent cash-ins' : 'Codes you redeemed'}</h2>
-      {(tab === 'cash' ? me.recent : me.redeemed).length === 0 ? (
-        <EmptyState icon={tab === 'cash' ? 'add' : 'hand'} title={tab === 'cash' ? 'No cash-ins yet' : 'No codes redeemed yet'}>
-          {tab === 'cash' ? 'Cash you record shows here with its tick on Stellar.' : 'Codes you pay out show here.'}
-        </EmptyState>
       ) : (
-      <ul className="space-y-2">
-        {(tab === 'cash' ? me.recent : me.redeemed).map((r) => {
-          const [label, cls] = STATUS[r.status] ?? [r.status, 'bg-sand']
-          const badge = <span className={`inline-block whitespace-nowrap rounded-full px-3 py-1 text-base font-bold ${cls}`}>{label}</span>
-          return (
-            <li key={r.id} className="flex items-center justify-between gap-3 rounded-control bg-white p-4 shadow-card">
-              <div className="min-w-0">
-                <p className="text-xl font-bold">{r.name} · {r.amount_text}</p>
-                <p className="text-base text-ink-soft">{when(r.at)}</p>
-              </div>
-              {r.url ? <a href={r.url} target="_blank" rel="noreferrer" className="shrink-0">{badge}</a> : badge}
-            </li>
-          )
-        })}
-      </ul>
+        <>
+          <Card className="space-y-5">
+            <Phone value={phone} onChange={setPhone} />
+            {tab === 'cash' ? (
+              <>
+                <div className="text-center" aria-live="polite">
+                  <p className="text-base font-medium text-secondary">Cash she gave you</p>
+                  <AmountDisplay text={naira(BigInt(amount || '0') * 100n)} size="xl" className={`mt-2 ${amount ? '' : 'text-secondary'}`} />
+                </div>
+                <NumPad onKey={(k) => setAmount((a) => applyKey(a, k, 7))} />
+                <Button className="w-full" onClick={() => void record()} disabled={!amount || !phone} loading={busy}>
+                  <Icon name="cash" /> Record cash
+                </Button>
+                <p className="text-center text-sm text-secondary">Nothing moves until she says Yes in her Plus app.</p>
+              </>
+            ) : (
+              <>
+                <div className="text-center" aria-live="polite">
+                  <p className="text-base font-medium text-secondary">Her 6-digit code</p>
+                  <p className="num mt-2 font-mono text-5xl font-light tracking-[0.2em]">{code.padEnd(6, '·')}</p>
+                  <p className="mt-2 text-sm text-secondary">Her own cash-out code, or a code someone sent to this phone.</p>
+                </div>
+                <NumPad onKey={(k) => { setCode((c) => applyKey(c, k, 6, true)); setChecked(null) }} />
+                {checked ? (
+                  <Button className="w-full" onClick={() => void redeem()} loading={busy}>
+                    <Icon name="check" /> I gave her {checked}. Done
+                  </Button>
+                ) : (
+                  <Button className="w-full" onClick={() => void check()} disabled={code.length !== 6 || !phone} loading={busy}>Check code</Button>
+                )}
+              </>
+            )}
+            {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+          </Card>
+
+          <Section title={tab === 'cash' ? 'Recent cash-ins' : 'Codes you redeemed'}>
+            {items.length === 0 ? (
+              <EmptyState icon={tab === 'cash' ? 'cash' : 'code'} title={tab === 'cash' ? 'No cash-ins yet' : 'No codes redeemed yet'}>
+                {tab === 'cash' ? 'Cash you record shows here, with its tick once it is verified.' : 'Codes you pay out show here.'}
+              </EmptyState>
+            ) : (
+              <ListGroup>
+                {items.map((r) => {
+                  const [label, cls] = STATUS[r.status] ?? [r.status, 'text-secondary']
+                  return (
+                    <ListRow
+                      key={r.id}
+                      icon={tab === 'cash' ? 'in' : 'cash'}
+                      iconTone={r.status === 'on_stellar' ? 'success' : 'neutral'}
+                      title={r.name}
+                      subtitle={when(r.at)}
+                      trailing={
+                        <span className="flex flex-col items-end gap-0.5">
+                          <span className="num text-lg font-medium">{r.amount_text}</span>
+                          {r.status === 'on_stellar' ? (
+                            <VerifiedMark url={r.url} />
+                          ) : (
+                            <span className={`text-xs font-medium ${cls}`}>{label}</span>
+                          )}
+                        </span>
+                      }
+                    />
+                  )
+                })}
+              </ListGroup>
+            )}
+          </Section>
+        </>
       )}
-      </>)}
     </div>
   )
 }

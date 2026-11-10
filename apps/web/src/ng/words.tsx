@@ -1,6 +1,5 @@
 // Plus Nigeria wording helpers: simple English (Pidgin-friendly) in big type, Yoruba underneath.
 // Every label lives in translations.ts (one file, for the Yoruba review).
-import { type ReactNode } from 'react'
 import { formatMoney } from '@plus/markets'
 import type { MicWords } from '../plus/voice'
 import { W } from './translations'
@@ -9,16 +8,19 @@ export { W }
 export type WKey = keyof typeof W
 
 /** English big, Yoruba small underneath. */
-export function Y({ k, className = '', sub = 'text-ink-soft' }: { k: WKey; className?: string; sub?: string }) {
+export function Y({ k, className = '', sub = 'text-secondary' }: { k: WKey; className?: string; sub?: string }) {
   const w = W[k]
   if (!w.yo) return <span className={className}>{w.en}</span>
   return (
     <span className={`inline-flex flex-col leading-tight ${className}`}>
       <span>{w.en}</span>
-      <span className={`text-base font-normal ${sub}`}>{w.yo}</span>
+      <span className={`mt-0.5 text-sm font-normal tracking-normal ${sub}`}>{w.yo}</span>
     </span>
   )
 }
+
+/** The Yoruba line only (for places that set the English themselves). */
+export const yo = (k: WKey): string | undefined => W[k].yo || undefined
 
 export const naira = (kobo: number | string | bigint) => formatMoney(BigInt(kobo), 'ng')
 
@@ -32,13 +34,12 @@ export const MIC_WORDS: MicWords = {
   micSoon: `${W.micSoon.en} · ${W.micSoon.yo}`,
 }
 
-export function Big({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <p className={`text-5xl font-extrabold tracking-tight text-brick ${className}`}>{children}</p>
-}
 
 export function when(iso: string): string {
   const d = new Date(iso)
-  const days = Math.floor((Date.now() - d.getTime()) / 86_400_000)
+  // Calendar days (yesterday at 23:00 is "yesterday", not "today").
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const days = Math.round((day(new Date()) - day(d)) / 86_400_000)
   const time = d.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })
   if (days <= 0) return `today ${time}`
   if (days === 1) return `yesterday ${time}`

@@ -1,64 +1,46 @@
-// The confirm screen, used by voice and taps alike. It opens by itself when a pending action she
-// started (by voice or by tapping) arrives through Realtime. Big read-back, Yes and No, and an
-// on-screen PIN pad above the PIN threshold. The PIN goes straight from here to agent-tools
-// (confirm_action, app channel); it never passes through the voice agent.
+// The India confirm sheet, used by voice and taps alike. It opens by itself when a pending action
+// she started (by voice or by tapping) arrives through Realtime. Amount large, who it's to (English,
+// Tamil beneath), Yes and No, and the PIN pad above the PIN threshold. The PIN goes straight from
+// here to agent-tools (confirm_action, app channel); it never passes through the voice agent.
 import { useState } from 'react'
+import { ConfirmSheet as Sheet, type ConfirmPhase, type CostLine } from '../ds/ConfirmSheet'
 import { tool, type ToolResult } from './api'
 import { money, needsPin, type PendingAction } from './data'
 import { PAYEE_TA, T } from './i18n'
-import { applyKey, BigButton, Icon, Keypad, L, Notice, PinDots, useLang, useT } from './ui'
+import { useLang, useT } from './ui'
 
-export function Readback({ a }: { a: PendingAction }) {
-  const { lang } = useLang()
-  const amount = a.params.amount !== undefined ? money(String(a.params.amount)) : null
-  let to: { ta: string; en: string } | null = null
+function readback(a: PendingAction): { to: string | null; toTa: string | null; lines: CostLine[] } {
+  const amount = a.params.amount !== undefined ? BigInt(String(a.params.amount)) : null
+  const total: CostLine[] = amount !== null ? [{ label: 'Fee', value: money(0n) }, { label: 'Total', value: money(amount), strong: true }] : []
   if (a.kind === 'pay') {
     const name = String(a.params.payee_name ?? '')
-    to = { ta: `${PAYEE_TA[name] ?? name}க்கு`, en: `to ${name}` }
-  } else if (a.kind === 'group_contribution') {
-    to = { ta: 'உங்க சீட்டுக்கு', en: 'to your seettu' }
-  } else if (a.kind === 'confirm_cash_in') {
+    return { to: `To ${name}`, toTa: `${PAYEE_TA[name] ?? name}க்கு`, lines: total }
+  }
+  if (a.kind === 'group_contribution') return { to: 'To your seettu', toTa: 'உங்க சீட்டுக்கு', lines: total }
+  if (a.kind === 'confirm_cash_in') {
     const h = String(a.params.helper_name ?? 'Helper')
-    to = { ta: `${h} கிட்ட கையில கொடுத்தது`, en: `cash you gave ${h}` }
+    return { to: `Cash you gave ${h}`, toTa: `${h} கிட்ட கையில கொடுத்தது`, lines: [] }
   }
-  if (a.kind === 'set_auto_save') {
-    return (
-      <div className="text-center">
-        <p className="text-6xl font-extrabold text-brick">{String(a.params.percent)}%</p>
-        <p className="mt-2 text-2xl font-bold">
-          <L k="autoSave" />
-        </p>
-        <p className="mt-1 text-lg text-ink-soft">{lang === 'ta' ? T.autoSaveHelp.ta : T.autoSaveHelp.en}</p>
-      </div>
-    )
+  if (a.kind === 'advance') {
+    const fee = BigInt(String(a.params.fee ?? 0))
+    return {
+      to: 'Advance', toTa: 'முன்பணம்',
+      lines: [
+        { label: 'You receive', value: money(amount ?? 0n) },
+        { label: 'One fee', value: money(fee) },
+        { label: 'Total to pay back', value: money((amount ?? 0n) + fee), strong: true },
+      ],
+    }
   }
-  return (
-    <div className="text-center">
-      {amount && <p className="text-6xl font-extrabold tracking-tight text-brick">{amount}</p>}
-      {to && (
-        <p className="mt-3 text-2xl font-bold">
-          {lang === 'ta' ? (
-            <>
-              {to.ta}
-              <span className="block text-lg font-normal text-ink-soft">{to.en}</span>
-            </>
-          ) : (
-            to.en
-          )}
-        </p>
-      )}
-    </div>
-  )
+  return { to: null, toTa: null, lines: [] }
 }
-
-type Phase = 'ask' | 'working' | 'done' | 'failed'
 
 export function ConfirmSheet({ action, onClose }: { action: PendingAction; onClose: () => void }) {
   const t = useT()
   const { lang } = useLang()
   const pinNeeded = needsPin(action)
   const [pin, setPin] = useState('')
-  const [phase, setPhase] = useState<Phase>('ask')
+  const [phase, setPhase] = useState<ConfirmPhase>('ask')
   const [message, setMessage] = useState<string | null>(null)
   const [result, setResult] = useState<ToolResult | null>(null)
 
@@ -81,83 +63,44 @@ export function ConfirmSheet({ action, onClose }: { action: PendingAction; onClo
   async function no() {
     setPhase('working')
     await tool('reject_action', { action_id: action.id }).catch(() => null)
-    setResult({ text: t('cancelled') })
     setPhase('failed')
     setMessage(t('cancelled'))
   }
 
+  const rb = readback(action)
+  const ta = lang === 'ta'
+  const autoSave = action.kind === 'set_auto_save'
+  const both = (k: keyof typeof T) => (ta ? `${T[k].en} · ${T[k].ta}` : T[k].en)
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/60 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-      <div className="sheet-in max-h-[100dvh] w-full max-w-md overflow-y-auto rounded-t-[2rem] bg-cream px-5 pb-8 pt-6 sm:rounded-[2rem]">
-        <h2 id="confirm-title" className="mb-4 text-center text-2xl font-extrabold">
-          {phase === 'done' ? <L k="done" /> : <L k="checkThis" />}
-        </h2>
-
-        <Readback a={action} />
-
-        {phase === 'done' && (
-          <div className="mt-6 space-y-4 text-center">
-            <p className="mx-auto grid size-20 place-items-center rounded-full bg-leaf text-5xl text-white">
-              <Icon name="check" />
-            </p>
-            {typeof result?.balance_text === 'string' && (
-              <p className="text-xl">
-                <L k="toSpend" className="items-center" /> <span className="block text-3xl font-extrabold">{result.balance_text}</span>
-              </p>
-            )}
-            <BigButton tone="leaf" className="w-full" onClick={onClose}>
-              <L k="close" sub="text-white/85" />
-            </BigButton>
-          </div>
-        )}
-
-        {phase === 'failed' && (
-          <div className="mt-6 space-y-4">
-            {message && <Notice tone="chili">{message}</Notice>}
-            <BigButton tone="sand" className="w-full" onClick={onClose}>
-              <L k="close" />
-            </BigButton>
-          </div>
-        )}
-
-        {(phase === 'ask' || phase === 'working') && (
-          <div className="mt-6 space-y-4">
-            {message && <Notice tone="chili">{message}</Notice>}
-            {pinNeeded ? (
-              <>
-                <p className="text-center text-xl font-bold">
-                  <Icon name="lock" /> <L k="typePin" />
-                </p>
-                <PinDots length={pin.length} />
-                <Keypad onKey={(k) => setPin((p) => applyKey(p, k, 6, true))} />
-                <p className="text-center text-base text-ink-soft">{t('pinHidden')}</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <BigButton tone="white" onClick={no} disabled={phase === 'working'}>
-                    <L k="no" />
-                  </BigButton>
-                  <BigButton tone="leaf" onClick={yes} disabled={phase === 'working' || pin.length < 4}>
-                    {phase === 'working' ? t('working') : <L k="yes" sub="text-white/85" />}
-                  </BigButton>
-                </div>
-              </>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                <BigButton tone="white" className="min-h-24 text-2xl" onClick={no} disabled={phase === 'working'}>
-                  <Icon name="x" /> <L k="no" />
-                </BigButton>
-                <BigButton tone="leaf" className="min-h-24 text-2xl" onClick={yes} disabled={phase === 'working'}>
-                  {phase === 'working' ? t('working') : (
-                    <>
-                      <Icon name="check" /> <L k="yes" sub="text-white/85" />
-                    </>
-                  )}
-                </BigButton>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+    <Sheet
+      phase={phase}
+      heading={both('checkThis')}
+      amount={action.params.amount !== undefined ? money(String(action.params.amount)) : null}
+      big={autoSave ? <p className="num text-6xl font-light">{String(action.params.percent)}%</p> : undefined}
+      to={autoSave ? T.autoSave.en : rb.to}
+      toSub={autoSave ? (ta ? T.autoSave.ta : T.autoSaveHelp.en) : ta ? rb.toTa : undefined}
+      lines={rb.lines}
+      pinNeeded={pinNeeded}
+      pin={pin}
+      onPin={setPin}
+      pinLabel={both('typePin')}
+      pinHint={both('pinHidden')}
+      yes={both('yes')}
+      no={both('no')}
+      working={T.working.en}
+      closeLabel={both('close')}
+      onYes={() => void yes()}
+      onNo={() => void no()}
+      onClose={onClose}
+      message={message}
+      done={
+        typeof result?.balance_text === 'string' ? (
+          <p className="text-base text-secondary">
+            {T.toSpend.en}{ta ? ` · ${T.toSpend.ta}` : ''} <span className="num block text-3xl font-light text-label">{result.balance_text}</span>
+          </p>
+        ) : null
+      }
+    />
   )
 }
 

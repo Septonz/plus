@@ -1,0 +1,163 @@
+/*
+ * Plus design tokens: the one source for colour, type, radius, shadow and motion.
+ *
+ *   Colour   near-white / near-black with soft greys; one restrained accent per market
+ *            (Nigeria deep green, India deep indigo) set by <html data-market="ng|in">;
+ *            calm green for success, amber for warnings, muted red for errors.
+ *            Light and dark follow the phone (prefers-color-scheme).
+ *   Type     Inter (variable), system fallback; Noto Sans Tamil for Tamil. Body 17px, labels
+ *            13 to 15px, nothing under 13px. Money: large, light, tabular figures (.num).
+ *   Space    8px grid (Tailwind 2 = 8px). 16px side gutter, 24px between sections.
+ *   Radius   control 14px · card 24px · sheet 28px · pill.
+ *   Touch    44px minimum.
+ *
+ * Use the semantic names (bg-surface, text-secondary, bg-accent…), never raw hex in components.
+ */
+
+:root {
+  color-scheme: light;
+  --canvas: #f4f4f6;
+  --surface: #ffffff;
+  --surface-2: #f7f7f9;
+  --fill: #ebebef;
+  --fill-strong: #dedee4;
+  --hairline: #e2e2e7;
+  --label: #111114;
+  --secondary: #5c5d66;
+  --on-accent: #ffffff;
+  --glass: rgb(255 255 255 / 0.72);
+  --scrim: rgb(10 10 14 / 0.32);
+
+  --success: #1f7a4d;
+  --success-strong: #17603c;
+  --success-soft: #e4f3ea;
+  --warning: #9a5a00;
+  --warning-strong: #7a4700;
+  --warning-soft: #fdf1df;
+  --danger: #b23a32;
+  --danger-soft: #fbe9e7;
+  --info: #2c5aa0;
+  --info-soft: #e8eff9;
+
+  --shadow-card: 0 1px 1px rgb(17 17 20 / 0.03), 0 2px 8px rgb(17 17 20 / 0.04), 0 16px 32px -20px rgb(17 17 20 / 0.18);
+  --shadow-lift: 0 2px 6px rgb(17 17 20 / 0.06), 0 24px 48px -20px rgb(17 17 20 / 0.32);
+  --ring-card: 0 0 0 0 transparent;
+
+  /* Nigeria (default): deep green */
+  --accent: #0e6b47;
+  --accent-strong: #0a5236;
+  --accent-ink: #0e6b47;
+  --accent-soft: #e2f1e9;
+  --wallet: linear-gradient(140deg, #127a52 0%, #0b4f35 55%, #083826 100%);
+}
+
+:root[data-market="in"] {
+  --accent: #3b33a8;
+  --accent-strong: #2c2585;
+  --accent-ink: #3b33a8;
+  --accent-soft: #ebeafb;
+  --wallet: linear-gradient(140deg, #4a42c4 0%, #2f2890 55%, #1f1a63 100%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --canvas: #000000;
+    --surface: #161618;
+    --surface-2: #1d1d20;
+    --fill: #26262a;
+    --fill-strong: #333338;
+    --hairline: #2a2a2e;
+    --label: #f4f4f6;
+    --secondary: #a3a4ad;
+    --glass: rgb(22 22 24 / 0.72);
+    --scrim: rgb(0 0 0 / 0.55);
+
+    --success: #4cc38a;
+    --success-strong: #6fd4a3;
+    --success-soft: #11291d;
+    --warning: #f0b45a;
+    --warning-strong: #f6c983;
+    --warning-soft: #2b2112;
+    --danger: #f2877d;
+    --danger-soft: #2e1614;
+    --info: #8db6f2;
+    --info-soft: #14213a;
+
+    --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.05);
+    --shadow-lift: 0 0 0 1px rgb(255 255 255 / 0.06), 0 24px 48px -20px rgb(0 0 0 / 0.8);
+
+    --accent: #16815a;
+    --accent-strong: #1a9467;
+    --accent-ink: #5cc99a;
+    --accent-soft: #10271d;
+  }
+  :root[data-market="in"]:not([data-theme="light"]) {
+    --accent: #4f47d6;
+    --accent-strong: #6159e4;
+    --accent-ink: #a9a4fb;
+    --accent-soft: #1b1940;
+  }
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", "Noto Sans Tamil", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, monospace;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-fill: var(--fill);
+  --color-fill-strong: var(--fill-strong);
+  --color-hairline: var(--hairline);
+  --color-label: var(--label);
+  --color-secondary: var(--secondary);
+  --color-on-accent: var(--on-accent);
+  --color-glass: var(--glass);
+  --color-scrim: var(--scrim);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-success-strong: var(--success-strong);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-strong: var(--warning-strong);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-lift: var(--shadow-lift);
+}
+
+@theme {
+  /* Type: 13px floor, 17px body. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.35;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.4;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.45;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.45;
+  --text-xl: 1.1875rem;
+  --text-xl--line-height: 1.35;
+  --text-2xl: 1.375rem;
+  --text-2xl--line-height: 1.25;
+  --text-3xl: 1.75rem;
+  --text-3xl--line-height: 1.15;
+  --text-4xl: 2.125rem;
+  --text-4xl--line-height: 1.1;
+  --text-5xl: 2.75rem;
+  --text-5xl--line-height: 1.05;
+  --text-6xl: 3.5rem;
+  --text-6xl--line-height: 1;
+
+  --radius-control: 0.875rem;
+  --radius-card: 1.5rem;
+  --radius-sheet: 1.75rem;
+}
