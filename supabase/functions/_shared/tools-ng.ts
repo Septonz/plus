@@ -6,6 +6,7 @@
 // Voice and the app read balances only from the wallet_balances cache (refreshed from Horizon
 // after every confirmed transaction and every minute). Contract state (ajo, advance, limit) is
 // read from the contract's views. Amounts are kobo (bigint); spoken amounts are always naira.
+import { collateralWords, type CreditAsset, type CreditLoan, creditPicture, type CreditWeek, lendingRules, levelWords } from "./lending.ts";
 import { formatMoney, formatSpokenMoney, getMarket } from "./markets.ts";
 import type { ChainAdvance, ContractReader } from "./ng-types.ts";
 import { matchPayee, parseMajorAmount, type Payee } from "./payees.ts";
@@ -90,7 +91,15 @@ export interface NgStore {
   /** Save (or rename) a payee by phone; a Plus user's wallet is saved with it. */
   savePayee(userId: string, p: { name: string; phone: string; stellar_address: string | null }): Promise<Payee>;
   /** ng_bank_transfer_in: the partner anchor sends NGNT to her wallet (+ advance repayment). Idempotent on ref. */
-  bankTransferIn(userId: string, amount: bigint, repay: bigint, ref: string, sender: string): Promise<{ transaction_id: string; repay: bigint }>;
+  bankTransferIn(userId: string, amount: bigint, repay: bigint, ref: string, sender: string): Promise<{ transaction_id: string; repay: bigint; loan?: boolean }>;
+  /** Her credit picture's inputs: weeks with Plus (real + compressed demo history), assets, loans with balances, recent loan steps. */
+  credit(userId: string): Promise<{
+    frozen_until: string | null;
+    weeks: CreditWeek[];
+    assets: CreditAsset[];
+    loans: CreditLoan[];
+    events: { kind: string; amount: number | null; note: string | null; created_at: string }[];
+  }>;
   chain: ContractReader;
 }
 
@@ -117,9 +126,13 @@ function refuse(text: string, error: string, extra: Record<string, unknown> = {}
 const CHECK_SCREEN = "Ask her to check her screen and tap Yes, or say yes.";
 const PIN_ON_SCREEN = "Ask her to check her screen and type her PIN there. Never ask for the PIN out loud.";
 
-/** Money moves up to the market's PIN threshold (₦5,000) take a spoken or tapped Yes; above it, the PIN, typed in the app. */
-export const NG_PIN_KINDS = ["pay", "pay_code", "group_contribution", "cash_out", "advance"];
+/**
+ * Money moves up to the market's PIN threshold (₦5,000) take a spoken or tapped Yes; above it, the
+ * PIN, typed in the app. Accepting a loan always takes the PIN.
+ */
+export const NG_PIN_KINDS = ["pay", "pay_code", "group_contribution", "cash_out", "advance", "loan_repay"];
 export function ngNeedsPin(a: Pick<Action, "kind" | "params">): boolean {
+  if (a.kind === "loan") return true;
   if (!NG_PIN_KINDS.includes(a.kind)) return false;
   return BigInt(String(a.params.amount ?? 0)) > BigInt(getMarket(M).pinThreshold) * 100n;
 }
@@ -235,7 +248,7 @@ export const ngGetBalance: NgTool = async ({ user, store }) => {
 export const ngWhatArrived: NgTool = async ({ user, store, now = new Date(), explorer }) => {
   const [cash, txs] = await Promise.all([store.awaitingCashIns(user.id), store.transactions(user.id, 50)]);
   const since = now.getTime() - 14 * 86_400_000;
-  const incoming = txs.filter((t) => (t.kind === "incoming" || t.kind === "advance") && new Date(t.created_at).getTime() >= since).slice(0, 5);
+  const incoming = txs.filter((t) => (t.kind === "incoming" || t.kind === "advance" || t.kind === "loan") && new Date(t.created_at).getTime() >= since).slice(0, 5);
   const parts: string[] = [];
   // Cash waiting for her Yes or No comes first.
   for (const c of cash) {
@@ -243,6 +256,7 @@ export const ngWhatArrived: NgTool = async ({ user, store, now = new Date(), exp
   }
   const from = (t: NgTx) =>
     t.kind === "advance" ? "her advance"
+    : t.kind === "loan" ? "her loan from the partner lender"
     : t.source === "cash" ? `cash with ${t.counterparty ?? "the agent"}`
     : t.source === "ajo_payout" ? "her ajo payout"
     : t.source === "bank" ? `a bank transfer${t.counterparty ? ` from ${t.counterparty}` : ""}`
@@ -276,6 +290,8 @@ const KIND_WORDS: Record<string, string> = {
   group_contribution: "ajo",
   advance: "advance",
   repay: "advance repaid",
+  loan: "loan received",
+  loan_repay: "loan repayment",
   cash_out: "cash out",
   adjustment: "demo reset (testnet)",
 };
@@ -584,7 +600,7 @@ export const ngBankDetails: NgTool = async ({ user }) => {
 
 /**
  * Demo (app only): a transfer arrives at her virtual account. The partner's anchor account sends the
- * same NGNT to her wallet on Stellar; 10% repays an open advance right after it lands.
+ * same NGNT to her wallet on Stellar; 10% repays an open loan (or a legacy advance) right after it lands.
  */
 export const ngSimulateBankTransfer: NgTool = async ({ user, store, args, channel }) => {
   if (channel !== "app") return refuse("Only the demo button on her screen can do that.", "app_only");
@@ -599,7 +615,8 @@ export const ngSimulateBankTransfer: NgTool = async ({ user, store, args, channe
   const r = await store.bankTransferIn(user.id, amount, repay, ref, sender);
   return {
     text: `${say(amount)} arrived by bank transfer from ${sender}. It is on its way into her wallet on Stellar.` +
-      (r.repay > 0n ? ` ${say(r.repay)} of it pays back her advance.` : ""),
+      (r.repay > 0n ? ` ${say(r.repay)} of it pays back her advance.` : "") +
+      (r.loan ? " 10 percent of it goes to her loan." : ""),
     ok: true,
     sending: true,
     transaction_id: r.transaction_id,
@@ -715,9 +732,19 @@ function doneText(a: Action): string {
       return `Okay: cash-out of ${amt}. Her code is on her screen; she shows it to the agent, and the agent gives her the cash.${tail}`;
     case "confirm_cash_in": {
       const repay = BigInt(String(r.repay ?? 0));
+      const loan = BigInt(String(r.loan_repay ?? 0));
       return `Okay: ${amt} cash from ${String(r.helper_name ?? a.params.helper_name)} is going into her wallet.` +
-        (repay > 0n ? ` ${say(repay)} of it pays back her advance.` : "") + tail;
+        (repay > 0n ? ` ${say(repay)} of it pays back her advance.` : "") +
+        (loan > 0n ? ` ${say(loan)} of it, 10 percent, goes to her loan.` : "") + tail;
     }
+    case "loan":
+      return `Okay: her loan of ${amt} is on its way from the partner lender.${tail}`;
+    case "loan_repay":
+      return `Okay: ${amt} to her loan.${tail}`;
+    case "loan_extension":
+      return `Done: her next payment is now due ${spokenDate(String(r.next_due_at ?? a.params.new_due_at))}. New borrowing is paused until this loan is repaid.`;
+    case "loan_restructure":
+      return `Done: smaller payments now, ${say(String(r.minimum ?? a.params.minimum))} every two weeks.`;
   }
   return "Okay." + tail;
 }
@@ -813,6 +840,218 @@ export const ngNewCashOutCode: NgTool = async ({ user, store, args, channel, cod
 };
 
 // ---------------------------------------------------------------------------
+// Loans (piece 4): progress before unlock, the offer and why, the ladder, repay, more time
+// ---------------------------------------------------------------------------
+
+const LENDER = () => lendingRules().lenderLabel;
+
+export function spokenDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-NG", { weekday: "long", day: "numeric", month: "long", timeZone: "Africa/Lagos" });
+}
+
+async function picture(store: NgStore, user: User, now: Date) {
+  const c = await store.credit(user.id);
+  const p = creditPicture({ member_since: user.member_since ?? new Date().toISOString(), kyc_tier: user.kyc_tier, frozen_until: c.frozen_until, weeks: c.weeks, assets: c.assets, loans: c.loans, now });
+  return { c, p };
+}
+
+function loanView(l: CreditLoan, now: Date) {
+  const due = new Date(l.next_due_at);
+  const periodLeft = l.minimum - l.period_paid > 0n ? l.minimum - l.period_paid : 0n;
+  const owed = l.outstanding;
+  return {
+    id: l.id,
+    status: l.status,
+    principal_text: show(l.principal),
+    cost_text: show(l.cost),
+    total_text: show(l.total),
+    repaid_text: show(l.repaid),
+    in_flight_text: l.in_flight > 0n ? show(l.in_flight) : null,
+    outstanding_minor: String(owed),
+    outstanding_text: show(owed),
+    progress: l.total > 0n ? Number(((l.repaid + l.in_flight) * 100n) / l.total) : 0,
+    minimum_text: show(l.minimum),
+    due_now_minor: String(periodLeft < owed ? periodLeft : owed),
+    due_now_text: show(periodLeft < owed ? periodLeft : owed),
+    next_due_at: l.next_due_at,
+    next_due_text: spokenDate(l.next_due_at),
+    overdue: due <= now && periodLeft > 0n,
+    grace_until: l.grace_until,
+    repay_pct: l.repay_bps / 100,
+    can_extend: !l.extended_once,
+    can_restructure: !l.restructured_once && (l.status === "late" || l.missed > 0 || l.grace_until !== null),
+    borrowing_paused: l.borrowing_paused,
+    disbursed: l.disbursed,
+  };
+}
+
+/** Her loan picture: progress before unlock, the offer (and why) once unlocked, or the loan she is repaying. */
+export const ngLoanStatus: NgTool = async ({ user, store, now = new Date() }) => {
+  if (!getMarket(M).lending) return refuse("Loans are not offered here yet.", "not_available");
+  const { c, p } = await picture(store, user, now);
+  const L = lendingRules();
+  const repayLine = `${L.repay.fromMoneyInBps / 100}% of every money-in, and at least ${say(BigInt(L.repay.minimum) * 100n)} every two weeks`;
+  const ladder = p.ladder.map((s) => ({ ...s, max: String(s.max), max_text: show(s.max), cost_pct: s.cost_bps / 100, collateral_text: collateralWords(s.collateral_pct) }));
+  const why = p.why;
+  const base = {
+    ok: true,
+    week: p.week,
+    weeks_needed: p.weeks_needed,
+    weeks_left: p.weeks_left,
+    checklist: p.checklist,
+    unlocked: p.unlocked,
+    ladder,
+    why,
+    score: p.score,
+    lender: L.lenderLabel,
+    events: c.events.slice(0, 5).map((e) => ({ ...e, amount_text: e.amount !== null ? show(e.amount) : null })),
+  };
+  if (p.open) {
+    const v = loanView(p.open, now);
+    const text = `Her loan: ${say(p.open.outstanding)} left of ${say(p.open.total)}. ` +
+      (v.overdue ? `${say(BigInt(v.due_now_minor))} is due now${p.open.grace_until ? `; she has until ${spokenDate(p.open.grace_until)}` : ""}. `
+        : `Next: at least ${say(BigInt(v.due_now_minor))} by ${v.next_due_text}. `) +
+      `${p.open.repay_bps / 100}% of every money-in pays it by itself.` +
+      (p.open.status === "late" ? " A payment is late: she can ask for smaller payments (restructure). Nobody else is ever contacted." : "") +
+      (p.open.borrowing_paused ? " New borrowing is paused until it is repaid." : "");
+    return { ...base, text, view: "repay", loan: v };
+  }
+  if (p.blocked === "frozen") {
+    return { ...base, text: "New borrowing is frozen after missed payments. Her record keeps building; it opens again once things are back on track.", view: "paused" };
+  }
+  if (!p.unlocked) {
+    const todo = p.checklist.filter((x) => !x.done).map((x) => `${x.label.toLowerCase()} (${x.detail})`);
+    return {
+      ...base,
+      view: "building",
+      text: `She is building her Plus history: week ${p.week} of ${p.weeks_needed}. Still to come: ${todo.join("; ")}. ` +
+        `An estimate, not an offer: about ${say(p.estimate.low)} to ${say(p.estimate.high)} once it opens. Never say rejected or not eligible.`,
+      estimate: { low_text: show(p.estimate.low), high_text: show(p.estimate.high) },
+    };
+  }
+  const o = p.offer!;
+  const a = p.affordability;
+  return {
+    ...base,
+    view: "offer",
+    text: `She has a loan offer from the partner lender: she receives ${say(o.amount)}, the cost is ${say(o.cost)}, total ${say(o.total)}. ` +
+      `Why: activity ${why[0].weight}%, verified assets ${why[1].weight}%, savings consistency ${why[2].weight}%. ` +
+      `Repay ${repayLine}. After she repays, the next loan can be ${ladder[Math.min(p.step + 1, ladder.length - 1)].max_text} at ${ladder[Math.min(p.step + 1, ladder.length - 1)].cost_pct}%. ` +
+      `Accepting needs her PIN on the screen.`,
+    offer: {
+      amount_minor: String(o.amount), amount_text: show(o.amount), cost_text: show(o.cost), total_text: show(o.total),
+      cost_pct: o.cost_bps / 100, collateral_pct: o.collateral_pct, approval: o.approval, repay_text: repayLine,
+      minimum_text: show(BigInt(L.repay.minimum) * 100n), repay_pct: L.repay.fromMoneyInBps / 100,
+    },
+    affordability: {
+      asset: p.collateral_asset ? `${p.collateral_asset.description} (${levelWords(p.collateral_asset.level)})` : null,
+      estimated_value_text: show(a.estimated_value), lending_value_text: show(a.lending_value), affordable_text: show(a.affordable),
+      collateral_needed_text: show((o.amount * BigInt(o.collateral_pct)) / 100n), limited_by: a.limited_by,
+    },
+  };
+};
+
+/** Accept the offer (or less): always confirmed with her PIN on the screen. */
+export const ngPrepareLoan: NgTool = async ({ user, store, args, now = new Date() }) => {
+  if (!user.stellar_pub) return refuse("Her wallet is not set up yet.", "no_wallet");
+  const { p } = await picture(store, user, now);
+  if (p.open) return refuse(`She already has a loan: ${say(p.open.outstanding)} left. One at a time.`, "loan_open");
+  if (p.blocked === "frozen") return refuse("New borrowing is frozen after missed payments.", "borrowing_frozen");
+  if (!p.unlocked || !p.offer) {
+    return refuse(`Her history is still building: week ${p.week} of ${p.weeks_needed}. Tell her what is left; never say rejected or not eligible.`, "still_building");
+  }
+  const L = lendingRules();
+  const asked = args.amount === undefined || args.amount === null || args.amount === "" ? p.offer.amount : parseMajorAmount(args.amount);
+  if (asked === null) return refuse("How much? Ask for the amount in naira.", "invalid_amount");
+  if (asked > p.offer.amount) return refuse(`Her offer is up to ${say(p.offer.amount)}.`, "over_offer", { offer_text: show(p.offer.amount) });
+  if (asked < 1000n * 100n) return refuse("The smallest loan is 1,000 naira.", "below_min");
+  const step = L.ladder[p.step];
+  const cost = (asked * BigInt(step.costBps)) / 10000n;
+  const a = await store.createAction({
+    user_id: user.id,
+    kind: "loan",
+    params: {
+      amount: String(asked), cost: String(cost), total: String(asked + cost), step: p.step,
+      repay_bps: L.repay.fromMoneyInBps, minimum: String(BigInt(L.repay.minimum) * 100n), every_days: L.repay.everyDays,
+      collateral_asset_id: p.collateral_asset?.id ?? null, collateral_pct: step.collateralPct,
+    },
+    readback: `Loan from the partner lender: you receive ${show(asked)}, cost ${show(cost)}, total ${show(asked + cost)}. ` +
+      `Repay ${L.repay.fromMoneyInBps / 100}% of every money-in, at least ${show(BigInt(L.repay.minimum) * 100n)} every two weeks.`,
+    ttl_secs: ACTION_TTL_SECS,
+  });
+  return {
+    text: `Read back: she receives ${say(asked)}, the cost is ${say(cost)}, total ${say(asked + cost)}. ` +
+      `She repays ${L.repay.fromMoneyInBps / 100} percent of every money-in, and at least ${say(BigInt(L.repay.minimum) * 100n)} every two weeks. ${PIN_ON_SCREEN}`,
+    ok: true,
+    ...actionFields(a),
+    amount_text: show(asked),
+    cost_text: show(cost),
+    total_text: show(asked + cost),
+  };
+};
+
+/** "Repay now": any amount up to what she owes, from her wallet. */
+export const ngPrepareLoanRepay: NgTool = async ({ user, store, args, now = new Date() }) => {
+  const { p } = await picture(store, user, now);
+  if (!p.open) return refuse("She has no loan to repay.", "no_loan_open");
+  const owed = p.open.outstanding;
+  const asked = args.amount === undefined || args.amount === null || args.amount === "" ? owed : parseMajorAmount(args.amount);
+  if (asked === null) return refuse("How much should she repay? Ask for the amount in naira.", "invalid_amount");
+  const amount = asked > owed ? owed : asked;
+  if (amount <= 0n) return refuse("Nothing is owed on her loan.", "nothing_owed");
+  const available = await store.available(user.id);
+  if (available < amount) return refuse(`Not enough money: she has ${say(available > 0n ? available : 0n)} to spend.`, "insufficient_funds", { available_text: show(available) });
+  const a = await store.createAction({
+    user_id: user.id,
+    kind: "loan_repay",
+    params: { amount: String(amount), loan_id: p.open.id },
+    readback: `${show(amount)} to your loan. ${amount === owed ? "That repays it in full." : `${show(owed - amount)} left after this.`}`,
+    ttl_secs: ACTION_TTL_SECS,
+  });
+  return { text: `Read back: ${say(amount)} to her loan. ${confirmText(a)}`, ok: true, ...actionFields(a), amount_text: show(amount) };
+};
+
+/** "I need more time": the next payment moves (once per loan); new borrowing pauses until repaid. */
+export const ngLoanMoreTime: NgTool = async ({ user, store, now = new Date() }) => {
+  const { p } = await picture(store, user, now);
+  if (!p.open) return refuse("She has no loan.", "no_loan_open");
+  if (p.open.extended_once) {
+    return p.open.restructured_once
+      ? refuse("This loan already had more time and smaller payments. Her payments come from 10% of what comes in.", "not_available")
+      : refuse("This loan already had more time once. She can ask for smaller payments instead (restructure).", "already_extended", { can_restructure: true });
+  }
+  const days = lendingRules().extensionDays;
+  const newDue = new Date(new Date(p.open.next_due_at).getTime() + days * 86_400_000).toISOString();
+  const a = await store.createAction({
+    user_id: user.id,
+    kind: "loan_extension",
+    params: { loan_id: p.open.id, days, new_due_at: newDue },
+    readback: `More time: your next payment moves from ${spokenDate(p.open.next_due_at)} to ${spokenDate(newDue)}. New borrowing pauses until this loan is repaid. No extra cost.`,
+    ttl_secs: ACTION_TTL_SECS,
+  });
+  return {
+    text: `She can have ${days} more days: the next payment moves to ${spokenDate(newDue)}, at no extra cost, and new borrowing pauses until the loan is repaid. ${CHECK_SCREEN}`,
+    ok: true, ...actionFields(a),
+  };
+};
+
+/** After a missed payment: smaller payments over a longer time (once per loan). */
+export const ngLoanRestructure: NgTool = async ({ user, store, now = new Date() }) => {
+  const { p } = await picture(store, user, now);
+  if (!p.open) return refuse("She has no loan.", "no_loan_open");
+  if (p.open.restructured_once) return refuse("This loan is already on smaller payments.", "not_available");
+  const min = BigInt(lendingRules().restructuredMinimum) * 100n;
+  const a = await store.createAction({
+    user_id: user.id,
+    kind: "loan_restructure",
+    params: { loan_id: p.open.id, minimum: String(min) },
+    readback: `Smaller payments: at least ${show(min)} every two weeks instead of ${show(p.open.minimum)}, until it is repaid. No extra cost.`,
+    ttl_secs: ACTION_TTL_SECS,
+  });
+  return { text: `Smaller payments: ${say(min)} every two weeks instead of ${say(p.open.minimum)}, no extra cost. ${CHECK_SCREEN}`, ok: true, ...actionFields(a) };
+};
+
+// ---------------------------------------------------------------------------
 // Help: what she can do, by voice or on the screen
 // ---------------------------------------------------------------------------
 
@@ -824,11 +1063,11 @@ export const ngHelp: NgTool = async ({ user, store }) => {
     "check her balance and what came in",
     "pay a saved person, or anyone by phone number (not on Plus: they get a code and collect cash at any agent)",
     "pay her ajo and hear who collects this round",
-    "see her advance",
+    "see her loan: her progress, her offer and why, repay, or ask for more time",
     "cash out with a 6-digit code an agent redeems",
     "add money: her bank account number for transfers, or cash with Mama Bisi",
     "hear her record on Stellar",
-    "move to any screen: home, wallet, add money, pay, ajo, advance, cash out, activity, profile",
+    "move to any screen: home, wallet, add money, pay, ajo, loan, cash out, activity, profile",
   ];
   const first: string[] = [];
   for (const c of cash) first.push(`${c.helper_name} says she gave ${say(c.amount)} cash: is that right?`);
@@ -855,15 +1094,19 @@ export const NG_VOICE_TOOLS: Record<string, NgTool> = {
   prepare_pay: ngPreparePay,
   prepare_ajo_contribution: ngPrepareAjo,
   prepare_group_contribution: ngPrepareAjo, // same tool under the shared name
-  prepare_advance: ngPrepareAdvance,
   prepare_cashout: ngPrepareCashout,
+  // The 1.5% advance is retired from the app and the agent (its contract functions stay); loans replace it.
+  loan_status: ngLoanStatus,
+  prepare_loan: ngPrepareLoan,
+  prepare_loan_repay: ngPrepareLoanRepay,
+  loan_more_time: ngLoanMoreTime,
+  loan_restructure: ngLoanRestructure,
   save_payee: ngSavePayee,
   bank_details: ngBankDetails,
   confirm_action: ngConfirmAction,
   reject_action: ngRejectAction,
   my_record: ngMyRecord,
   group_status: ngGroupStatus,
-  advance_status: ngAdvanceStatus,
   cash_outs: ngCashOuts,
 };
 

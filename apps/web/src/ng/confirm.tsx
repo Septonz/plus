@@ -19,9 +19,10 @@ const NG = getMarket('ng')
 
 const localNg = (p: string) => (p.startsWith('+234') ? `0${p.slice(4, 7)} ${p.slice(7, 10)} ${p.slice(10)}` : p)
 
-/** Same rule as the server (tools-ng.ts): a spoken or tapped Yes up to ₦5,000, the PIN above. */
+/** Same rule as the server (tools-ng.ts): a spoken or tapped Yes up to ₦5,000, the PIN above. A loan always takes the PIN. */
 export function ngNeedsPin(a: PendingAction): boolean {
-  if (!['pay', 'pay_code', 'group_contribution', 'cash_out', 'advance'].includes(a.kind)) return false
+  if (a.kind === 'loan') return true
+  if (!['pay', 'pay_code', 'group_contribution', 'cash_out', 'advance', 'loan_repay'].includes(a.kind)) return false
   return BigInt(String(a.params.amount ?? 0)) > BigInt(NG.pinThreshold) * 100n
 }
 
@@ -36,6 +37,14 @@ function to(a: PendingAction): string {
       return `To ${String(p.group_name ?? 'your ajo')}`
     case 'advance':
       return 'Advance into your wallet'
+    case 'loan':
+      return `From ${NG.lending?.lenderLabel ?? 'the partner lender'} to your wallet`
+    case 'loan_repay':
+      return 'To your loan'
+    case 'loan_extension':
+      return 'More time on your loan'
+    case 'loan_restructure':
+      return 'Smaller loan payments'
     case 'cash_out':
       return 'Cash out with an agent'
     case 'confirm_cash_in':
@@ -57,7 +66,29 @@ function costLines(a: PendingAction): CostLine[] {
       { label: `Pays back by itself: ${NG.advance.repayFromCashInBps / 100}% of each cash-in. No interest, no late fees.` },
     ]
   }
-  if (a.kind === 'pay' || a.kind === 'pay_code' || a.kind === 'group_contribution' || a.kind === 'cash_out') {
+  if (a.kind === 'loan') {
+    const L = NG.lending!
+    return [
+      { label: W.youReceive.en, value: naira(amount ?? 0n) },
+      { label: 'Cost', value: naira(String(p.cost ?? 0)) },
+      { label: 'Total to repay', value: naira(String(p.total ?? 0)), strong: true },
+      { label: `Repay ${L.repay.fromMoneyInBps / 100}% of every money-in, and at least ${naira(String(p.minimum ?? 0))} every two weeks. ${W.nobodyElse.en}` },
+    ]
+  }
+  if (a.kind === 'loan_extension') {
+    return [
+      { label: 'Next payment due', value: new Date(String(p.new_due_at)).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }), strong: true },
+      { label: 'Extra cost', value: naira(0n) },
+      { label: 'New borrowing pauses until this loan is repaid.' },
+    ]
+  }
+  if (a.kind === 'loan_restructure') {
+    return [
+      { label: 'Every two weeks, at least', value: naira(String(p.minimum ?? 0)), strong: true },
+      { label: 'Extra cost', value: naira(0n) },
+    ]
+  }
+  if (a.kind === 'pay' || a.kind === 'pay_code' || a.kind === 'group_contribution' || a.kind === 'cash_out' || a.kind === 'loan_repay') {
     return [{ label: 'Fee', value: naira(0n) }, { label: 'Total', value: naira(amount ?? 0n), strong: true }]
   }
   return []
@@ -104,7 +135,11 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
     setPin('')
     if (r.status === 'done') {
       setResult(r)
-      setPhase('sending')
+      // More time or smaller payments move no money: there is no transaction to wait for.
+      if (typeof r.transaction_id !== 'string') {
+        setSeconds(null)
+        setPhase('done')
+      } else setPhase('sending')
       return
     }
     setPhase(r.status === 'failed' || r.status === 'expired' || r.status === 'rejected' ? 'failed' : 'ask')
@@ -134,6 +169,7 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
   if (action.kind === 'cash_out') info = 'You get a code. Show it to the agent and collect your cash.'
   else if (action.kind === 'pay_code') info = 'They are not on Plus yet. They get a text with a code and collect the cash at any Plus agent. Unused after 7 days, it comes back to you.'
   else if (action.kind === 'pay' && action.params.to_user_id) info = 'On Plus: straight to their wallet.'
+  else if (action.kind === 'loan') info = 'Sent on Stellar from the partner lender account (simulated on Testnet).'
 
   return (
     <ConfirmSheet
@@ -161,7 +197,7 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
         <>
           {extras}
           <div className="flex flex-col items-center gap-1">
-            <VerifiedMark url={tx?.chain_tx_hash ? `${EXPLORER}/tx/${tx.chain_tx_hash}` : null} />
+            {txId && <VerifiedMark url={tx?.chain_tx_hash ? `${EXPLORER}/tx/${tx.chain_tx_hash}` : null} />}
             {seconds !== null && <span className="text-sm text-secondary">in {seconds.toFixed(1)} seconds</span>}
           </div>
           {canSave && <SaveThisPerson name={String(action.params.payee_name ?? '')} phone={phone!} />}

@@ -3,11 +3,16 @@
 // and in Postgres) and moves statuses forward (pending -> expired, issued -> returned).
 //
 //   ng (Funmi)  1. Pending actions and agent cash-ins waiting for her Yes -> expired.
+//               (loans) An open loan is settled by the reset (closed_by_reset: it doesn't move her up
+//               the ladder); borrowing unfreezes; her compressed history (credit_history_seed) and
+//               her stall stock (independently verified) are put back, so she has an offer again.
 //               2. Unused cash-out codes: Mama Bisi claims the claimable balance; the code -> returned.
 //               3. Open advance: the partner sends her what she owes, she repays it (fee-bumped).
 //               4. Wallet: exactly ₦26,400 NGNT (issuer tops up, or she sends the extra back to the issuer).
 //               5. Mama Bisi's float: exactly ₦200,000 NGNT.
-//               6. Ajo: if she already paid this round, a new Bodija Market Ajo round starts as a new
+//               6. Kemi: created on first run (a real sign-up on a test number, then the demo login);
+//                  put back in week 4 of 6 with money in during 3 of those weeks and no asset.
+//               7. Ajo: if she already paid this round, a new Bodija Market Ajo round starts as a new
 //                  on-chain group with the same members; everyone except Funmi pays in (4 of 5 paid).
 //   in (Selvi)  1. Pending actions and helper cash-ins waiting for her Yes -> expired.
 //               2. Open advance: the partner records a settlement on Stellar.
@@ -27,6 +32,7 @@ import { basicNodeSigner } from "@stellar/stellar-sdk/contract";
 import { createClient } from "@supabase/supabase-js";
 import type * as PlusClient from "@plus/client";
 import { OutcomeUnknownError, submitTransaction } from "../supabase/functions/_shared/stellar-retry.ts";
+import { signUp, testNin, testPin } from "./lib/onboard.ts";
 import { adminClient, loadLocalEnv, ROOT } from "./lib/supabase-admin.ts";
 
 loadLocalEnv();
@@ -47,6 +53,9 @@ const KOBO_PER_UNIT = 100_000n; // 1 NGNT unit (1e-7) -> kobo: units / 1e5
 const FUNMI_START = 26_400n; // naira
 const FLOAT_START = 200_000n; // naira
 const ANCHOR_MIN = 2_000_000n; // naira: the partner bank's anchor pays bank transfers in from this
+const LENDING_MIN = 1_000_000n; // naira: the partner lender's lending account pays loans out from this
+const KEMI_PHONE = "+2347000000401"; // a test number
+const KEMI_EMAIL = "demo-kemi@example.com";
 const SELVI_SPEND = 235_000n; // paise
 const SELVI_SAVED = 141_500n; // paise
 
@@ -227,35 +236,87 @@ async function asUser(email: string) {
 // ---------------------------------------------------------------------------
 
 /**
- * anchor_ng: the partner bank's distribution account. Its key is made inside Supabase and goes
- * straight into Vault (scheduler/provision); this script only ever sees its public address. The
- * issuer keeps it funded so "simulate transfer received" always has NGNT to send.
+ * System accounts: anchor_ng (the partner bank's distribution account: bank transfers in) and
+ * lending_ng (the partner lender's lending account: loans out, repayments in). Their keys are made
+ * inside Supabase and go straight into Vault (scheduler/provision); this script only ever sees their
+ * public addresses. The issuer keeps each funded to its minimum.
  */
-async function ensureAnchor(NGNT: Asset) {
+async function ensureSystem(signer: "anchor_ng" | "lending_ng", min: bigint, NGNT: Asset) {
   const call = async () => {
     const res = await fetch(`${url}/functions/v1/scheduler/provision`, {
       method: "POST",
       headers: { "x-plus-secret": process.env.AGENT_SHARED_SECRET!, "content-type": "application/json" },
-      body: JSON.stringify({ signer: "anchor_ng" }),
+      body: JSON.stringify({ signer }),
     });
     return await res.json() as { ok: boolean; pub: string; status: string; tx_hash: string | null; error?: string };
   };
   let a = await call();
-  if (!a.ok) throw new Error(`anchor provision: ${a.error}`);
+  if (!a.ok) throw new Error(`${signer} provision: ${a.error}`);
   for (let i = 0; i < 30 && a.status !== "done"; i++) {
     await sleep(2000);
     a = await call();
   }
-  if (a.status !== "done") throw new Error(`anchor wallet not created yet (status ${a.status}); run again`);
+  if (a.status !== "done") throw new Error(`${signer} wallet not created yet (status ${a.status}); run again`);
   const acct = await horizon.loadAccount(a.pub);
   const line = acct.balances.find((b) => "asset_code" in b && b.asset_code === "NGNT" && b.asset_issuer === NGNT.getIssuer());
   const have = line ? toUnits(line.balance) : 0n;
-  if (have < ANCHOR_MIN * UNIT) {
-    await send(`issuer funds the partner bank's anchor to ${naira(ANCHOR_MIN * UNIT)}`,
-      await classic("issuer", [Operation.payment({ destination: a.pub, asset: NGNT, amount: decimal(ANCHOR_MIN * UNIT - have) })]));
+  if (have < min * UNIT) {
+    await send(`issuer funds ${signer} to ${naira(min * UNIT)}`,
+      await classic("issuer", [Operation.payment({ destination: a.pub, asset: NGNT, amount: decimal(min * UNIT - have) })]));
   } else {
-    console.log(`  anchor_ng ${a.pub.slice(0, 6)}… holds ${naira(have)}`);
+    console.log(`  ${signer} ${a.pub.slice(0, 6)}… holds ${naira(have)}`);
   }
+}
+
+type WeekTarget = { money_in: bigint; tx: number; saved: bigint }; // naira, count, naira
+
+/**
+ * Her compressed demo history: per week, the seed tops real activity up to the target (real
+ * transactions always count; the seed never takes anything away). Replaces her earlier seed rows.
+ */
+async function seedHistory(userId: string, targets: Map<number, WeekTarget>) {
+  must(await db.from("credit_history_seed").delete().eq("user_id", userId).select("user_id"), "clear seed");
+  const real = must(await db.rpc("ng_credit_weeks", { p_user_id: userId }), "credit weeks") as
+    { week: number; money_in: number; qualifying_tx: number; saved: number }[];
+  const byWeek = new Map(real.map((w) => [w.week, w]));
+  const rows = [...targets].map(([week, t]) => {
+    const r = byWeek.get(week);
+    const gap = (want: bigint, have: number) => (want * 100n > BigInt(have ?? 0) ? want * 100n - BigInt(have ?? 0) : 0n);
+    return {
+      user_id: userId, week_index: week,
+      money_in: gap(t.money_in, r?.money_in ?? 0).toString(),
+      qualifying_tx: Math.max(0, t.tx - (r?.qualifying_tx ?? 0)),
+      saved: gap(t.saved, r?.saved ?? 0).toString(),
+    };
+  }).filter((r) => r.money_in !== "0" || r.qualifying_tx > 0 || r.saved !== "0");
+  if (rows.length) must(await db.from("credit_history_seed").insert(rows).select("user_id"), "seed history");
+  return rows.length;
+}
+
+/** An open loan is settled by the reset: closed_by_reset, so it doesn't count as repaid by her. */
+async function settleLoans(userId: string, who: string) {
+  const open = must(await db.from("loans").update({ status: "repaid", closed_by_reset: true, repaid_at: new Date().toISOString(), borrowing_paused: false })
+    .eq("user_id", userId).in("status", ["active", "late", "restructured"]).select("id"), "settle loans") as { id: string }[];
+  for (const l of open) must(await db.from("loan_events").insert({ loan_id: l.id, user_id: userId, kind: "reset", note: "settled by the demo reset" }), "loan event");
+  must(await db.from("users").update({ borrowing_frozen_until: null }).eq("id", userId), "unfreeze");
+  console.log(`  ${who}: ${open.length ? `${open.length} open loan settled by the reset` : "no loan open"}; borrowing not frozen`);
+}
+
+const weekOf = (memberSince: string) => Math.max(1, Math.floor((Date.now() - Date.parse(memberSince)) / (7 * 86_400_000)) + 1);
+
+/** Kemi: new to Plus. Created once through the real sign-up; then the demo login (shared demo password). */
+async function ensureKemi(): Promise<{ id: string; created: boolean }> {
+  const found = await db.from("users").select("id").eq("wa_phone", KEMI_PHONE).is("archived_at", null).maybeSingle();
+  if (found.data) return { id: (found.data as { id: string }).id, created: false };
+  console.log("  signing Kemi up (name, phone, PIN, photo, NIN, wallet on Stellar)…");
+  await signUp(url, process.env.VITE_SUPABASE_ANON_KEY!, { name: "Kemi", language: "en", phone: KEMI_PHONE, pin: testPin(), nin: testNin() }, (l) => console.log(l));
+  const u = must(await db.from("users").select("id, auth_user_id").eq("wa_phone", KEMI_PHONE).is("archived_at", null).single(), "Kemi") as { id: string; auth_user_id: string };
+  const { error } = await db.auth.admin.updateUserById(u.auth_user_id, {
+    email: KEMI_EMAIL, email_confirm: true, password: process.env.VITE_DEMO_LOGIN_PASSWORD!, app_metadata: { demo: true },
+  });
+  if (error) throw new Error(`Kemi's demo login: ${error.message}`);
+  must(await db.from("users").update({ demo_login: true }).eq("id", u.id), "Kemi demo_login");
+  return { id: u.id, created: true };
 }
 
 async function resetNigeria() {
@@ -265,7 +326,7 @@ async function resetNigeria() {
 
   console.log("\n1. Waiting actions");
   await expireWaiting(funmi.id);
-  await waitForOutbox(["funmi", "agent_ng", "partner", "anchor_ng"]);
+  await waitForOutbox(["funmi", "agent_ng", "partner", "anchor_ng", "lending_ng"]);
 
   console.log("\n2. Unused cash-out codes");
   const codes = must(await db.from("cash_out_codes").select("id, amount, create_outbox_id").eq("user_id", funmi.id).eq("status", "issued"), "codes") as
@@ -300,6 +361,18 @@ async function resetNigeria() {
     console.log("  no advance open");
   }
 
+  console.log("\n3b. Loan, history and stall stock");
+  await settleLoans(funmi.id, "Funmi");
+  const me = must(await db.from("users").select("member_since").eq("id", funmi.id).single(), "member_since") as { member_since: string };
+  const fw = weekOf(me.member_since);
+  const seeded = await seedHistory(funmi.id, new Map(Array.from({ length: fw }, (_, i) => [i + 1, { money_in: 12_500n, tx: 6, saved: 1_000n }])));
+  console.log(`  week ${fw} with Plus; history seeded for ${seeded} weeks (about ₦12,500 in a week, ajo every week)`);
+  const stock = must(await db.from("assets").select("id").eq("user_id", funmi.id).eq("description", "Stall stock (tomatoes)").maybeSingle(), "stock") as { id: string } | null;
+  const asset = { user_id: funmi.id, type: "stock", description: "Stall stock (tomatoes)", estimated_value: "9000000", level: "independently_verified", status: "active", confidence: 85 };
+  if (stock) must(await db.from("assets").update(asset).eq("id", stock.id), "stock");
+  else must(await db.from("assets").insert(asset), "stock");
+  console.log("  stall stock: ₦90,000, independently verified (lending value ₦54,000)");
+
   console.log("\n4. Funmi's wallet and Mama Bisi's float");
   for (const [name, target, userId] of [["funmi", FUNMI_START * UNIT, funmi.id], ["agent_ng", FLOAT_START * UNIT, null]] as const) {
     const have = await assetBalance(name, NGNT);
@@ -317,8 +390,26 @@ async function resetNigeria() {
     if (userId) await addTx({ user_id: userId, kind: "adjustment", source: "demo_reset", amount: diff / KOBO_PER_UNIT, hash });
   }
 
-  console.log("\n4b. The partner bank's anchor (pays bank transfers into wallets)");
-  await ensureAnchor(NGNT);
+  console.log("\n4b. The partner bank's anchor (pays bank transfers into wallets) and the partner lender's account");
+  await ensureSystem("anchor_ng", ANCHOR_MIN, NGNT);
+  await ensureSystem("lending_ng", LENDING_MIN, NGNT);
+
+  console.log("\n4c. Kemi (new to Plus: week 4 of 6)");
+  const kemi = await ensureKemi();
+  await expireWaiting(kemi.id);
+  await settleLoans(kemi.id, "Kemi");
+  must(await db.from("users").update({ member_since: new Date(Date.now() - 23 * 86_400_000).toISOString() }).eq("id", kemi.id), "Kemi week 4");
+  const kemiBal = must(await db.from("transactions").select("amount").eq("user_id", kemi.id).neq("status", "failed"), "Kemi txs") as { amount: number }[];
+  if (kemiBal.reduce((t, r) => t + Number(r.amount), 0) < 500_000) {
+    must(await db.rpc("ng_bank_transfer_in", { p_user_id: kemi.id, p_amount: 900_000, p_repay: 0, p_ref: `demo_kemi_${Date.now()}`, p_sender: "A customer" }), "Kemi money in");
+    console.log("  ₦9,000 bank transfer in (real, through the partner bank's anchor)");
+  }
+  const kn = await seedHistory(kemi.id, new Map([
+    [1, { money_in: 8_000n, tx: 3, saved: 0n }],
+    [3, { money_in: 9_000n, tx: 3, saved: 500n }],
+    [4, { money_in: 9_000n, tx: 2, saved: 0n }],
+  ]));
+  console.log(`  week 4 of 6; money in during 3 weeks; ${kn} weeks seeded; no verified asset yet`);
 
   console.log("\n5. Ajo round");
   const links = must(await db.from("group_members").select("group_id, groups!inner(id, name, onchain_id, mode, amount, period_secs, created_at)")
@@ -370,15 +461,21 @@ async function resetNigeria() {
 
   console.log("\nFunmi's starting state (read through the app's own tools)");
   const t = await asUser("demo-funmi@example.com");
-  const [bal, ajo, advance, outs] = await Promise.all([t("get_balance"), t("group_status"), t("advance_status"), t("cash_outs")]);
+  const [bal, ajo, loan, outs] = await Promise.all([t("get_balance"), t("group_status"), t("loan_status"), t("cash_outs")]);
   const { count: waiting } = await db.from("pending_actions").select("id", { count: "exact", head: true }).eq("user_id", funmi.id).eq("status", "pending");
   console.log(`  wallet     ${bal.text}`);
   console.log(`  ajo        ${ajo.text}`);
-  console.log(`  advance    ${advance.text}`);
+  console.log(`  loan       ${loan.text}`);
   console.log(`  cash-outs  ${((outs.cash_outs ?? []) as { status: string }[]).filter((c) => c.status === "issued").length} unused codes`);
   console.log(`  waiting    ${waiting ?? 0} pending actions`);
   console.log(`  Mama Bisi  float ${naira(await assetBalance("agent_ng", NGNT))}`);
   console.log(`  wallet on Stellar Expert: ${EXPERT}/account/${pub("funmi")}`);
+
+  console.log("\nKemi's starting state");
+  const k = await asUser(KEMI_EMAIL);
+  const [kb, kl] = await Promise.all([k("get_balance"), k("loan_status")]);
+  console.log(`  wallet     ${kb.text}`);
+  console.log(`  loan       ${kl.text}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -442,7 +539,7 @@ async function resetIndia() {
 async function main() {
   if ((process.env.STELLAR_NETWORK ?? "testnet") !== "testnet") throw new Error("testnet only");
   lib = await import("@plus/client");
-  console.log(`Demo reset: ${market === "ng" ? "Funmi (Nigeria)" : "Selvi (India)"} · contract ${CONTRACT_ID.slice(0, 8)}… · testnet`);
+  console.log(`Demo reset: ${market === "ng" ? "Funmi and Kemi (Nigeria)" : "Selvi (India)"} · contract ${CONTRACT_ID.slice(0, 8)}… · testnet`);
   await resolvePending();
   if (market === "ng") await resetNigeria();
   else await resetIndia();

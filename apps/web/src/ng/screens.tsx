@@ -1,7 +1,7 @@
 // Plus Nigeria screens. Every money action goes prepare -> confirm sheet -> Stellar; reads come
 // from the balance cache and the agent-tools read tools (the same tools the voice agent uses).
 // Each screen has a loading state (skeletons), an empty state and an error state with a retry.
-// Home is a stack of passes (Wallet, Ajo, Advance); a pass opens full-screen (NgApp's CardDetail).
+// Home is a stack of passes (Wallet, Ajo, Loan); a pass opens full-screen (NgApp's CardDetail).
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { getMarket } from '@plus/markets'
 import {
@@ -49,11 +49,11 @@ function Waiting({ data, onAnswer }: { data: PlusData; onAnswer: (a: PendingActi
 
 // ---------------------------------------------------------------------------- Home
 
-export type Detail = 'wallet' | 'group' | 'advance' | 'add_cash' | 'cash_out'
+export type Detail = 'wallet' | 'group' | 'loan' | 'add_cash' | 'cash_out'
 
 export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Props & { onAnswer: (a: PendingAction) => void; open: Detail | null; onOpen: (d: Detail) => void }) {
   const ajo = useTool('group_status', version)
-  const adv = useTool('advance_status', version)
+  const loan = useTool('loan_status', version)
   const rec = useTool('my_record', version)
   const latest = ((rec?.recent ?? []) as Row[]).filter((t) => t.kind !== 'adjustment').slice(0, 5)
   const sending = data.txs.filter((t) => t.status === 'pending').length
@@ -64,10 +64,10 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
   useSays(
     `Home. Wallet: ${wallet ? naira(wallet.NGNT) : 'loading'}${sending ? `, ${sending} sending` : ''}. ` +
       (ajo ? (ajo.in_group ? `Ajo ${String(ajo.name)}: ${paid} of ${members.length} paid this round; her part ${ajo.paid_this_period ? 'is paid' : ajo.on_its_way ? 'is sending' : `is not paid (${String(ajo.amount_text)})`}. ` : 'Not in an ajo. ') : '') +
-      (adv ? `Advance: ${adv.open ? `${String(adv.owed_text)} left to pay back` : adv.eligible ? `up to ${String(adv.limit_text)}` : 'not yet'}. ` : '') +
+      (loan?.ok ? `Loan: ${loanLine(loan)}. ` : '') +
       (cashIns.length ? `Waiting for her answer: ${cashIns.map((a) => a.readback).join('; ')}. ` : '') +
       (latest.length ? `Latest: ${latest.slice(0, 3).map((t) => `${String(t.label)} ${t.outgoing ? '-' : '+'}${String(t.amount_text)}`).join(', ')}. ` : '') +
-      'Cards: Wallet, Ajo, Advance. Tabs: Home, Pay, Activity, Profile.',
+      'Cards: Wallet, Ajo, Loan. Tabs: Home, Pay, Activity, Profile.',
   )
 
   return (
@@ -115,14 +115,17 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
           ) : null}
         </Pass>
         <Pass
-          id="advance"
-          icon="advance"
-          title={W.advance.en}
-          sub={adv ? (adv.open ? 'Paying back by itself' : adv.eligible ? 'One fee, no interest' : 'Not yet') : ' '}
-          value={adv ? (adv.open ? String(adv.owed_text) : adv.eligible ? `Up to ${String(adv.limit_text)}` : undefined) : undefined}
-          hidden={open === 'advance'}
-          onOpen={() => onOpen('advance')}
-        />
+          id="loan"
+          icon="loan"
+          title={W.loan.en}
+          sub={loan?.ok ? loanSub(loan) : ' '}
+          value={loan?.ok ? loanValue(loan) : undefined}
+          hidden={open === 'loan'}
+          onOpen={() => onOpen('loan')}
+        >
+          {loan?.view === 'building' ? <Progress pct={(Number(loan.week) / Number(loan.weeks_needed)) * 100} label={`Week ${String(loan.week)} of ${String(loan.weeks_needed)}`} /> : null}
+          {loan?.view === 'repay' ? <Progress pct={Number((loan.loan as Row).progress)} label={`${String((loan.loan as Row).repaid_text)} of ${String((loan.loan as Row).total_text)} repaid`} /> : null}
+        </Pass>
       </CardStack>
 
       <Section title="Recent activity" action={latest.length > 0 && <button onClick={() => go('record')} className="min-h-11 px-1 text-base font-medium text-accent-ink">See all</button>}>
@@ -191,7 +194,7 @@ export function AddCash({ data, version, onAnswer }: Props & { onAnswer: (a: Pen
                 <div><dt className="text-sm text-secondary">Name</dt><dd className="font-medium">{String(b.account_name)}</dd></div>
               </dl>
               <CopyButton text={String(b.account_number)} label="Copy account number" />
-              <p className="text-sm text-secondary">It lands in your wallet in seconds. If you have an advance, 10% of it pays that back.</p>
+              <p className="text-sm text-secondary">It lands in your wallet in seconds. If you have a loan, 10% of it pays that back.</p>
             </Card>
           )}
         </Loaded>
@@ -419,65 +422,162 @@ function AjoBody({ g, busy, msg, pay }: { g: ToolResult; busy: boolean; msg: str
   )
 }
 
-// ---------------------------------------------------------------------------- Advance
+// ---------------------------------------------------------------------------- Loan
+// Before unlock: her progress ("week 4 of 6") and an estimate, not an offer; never "rejected" or
+// "not eligible". Unlocked: the offer, why, what limits it, and the ladder, before she accepts
+// (with her PIN). With a loan open: what is left, repay now, more time, smaller payments.
 
-function AdvanceRules({ fee, pct }: { fee: string | null; pct: number }) {
-  const rules: [string, string, string | undefined][] = [
-    ['check', fee ? `${W.oneFee.en}: ${fee}` : W.oneFee.en, yo('oneFee')],
-    ['check', W.noInterest.en, yo('noInterest')],
-    ['check', W.noLateFees.en, yo('noLateFees')],
-    ['check', `${W.repaysItself.en}: ${pct}% of each cash-in`, yo('repaysItself')],
-  ]
+function Progress({ pct, label }: { pct: number; label?: string }) {
   return (
-    <ListGroup>
-      {rules.map(([icon, en, y]) => <ListRow key={en} icon={icon} iconTone="success" title={<Bilingual main={en} sub={y} />} />)}
-    </ListGroup>
+    <span className="block">
+      {label && <span className="mb-1.5 flex justify-between text-sm text-secondary"><span>{label}</span></span>}
+      <span className="block h-1.5 overflow-hidden rounded-full bg-fill">
+        <span className="block h-full rounded-full bg-accent" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+      </span>
+    </span>
   )
 }
 
-export function Advance({ version }: Props) {
-  const a = useTool('advance_status', version)
-  const { busy, msg, run } = useSubmit()
-  const pct = Number(a?.repay_pct ?? NG.advance.repayFromCashInBps / 100)
-  useSays(a ? `Advance. ${a.text}${a.eligible ? ` Options: ${((a.options ?? []) as Row[]).map((o) => `${String(o.amount_text)} (fee ${String(o.fee_text)})`).join(', ')}.` : ''}` : 'Advance, loading.')
+function loanLine(l: ToolResult): string {
+  const v = l.loan as Row | undefined
+  if (l.view === 'repay' && v) return `${String(v.outstanding_text)} left of ${String(v.total_text)}`
+  if (l.view === 'offer') return `offer of ${String((l.offer as Row).amount_text)}`
+  if (l.view === 'building') return `building her history, week ${String(l.week)} of ${String(l.weeks_needed)}`
+  return 'new borrowing paused'
+}
+function loanSub(l: ToolResult): string {
+  if (l.view === 'repay') return (l.loan as Row).overdue ? 'A payment is due' : 'Repaying from money in'
+  if (l.view === 'offer') return 'Offer ready'
+  if (l.view === 'building') return W.buildingHistory.en
+  return 'Paused for now'
+}
+function loanValue(l: ToolResult): string | undefined {
+  if (l.view === 'repay') return String((l.loan as Row).outstanding_text)
+  if (l.view === 'offer') return String((l.offer as Row).amount_text)
+  return undefined
+}
+
+function Building({ l }: { l: ToolResult }) {
+  const list = (l.checklist ?? []) as Row[]
+  const est = l.estimate as Row
   return (
     <>
-      <Loaded r={a} rows={2}>
-        {(a) => {
-          const options = (a.options ?? []) as Row[]
-          const top = options.at(-1)
-          return a.open ? (
-            <>
-              <Card>
-                <AmountDisplay text={String(a.owed_text)} size="lg" label="Still to pay back" />
-                <p className="mt-3 text-base text-secondary">You took {String(a.principal_text)}. Paid back so far: {String(a.repaid_text)}. It also comes first out of your next ajo payout.</p>
-              </Card>
-              <AdvanceRules fee={a.fee_text ? String(a.fee_text) : null} pct={pct} />
-            </>
-          ) : a.eligible ? (
-            <>
-              <Card>
-                <AmountDisplay text={String(a.limit_text)} size="lg" label="You can take up to" />
-              </Card>
-              <AdvanceRules fee={top ? `${String(top.fee_text)} on ${String(top.amount_text)}` : null} pct={pct} />
-              <Section title={W.takeAdvance.en}>
-                <ListGroup>
-                  {options.map((o) => (
-                    <ListRow key={String(o.amount_minor)} icon="advance" iconTone="accent" title={String(o.amount_text)} subtitle={`Fee ${String(o.fee_text)}`} chevron
-                      onClick={busy ? undefined : () => void run('prepare_advance', { amount: String(BigInt(String(o.amount_minor)) / 100n) })} />
-                  ))}
-                </ListGroup>
-              </Section>
-            </>
-          ) : (
-            <EmptyState icon="advance" title="Not yet">{forScreen(a.text)}</EmptyState>
-          )
-        }}
+      <Card>
+        <p className="text-base font-medium"><Bilingual main={W.buildingHistory.en} sub={yo('buildingHistory')} /></p>
+        <p className="mt-1 text-3xl font-semibold">Week {String(l.week)} of {String(l.weeks_needed)}</p>
+        <div className="mt-4"><Progress pct={(Number(l.week) / Number(l.weeks_needed)) * 100} /></div>
+      </Card>
+      <ListGroup>
+        {list.map((c) => (
+          <ListRow key={String(c.key)} icon={c.done ? 'check' : 'clock'} iconTone={c.done ? 'success' : 'neutral'} title={String(c.label)} subtitle={String(c.detail)} />
+        ))}
+      </ListGroup>
+      <Card>
+        <p className="text-sm font-medium text-secondary"><Bilingual main={W.estimateNotOffer.en} sub={yo('estimateNotOffer')} /></p>
+        <p className="num mt-1 text-2xl font-semibold">{String(est.low_text)} to {String(est.high_text)}</p>
+        <p className="mt-2 text-sm text-secondary">What a first loan could look like once your history is built, from what you do now. It can change.</p>
+      </Card>
+    </>
+  )
+}
+
+function Ladder({ l }: { l: ToolResult }) {
+  const steps = (l.ladder ?? []) as Row[]
+  const now = steps.findIndex((x) => x.current)
+  return (
+    <Section title={<Bilingual main={W.nextLoans.en} sub={yo('nextLoans')} />}>
+      <ListGroup>
+        {steps.map((s, i) => (
+          <ListRow key={i} icon={s.current ? 'star' : 'up'} iconTone={s.current ? 'accent' : 'neutral'}
+            title={`${i === now ? 'Now' : i === now + 1 ? 'Next loan' : 'Then'}: up to ${String(s.max_text)} at ${String(s.cost_pct)}%`}
+            subtitle={`Collateral ${String(s.collateral_text)} · approval ${String(s.approval)}`} />
+        ))}
+      </ListGroup>
+    </Section>
+  )
+}
+
+type Run = (name: string, args: Row) => Promise<ToolResult>
+
+function Offer({ l, busy, run }: { l: ToolResult; busy: boolean; run: Run }) {
+  const o = l.offer as Row
+  const a = l.affordability as Row
+  const why = (l.why ?? []) as Row[]
+  return (
+    <>
+      <Card>
+        <AmountDisplay text={String(o.amount_text)} size="lg" label={<Bilingual main={W.youReceive.en} sub={yo('youReceive')} />} />
+        <p className="mt-3 text-lg">You receive <b className="num">{String(o.amount_text)}</b>, cost <b className="num">{String(o.cost_text)}</b>, total <b className="num">{String(o.total_text)}</b>.</p>
+        <p className="mt-1 text-sm text-secondary">From {String(l.lender)}. Repay {String(o.repay_pct)}% of every money-in, and at least {String(o.minimum_text)} every two weeks.</p>
+      </Card>
+      <Section title={<Bilingual main={W.whyThisOffer.en} sub={yo('whyThisOffer')} />}>
+        <ListGroup>
+          {why.map((w) => (
+            <ListRow key={String(w.key)} icon="check" iconTone="success" title={`${String(w.label)} · ${String(w.weight)}%`} subtitle={String(w.detail)} />
+          ))}
+        </ListGroup>
+      </Section>
+      <Section title="Affordability first">
+        <ListGroup>
+          {a.asset ? <ListRow icon="stock" title={String(a.asset)} subtitle={`Estimated ${String(a.estimated_value_text)} · lending value ${String(a.lending_value_text)}`} /> : null}
+          <ListRow icon="wallet" title={`You can afford ${String(a.affordable_text)}`} subtitle="From 10% of what usually comes in, plus the two-weekly minimums" />
+          <ListRow icon="shield" title={`Offer ${String(o.amount_text)}: the lower one wins`} subtitle={`Collateral needed now: ${String(o.collateral_pct)}% (${String(a.collateral_needed_text)})`} />
+        </ListGroup>
+      </Section>
+      <Ladder l={l} />
+      <Button className="w-full" loading={busy} onClick={() => void run('prepare_loan', {})}>
+        {W.acceptLoan.en}
+      </Button>
+    </>
+  )
+}
+
+function Repaying({ l, busy, run }: { l: ToolResult; busy: boolean; run: Run }) {
+  const v = l.loan as Row
+  const dueNow = BigInt(String(v.due_now_minor))
+  return (
+    <>
+      <Card>
+        <AmountDisplay text={String(v.outstanding_text)} size="lg" label="Left to repay" />
+        <div className="mt-4"><Progress pct={Number(v.progress)} label={`${String(v.repaid_text)} of ${String(v.total_text)} repaid${v.in_flight_text ? ` (${String(v.in_flight_text)} sending)` : ''}`} /></div>
+        <p className="mt-3 text-base text-secondary">
+          {String(v.repay_pct)}% of every money-in pays it by itself.{' '}
+          {v.overdue ? <b className="text-warning-strong">{String(v.due_now_text)} is due now.</b> : <>Next: at least {String(v.due_now_text)} by {String(v.next_due_text)}.</>}
+        </p>
+        {v.grace_until ? <p className="mt-1 text-sm text-secondary">You have a few days' grace. No extra cost.</p> : null}
+      </Card>
+      {v.status === 'late' && <Notice tone="warning">A payment is late. You can ask for smaller payments below. Borrowing more waits until this is repaid.</Notice>}
+      {v.borrowing_paused ? <Notice>New borrowing is paused until this loan is repaid.</Notice> : null}
+      <div className="grid gap-3">
+        {dueNow > 0n && <Button loading={busy} onClick={() => void run('prepare_loan_repay', { amount: String(dueNow / 100n) })}>{W.repayNow.en}: {String(v.due_now_text)}</Button>}
+        <Button variant="plain" loading={busy} onClick={() => void run('prepare_loan_repay', {})}>Repay all: {String(v.outstanding_text)}</Button>
+        {v.can_extend ? <Button variant="plain" loading={busy} onClick={() => void run('loan_more_time', {})}>{W.needMoreTime.en}</Button> : null}
+        {v.can_restructure ? <Button variant="plain" loading={busy} onClick={() => void run('loan_restructure', {})}>{W.smallerPayments.en}</Button> : null}
+      </div>
+      <ListGroup>
+        <ListRow icon="loan" title={`You received ${String(v.principal_text)}`} subtitle={`Cost ${String(v.cost_text)} · total ${String(v.total_text)}`} />
+      </ListGroup>
+    </>
+  )
+}
+
+export function Loan({ version }: Props) {
+  const l = useTool('loan_status', version)
+  const { busy, msg, run } = useSubmit()
+  useSays(l ? `Loan. ${forScreen(String(l.text ?? ''))}` +
+    (l.view === 'offer' ? ' Button: Accept with my PIN.' : l.view === 'repay' ? ' Buttons: Repay now, Repay all, I need more time.' : '') : 'Loan, loading.')
+  return (
+    <>
+      <Loaded r={l} rows={3}>
+        {(l) => !l.ok ? <EmptyState icon="loan" title="Not here yet">{forScreen(l.text)}</EmptyState>
+          : l.view === 'building' ? <Building l={l} />
+          : l.view === 'offer' ? <Offer l={l} busy={busy} run={run} />
+          : l.view === 'repay' ? <Repaying l={l} busy={busy} run={run} />
+          : <Card><p className="text-lg">{forScreen(String(l.text))}</p></Card>}
       </Loaded>
-      <Notice>
-        <Bilingual main={`${W.ifBehind.en} ${W.nobodyCalled.en}`} sub={W.ifBehind.yo ? `${W.ifBehind.yo} ${W.nobodyCalled.yo}` : undefined} />
-      </Notice>
       {msg && <Notice tone="danger">{msg}</Notice>}
+      <Notice><Bilingual main={W.nobodyElse.en} sub={yo('nobodyElse')} /></Notice>
+      <p className="px-1 text-sm text-secondary">Loans come from a partner lender (simulated). The money moves on Stellar Testnet.</p>
     </>
   )
 }
@@ -535,7 +635,7 @@ export function CashOut({ version, shownCode, onShowCode }: Props & { shownCode:
 // ---------------------------------------------------------------------------- Activity
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
-const KIND_ICON: Record<string, string> = { incoming: 'in', pay: 'pay', group_contribution: 'group', advance: 'advance', repay: 'advance', cash_out: 'cash' }
+const KIND_ICON: Record<string, string> = { incoming: 'in', pay: 'pay', group_contribution: 'group', advance: 'advance', repay: 'advance', loan: 'loan', loan_repay: 'loan', cash_out: 'cash' }
 
 /** One transaction with its "Verified on Stellar" tick, which links to the transaction. */
 function TxRow({ t }: { t: Row }) {

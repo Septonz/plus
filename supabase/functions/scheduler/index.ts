@@ -144,6 +144,14 @@ async function returnCashOuts(now: Date) {
   return returned;
 }
 
+/** Loans: the two-weekly minimum, or a reminder, grace, late, then frozen. Nobody else is contacted. */
+async function loanMinimums() {
+  const { getMarket } = await import("../_shared/markets.ts");
+  const l = getMarket("ng").lending;
+  if (!l) return { skipped: true };
+  return must(await db.rpc("ng_loan_minimums", { p_grace_days: l.graceDays }), "ng_loan_minimums");
+}
+
 async function step<T>(name: string, fn: () => Promise<T>): Promise<T | { error: string }> {
   try {
     return await fn();
@@ -171,7 +179,8 @@ async function warm() {
   return { ok: true, warmed: results };
 }
 
-const SYSTEM_SIGNERS = new Set(["anchor_ng"]);
+/** System accounts: the bank-rail anchor and the partner lender's lending account (piece 4). */
+const SYSTEM_SIGNERS = new Set(["anchor_ng", "lending_ng"]);
 
 async function provision(req: Request) {
   let signer = "";
@@ -190,6 +199,7 @@ async function provision(req: Request) {
     must(await db.rpc("wallet_key_put", { p_signer: signer, p_secret: kp.secret() }), "wallet_key_put");
     pub = kp.publicKey();
   }
+  must(await db.from("system_wallets").upsert({ signer, pub }), "system_wallets");
   const out = must(
     await db.rpc("chain_enqueue_on", {
       p_signer: "partner",
@@ -213,12 +223,14 @@ Deno.serve(async (req) => {
   const now = new Date();
   const t0 = performance.now();
   const expired = await step("expire", expireActions);
-  const [balances, payouts, returns] = await Promise.all([
+  const [balances, payouts, returns, loans] = await Promise.all([
     step("balances", refreshNigeria),
     step("payouts", () => ajoPayouts(now)),
     step("cash_out_returns", () => returnCashOuts(now)),
+    step("loans", loanMinimums),
   ]);
-  const queued = (Array.isArray(payouts) && payouts.length > 0) || (Array.isArray(returns) && returns.length > 0);
+  const paid = (loans as { minimums_paid?: number })?.minimums_paid ?? 0;
+  const queued = (Array.isArray(payouts) && payouts.length > 0) || (Array.isArray(returns) && returns.length > 0) || paid > 0;
   if (queued) await kickChainWorker();
-  return json({ ok: true, expired, balances, payouts, returns, ms: Math.round(performance.now() - t0) });
+  return json({ ok: true, expired, balances, payouts, returns, loans, ms: Math.round(performance.now() - t0) });
 });

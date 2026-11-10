@@ -55,6 +55,19 @@ export const W = {
   ifBehind: { en: 'If you fall behind, your limit pauses until it is paid back.', yo: 'Tí o bá pẹ́ láti san, a ó dá ìyá owó dúró títí o fi san án.' }, // check
   nobodyCalled: { en: 'Nobody is called or contacted.', yo: 'A kò ní pe ẹnikẹ́ni.' }, // check
 
+  // Loan (piece 4)
+  loan: { en: 'Loan', yo: 'Owó yíyá' }, // check
+  buildingHistory: { en: 'Building your Plus history', yo: 'À ń kọ́ ìtàn Plus rẹ' }, // check
+  estimateNotOffer: { en: 'Estimate, not an offer', yo: 'Ìṣirò ni, kì í ṣe ìfilọ̀' }, // check
+  youReceive: { en: 'You receive', yo: 'Ìwọ yóò gbà' }, // check
+  whyThisOffer: { en: 'Why you got this offer', yo: 'Ìdí tí o fi rí èyí' }, // check
+  nextLoans: { en: 'Repay well, and next time', yo: 'San dáadáa, nígbà míì' }, // check
+  acceptLoan: { en: 'Accept with my PIN', yo: 'Gbà á pẹ̀lú PIN mi' }, // check
+  repayNow: { en: 'Repay now', yo: 'San báyìí' }, // check
+  needMoreTime: { en: 'I need more time', yo: 'Mo nílò àkókò sí i' }, // check
+  smallerPayments: { en: 'Smaller payments', yo: 'Ìsanwó kékeré' }, // check
+  nobodyElse: { en: 'Plus never contacts anyone else about your loan.', yo: 'Plus kò ní kàn sí ẹlòmíì nípa owó tí o yá.' }, // check
+
   // Cash out
   showCode: { en: 'Show the agent this code', yo: 'Fi kóòdù yìí han aṣojú' },
   newCode: { en: 'Show code', yo: 'Fi kóòdù hàn' },

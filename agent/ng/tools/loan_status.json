@@ -1,0 +1,32 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "loan_status",
+    "description": "Her loan picture. Before it unlocks: her week (\"week 4 of 6\"), what is left on her checklist, and an estimate that is not an offer. Once unlocked: the offer from the partner lender (receive, cost, total), why she got it, and the rewards ladder. With a loan open: what is left, what is due and when. Never say rejected or not eligible.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/loan_status",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          }
+        },
+        "required": []
+      }
+    }
+  }
+}

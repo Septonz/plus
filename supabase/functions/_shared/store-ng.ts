@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { contractReader, refreshBalances } from "./ng-chain.ts";
 import { verifyPin as verifyPinRow } from "./pin.ts";
 import type { Payee } from "./payees.ts";
+import type { CreditAsset, CreditLoan, CreditWeek } from "./lending.ts";
 import type { CashOut, NgGroup, NgStore, NgTx, PlusPeer } from "./tools-ng.ts";
 import type { Action, CashIn } from "./tools.ts";
 
@@ -178,8 +179,31 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
       const r = must(
         await db.rpc("ng_bank_transfer_in", { p_user_id: userId, p_amount: Number(amount), p_repay: Number(repay), p_ref: ref, p_sender: sender }),
         "ng_bank_transfer_in",
-      ) as { transaction_id: string; repay?: number };
-      return { transaction_id: r.transaction_id, repay: BigInt(r.repay ?? 0) };
+      ) as { transaction_id: string; repay?: number; loan_repay_transaction_id?: string | null };
+      return { transaction_id: r.transaction_id, repay: BigInt(r.repay ?? 0), loan: !!r.loan_repay_transaction_id };
+    },
+    async credit(userId) {
+      const [u, weeks, assets, loans, events] = await Promise.all([
+        db.from("users").select("borrowing_frozen_until").eq("id", userId).single(),
+        db.rpc("ng_credit_weeks", { p_user_id: userId }),
+        db.from("assets").select("id, type, description, estimated_value, level, status").eq("user_id", userId).order("created_at"),
+        db.rpc("ng_loans", { p_user_id: userId }),
+        db.from("loan_events").select("kind, amount, note, created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(10),
+      ]);
+      const big = (v: unknown) => BigInt(String(v ?? 0));
+      return {
+        frozen_until: (must(u, "credit user") as { borrowing_frozen_until: string | null }).borrowing_frozen_until,
+        weeks: (must(weeks, "ng_credit_weeks") as Record<string, unknown>[]).map((w) => ({
+          week: Number(w.week), money_in: big(w.money_in), qualifying_tx: Number(w.qualifying_tx), saved: big(w.saved),
+        }) as CreditWeek),
+        assets: (must(assets, "assets") as Record<string, unknown>[]).map((a) => ({ ...a, estimated_value: big(a.estimated_value) }) as CreditAsset),
+        loans: (must(loans, "ng_loans") as Record<string, unknown>[]).map((l) => ({
+          ...l,
+          principal: big(l.principal), cost: big(l.cost), total: big(l.total), repaid: big(l.repaid), in_flight: big(l.in_flight),
+          period_paid: big(l.period_paid), outstanding: big(l.outstanding), minimum: big(l.minimum),
+        }) as unknown as CreditLoan),
+        events: must(events, "loan_events") as { kind: string; amount: number | null; note: string | null; created_at: string }[],
+      };
     },
     chain: contractReader(contractId),
   };

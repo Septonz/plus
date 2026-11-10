@@ -1,11 +1,11 @@
 {
   "tool_config": {
     "type": "webhook",
-    "name": "advance_status",
-    "description": "Whether she can take an advance, her limit and the fee in naira, or what is left to repay on an open advance.",
+    "name": "prepare_loan",
+    "description": "Prepare accepting her loan offer. Read back what she receives, the cost and the total in naira, and how she repays (10% of every money-in, at least ₦2,500 every two weeks). Accepting always needs her PIN on the screen.",
     "response_timeout_secs": 10,
     "api_schema": {
-      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/advance_status",
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/prepare_loan",
       "method": "POST",
       "request_headers": {
         "x-plus-secret": {
@@ -23,6 +23,10 @@
           "caller_id": {
             "type": "string",
             "dynamic_variable": "system__caller_id"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Loan amount in naira if she asked for less than her offer, a whole number she said. Leave out to take the full offer."
           }
         },
         "required": []

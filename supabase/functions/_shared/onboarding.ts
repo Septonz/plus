@@ -389,7 +389,7 @@ export const obVerifyIdentity: ObTool = async (ctx) => {
   if (!wantsSelfie && !idNumber) {
     return status(ctx, {
       text: u.selfie_passed
-        ? doc ? `Photo done. She can also type her ${doc.name} on the screen for higher limits and advances; never say it out loud.` : "Photo done."
+        ? doc ? `Photo done. She can also type her ${doc.name} on the screen for higher limits${getMarket(s.market_id).lending ? ", and it counts toward a loan" : " and advances"}; never say it out loud.` : "Photo done."
         : "Ask her to take a quick photo on her screen.",
       ok: false,
       error: "nothing_given",
@@ -398,9 +398,9 @@ export const obVerifyIdentity: ObTool = async (ctx) => {
   const t = tierSummary(u);
   return status(ctx, {
     text: u.kyc_tier >= 2
-      ? `${doc?.name ?? "ID"} checked. She can send up to ${t.daily_text} a day and hold up to ${t.balance_text}. Advances open after ${m.advance.eligibleAfterWeeks} weeks.`
+      ? `${doc?.name ?? "ID"} checked. She can send up to ${t.daily_text} a day and hold up to ${t.balance_text}. ${m.lending ? `A loan can open after ${m.lending.unlock.weeks} weeks with Plus.` : `Advances open after ${m.advance.eligibleAfterWeeks} weeks.`}`
       : `Photo checked. For now she can send up to ${t.daily_text} a day and hold up to ${t.balance_text}.` +
-        (doc ? ` Adding her ${doc.name} raises that and opens advances.` : ""),
+        (doc ? ` Adding her ${doc.name} raises that and ${getMarket(s.market_id).lending ? "counts toward a loan" : "opens advances"}.` : ""),
   });
 };
 

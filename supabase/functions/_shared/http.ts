@@ -41,7 +41,8 @@ export function withCors(handler: (req: Request) => Response | Promise<Response>
 }
 
 export function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...CORS_HEADERS } });
+  // Amounts are bigint (kobo, paise); they travel as strings.
+  return new Response(JSON.stringify(body, (_k, v) => (typeof v === "bigint" ? v.toString() : v)), { status, headers: { "content-type": "application/json", ...CORS_HEADERS } });
 }
 
 const BOOTED_AT = Date.now();

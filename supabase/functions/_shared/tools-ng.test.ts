@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertMatch, assertNotEquals } from "jsr:@std/assert@1";
 import { agentCashInCheck, agentCashInReadback, cashOutRedeemable, normalizeNgPhone, sameHex } from "./agent.ts";
+import type { CreditAsset, CreditLoan, CreditWeek } from "./lending.ts";
 import type { ChainAdvance, ChainGroup } from "./ng-types.ts";
 import { parseMajorAmount } from "./payees.ts";
 import type { Action } from "./tools.ts";
@@ -11,7 +12,11 @@ import {
   type NgStore,
   ngConfirmAction,
   ngHelp,
+  ngLoanMoreTime,
+  ngLoanStatus,
   ngNeedsPin,
+  ngPrepareLoan,
+  ngPrepareLoanRepay,
   ngPrepareAdvance,
   ngPrepareAjo,
   ngPrepareCashout,
@@ -43,6 +48,7 @@ type World = {
   peers: Map<string, PlusPeer & { balance: bigint }>;
   saved: { name: string; phone: string; stellar_address: string | null }[];
   bankIns: { amount: bigint; repay: bigint; ref: string }[];
+  credit: { frozen_until: string | null; weeks: CreditWeek[]; assets: CreditAsset[]; loans: CreditLoan[] };
 };
 
 function fakeStore(w: World): NgStore {
@@ -111,6 +117,7 @@ function fakeStore(w: World): NgStore {
       w.bankIns.push({ amount, repay, ref });
       return Promise.resolve({ transaction_id: "bank-t1", repay });
     },
+    credit: () => Promise.resolve({ ...w.credit, events: [] }),
     chain: {
       group: () => Promise.resolve(w.group),
       advanceOf: () => Promise.resolve(w.advance),
@@ -142,6 +149,7 @@ function setup(over: Partial<World> = {}) {
     peers: new Map(),
     saved: [],
     bankIns: [],
+    credit: { frozen_until: null, weeks: [], assets: [], loans: [] },
     ...over,
   };
   const ctx = (args: Record<string, unknown> = {}, channel: "voice" | "app" = "voice", user: Partial<NgContext["user"]> = {}): NgContext => ({
@@ -507,4 +515,64 @@ Deno.test("bank transfer in: demo button only, inside her balance limit, 10% rep
   assertEquals(full.error, "balance_limit");
   const noWallet = await ngSimulateBankTransfer(ctx({ amount: "100" }, "app", { stellar_pub: null }));
   assertEquals(noWallet.error, "no_wallet");
+});
+
+// --- loans (piece 4) -----------------------------------------------------------------------------
+
+const STOCK = { id: "a1", type: "stock", description: "Stall stock (tomatoes)", estimated_value: N(90_000), level: "independently_verified" as const, status: "active" };
+const fullWeeks = (to: number) => Array.from({ length: to }, (_, i) => ({ week: i + 1, money_in: N(12_500), qualifying_tx: 6, saved: N(1_000) }));
+
+Deno.test("loans: Kemi sees her progress and an estimate, and can't accept anything yet", async () => {
+  const { ctx } = setup({ credit: { frozen_until: null, weeks: fullWeeks(3), assets: [], loans: [] } });
+  const kemi = { member_since: new Date(Date.now() - 23 * 86_400_000).toISOString() };
+  const s = await ngLoanStatus(ctx({}, "voice", kemi));
+  assertEquals(s.view, "building");
+  assertEquals(s.week, 4);
+  assertMatch(String(s.text), /week 4 of 6/);
+  assert(!/rejected|not eligible/i.test(JSON.stringify({ ...s, text: "" })));
+  const p = await ngPrepareLoan(ctx({}, "voice", kemi));
+  assertEquals(p.error, "still_building");
+});
+
+Deno.test("loans: Funmi's offer, why, and the PIN to accept; never above the offer", async () => {
+  const { w, ctx } = setup({ credit: { frozen_until: null, weeks: fullWeeks(24), assets: [STOCK], loans: [] } });
+  const s = await ngLoanStatus(ctx());
+  assertEquals(s.view, "offer");
+  const offer = s.offer as Record<string, string>;
+  assertEquals([offer.amount_text, offer.cost_text, offer.total_text], ["₦30,000", "₦1,800", "₦31,800"]);
+  assertMatch(String(s.text), /activity 40%, verified assets 35%, savings consistency 25%/);
+  const over = await ngPrepareLoan(ctx({ amount: "40000" }));
+  assertEquals(over.error, "over_offer");
+  const p = await ngPrepareLoan(ctx());
+  assertEquals(p.ok, true);
+  const a = w.actions.get(String(p.action_id))!;
+  assertEquals(a.kind, "loan");
+  assertEquals(a.params.amount, String(N(30_000)));
+  assertEquals(a.params.total, String(N(31_800)));
+  assert(ngNeedsPin(a), "accepting a loan always takes the PIN");
+  assert(ngNeedsPin({ kind: "loan", params: { amount: "100" } }));
+});
+
+Deno.test("loans: repay and more time while a loan is open; one loan at a time", async () => {
+  const open = {
+    id: "l1", step: 0, principal: N(30_000), cost: N(1_800), total: N(31_800), repaid: N(5_000), in_flight: 0n, period_paid: 0n,
+    outstanding: N(26_800), minimum: N(2_500), repay_bps: 1000, every_days: 14, collateral_pct: 150, status: "active" as const,
+    next_due_at: new Date(Date.now() + 5 * 86_400_000).toISOString(), grace_until: null, missed: 0, extended_once: false,
+    restructured_once: false, borrowing_paused: false, closed_by_reset: false, disbursed: "completed", created_at: new Date().toISOString(),
+  };
+  const { w, ctx } = setup({ credit: { frozen_until: null, weeks: fullWeeks(24), assets: [STOCK], loans: [open] } });
+  const s = await ngLoanStatus(ctx());
+  assertEquals(s.view, "repay");
+  assertEquals((await ngPrepareLoan(ctx())).error, "loan_open");
+  const r = await ngPrepareLoanRepay(ctx({ amount: "10000" }));
+  assertEquals(w.actions.get(String(r.action_id))!.params.amount, String(N(10_000)));
+  assertEquals((await ngPrepareLoanRepay(ctx())).error, "insufficient_funds"); // ₦26,800 owed, ₦26,400 in her wallet
+  w.available = N(40_000);
+  const all = await ngPrepareLoanRepay(ctx({ amount: "50000" }));
+  assertEquals(w.actions.get(String(all.action_id))!.params.amount, String(N(26_800))); // never more than she owes
+  const more = await ngLoanMoreTime(ctx());
+  assertEquals(more.ok, true);
+  assertEquals(w.actions.get(String(more.action_id))!.kind, "loan_extension");
+  const again = await ngLoanMoreTime(setup({ credit: { frozen_until: null, weeks: [], assets: [], loans: [{ ...open, extended_once: true }] } }).ctx());
+  assertEquals(again.error, "already_extended");
 });
