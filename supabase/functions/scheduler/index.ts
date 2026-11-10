@@ -46,7 +46,8 @@ async function ajoPayouts(now: Date) {
   for (const grp of groups) {
     const g = await chain.group(grp.onchain_id);
     // Ledger time trails the wall clock by a few seconds: wait 10 s past due so NotDue can't happen.
-    if (!g || g.next_due.getTime() + 10_000 > now.getTime()) continue;
+    // An empty pot (nobody paid this round) is not worth a transaction: skip it rather than pay ₦0.
+    if (!g || g.pot_minor === 0n || g.next_due.getTime() + 10_000 > now.getTime()) continue;
     const round = Math.floor(g.next_due.getTime() / 1000);
     const recipientPub = g.members[g.turn];
     const { data: recipient } = await db.from("users").select("id").eq("stellar_pub", recipientPub).maybeSingle();
