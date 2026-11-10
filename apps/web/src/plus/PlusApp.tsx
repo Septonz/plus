@@ -117,7 +117,8 @@ function Signed({ authUserId }: { authUserId: string }) {
   const { setLang } = useLangContext()
 
   // Every screen action, also by voice (ElevenLabs client tools; they run here, with her login).
-  useScreenTools({
+  // Nigeria registers its own in NgApp: none of these for a Nigeria user.
+  useScreenTools(data.me?.market_id !== 'in' ? {} : {
     navigate: async ({ screen }) => {
       const to = VOICE_SCREENS[String(screen ?? '').toLowerCase().replace(/[\s-]+/g, '_')]
       if (!to) return `There is no "${String(screen)}" screen. Screens: ${Object.keys(VOICE_SCREENS).join(', ')}.`
