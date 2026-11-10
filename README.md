@@ -44,17 +44,71 @@ Before every rehearsal: `pnpm demo:reset ng` (and `pnpm demo:reset in`), then `p
   network fees and an ajo contract call about 0.001 XLM, a tiny fraction of a naira at recent XLM
   prices, so a ₦500 cash-in or a ₦1,000 ajo payment is worth sending. Plus pays them for her.
 
+### A new user: sign-up to first payment
+
+Anyone can open a Plus account from the app's front door (`/app` → **Open a Plus account**), by
+voice or by tapping. The screen shows six steps that tick off as she (or the voice agent) goes:
+**name, language, phone, PIN, check it is you, wallet ready**.
+
+- **Phone:** a 6-digit code, valid 10 minutes, 5 tries. Test numbers (`+234 700 000 0xxx`, market
+  pack `onboarding.demoPhonePrefix`) show the code on screen as a simulated text message.
+- **PIN:** chosen twice on the screen keypad only; weak PINs (1111, 1234) are refused. The voice
+  agent cannot set or hear it.
+- **Check it is you:** a photo on the screen (camera on her phone; the photo is never uploaded or
+  stored; Plus keeps only "photo check passed") gives **tier 1**. Her **NIN**, typed on screen
+  (never spoken), checked against a mock registry, gives **tier 2**. Plus stores only an HMAC of
+  the NIN and its last 4 digits.
+- **Someone she trusts** (optional): who Plus may call to help her back in.
+- **Wallet:** `create_wallet` goes through the chain outbox: a new Stellar account whose reserves
+  are sponsored by the partner (`begin/end sponsoring`, starting balance 0) with NGNT and USDC
+  trustlines, in one transaction. The key is custodial, as for Funmi: made inside Supabase and
+  stored in Vault. She gets a virtual account number at the same time. Measured: 3.1 to 6.6 s
+  from Yes to "Your account is ready".
+- **Agent-assisted:** Mama Bisi's `/agent` page has **Register a customer**: the same steps on her
+  screen, the customer answering and typing her own PIN and NIN. **A kiosk works the same way**:
+  the agent flow on a shared tablet, with the agent's login replaced by the kiosk's.
+- **Returning users:** **I have an account** → phone number + PIN (the PIN lockout applies).
+- Re-running sign-up with a test number is safe: the earlier test person is archived (login
+  disabled, history kept) and the number is free again. A real number that already has an
+  account is refused.
+
+**Tiers** (market pack `kyc.tiers`, modelled on Nigeria's tiered KYC; the partner sets the real
+limits). Every money tool enforces them: pay, pay by code, ajo, cash out, advances, cash-in and
+bank transfers in (her balance limit).
+
+| Tier | Needs | Send per day | Hold | Advances |
+| ---- | ----- | ------------ | ---- | -------- |
+| 1 | name, phone, photo | ₦50,000 | ₦300,000 | no |
+| 2 | + NIN | ₦200,000 | ₦500,000 | after 8 weeks as a member |
+
+India uses the same flow with ₹5,000 / ₹10,000 (tier 1) and ₹10,000 / ₹2,00,000 (tier 2). There
+is no ID step in the app: the partner bank does KYC, and Plus never asks for Aadhaar.
+
+**Money in.** *Bank transfer:* each wallet has a 10-digit virtual account number at "Partner bank
+(simulated)". **Add money** shows it with a copy button; the demo button **Simulate transfer
+received** makes the partner's anchor account (`anchor_ng`, funded by the issuer) send the NGNT to
+her wallet through the outbox. It shows in `what_arrived` as "a bank transfer from …", and 10% goes
+to an open advance. *Cash with an agent* is unchanged. *From another Plus user:* see below.
+
+**Pay anyone by phone.** If the number is a Plus user, an NGNT payment wallet to wallet (it shows
+in their "what arrived"). If not, a claimable balance that any Plus agent can claim, with a code
+sent by text (simulated on her screen); the person collects the cash with the code and their phone
+number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**.
+
 ### What is simulated
 
 - Testnet only: no real money moves. **NGNT** is a test naira asset issued by Plus; in production
   it would be naira from a licensed e-money or stablecoin partner.
 - Mama Bisi, Funmi, Iya Tunde, Amaka and the ajo members are fictional; their phone numbers are
   fake. The cash Mama Bisi "receives" is pretend.
-- NIN checks (`nin_mock`), and in India the partner bank, UPI and KYC (`payout-sim`,
-  `partner_kyc_mock`).
-- Custodial keys sit in Supabase secrets; in production they would be in a KMS/HSM or held by the
-  user (passkeys).
-- Demo logins use a password; production login is phone OTP plus PIN.
+- NIN checks (a mock registry: any 11 digits pass except `00000000000`), the photo check (a pass
+  flag only), text messages (codes shown on screen), the partner bank behind the virtual account
+  numbers and its anchor account; in India the partner bank, UPI and KYC (`payout-sim`,
+  `partner_kyc_mock`). No real company names or logos are used.
+- Custodial keys sit in Supabase secrets (demo people) or Vault (new sign-ups, `anchor_ng`); in
+  production they would be in a KMS/HSM or held by the user (passkeys).
+- Demo people (Funmi, Selvi, Mama Bisi) sign in with a demo password; new users sign up with a
+  phone code and sign in with phone + PIN.
 - Ajo rounds are 1 day (real ajo: weekly or monthly); Funmi's 8 weeks of history were run with
   1-minute rounds.
 - `pnpm demo:reset` tops up or sweeps balances through the test issuer between rehearsals (these
@@ -71,6 +125,12 @@ Before every rehearsal: `pnpm demo:reset ng` (and `pnpm demo:reset in`), then `p
 | First confirm of the day: cold function / after `pnpm warm` | 7.5 s → 0.8 s |
 | Edge Function `/health`: cold / warm | 0.5–1.2 s / 0.06–0.1 s |
 | Balance read from Horizon (Edge Function) | about 0.15 s |
+| Sign-up, `pnpm e2e:ng --new-user` (2026-11-09): 11 steps, server time | 3.9 to 4.7 s |
+| New wallet (sponsored account + NGNT/USDC trustlines): Yes → ready | 3.8 s, 6.6 s |
+| Bank transfer in ₦5,000: button → tick | 3.4 s, 4.2 s |
+| First payment ₦500 to a Plus user by phone | 4.3 s, 5.0 s |
+| Pay by code ₦300 / agent pays it out | 4.0–4.6 s / 3.1–3.8 s |
+| Sign-up to first payment, all of it | 28 to 31 s |
 
 ### Demo tools
 
@@ -86,6 +146,12 @@ Before every rehearsal: `pnpm demo:reset ng` (and `pnpm demo:reset in`), then `p
   frame signed in as Funmi (`/app?as=funmi`); right, every Stellar transaction behind it (Funmi,
   Mama Bisi, the ajo pot, the advance pool) with the seconds from her Yes and a Stellar Expert
   link; top, the Nigeria / India switch.
+- `pnpm demo:new-user`: a fresh test person for rehearsals through the real sign-up (next free
+  test number, tier 2, wallet on Stellar; `--tier 1`, `--name`, `--fund 5000`, `--free` to only
+  print the next free number for a live sign-up). Prints the phone, a test PIN, the account number
+  and the Stellar Expert links.
+- `pnpm screens`: phone-size screenshots of every screen into `docs/screens/` (headless Chrome,
+  no extra installs; needs `pnpm --filter web dev --port 5199`).
 
 ## Market packs
 
@@ -179,9 +245,12 @@ The old command still works, so we have not switched yet. When we do, change onl
 `pnpm --filter web dev`, then:
 
 - **http://localhost:5173/app**: the Plus app, Selvi's home. Mobile-first PWA (installable; manifest, icons, a service worker that never caches money data). Tamil labels with English underneath, a Tamil/English toggle, nothing smaller than 16px, and the big mic **பேசுங்க** on every screen. Screens: Home, Pay, Seettu, Advance, My record, Add money, Settings.
-- **Funmi (Nigeria):** on `/app`, "Continue as Funmi". The app picks its screens from the Nigeria market pack (`getMarket('ng').screens`): Home, Add cash, Pay, Ajo, Advance, Cash out, My record, Settings, with English and Yoruba labels. After her Yes the confirm sheet shows "Sending on Stellar…", then the tick, the seconds it took and the Stellar Expert link. Balances come from `wallet_balances`, refreshed from Horizon after every confirmed transaction and every minute.
-- **http://localhost:5173/agent**: the cash agent page, Mama Bisi ("Continue as Mama Bisi"). Record cash (customer phone + amount; checks her float and the ₦500,000 daily limit; Funmi then gets "Mama Bisi says you gave her ₦500. Is that right?"; 10% goes to an open advance) and redeem a cash-out code (shows the amount, then claims the cash-out on Stellar). Own login, so it can sit next to `/app`.
+- **Front door:** `/app` signed out shows **Open a Plus account** (sign-up, see "A new user" above), **I have an account** (phone + PIN) and the demo people.
+- **Funmi (Nigeria):** on `/app`, "Continue as Funmi". The app picks its screens from the Nigeria market pack (`getMarket('ng').screens`): Home, Add money (bank transfer or agent cash), Pay (saved people or any phone number), Ajo, Advance, Cash out, My record, Settings, with English and Yoruba labels. After her Yes the confirm sheet shows "Sending on Stellar…", then the tick, the seconds it took and the Stellar Expert link. Balances come from `wallet_balances`, refreshed from Horizon after every confirmed transaction and every minute.
+- **http://localhost:5173/agent**: the cash agent page, Mama Bisi ("Continue as Mama Bisi"). **Register a customer** (the sign-up on her screen), record cash (customer phone + amount; checks her float and the ₦500,000 daily limit; Funmi then gets "Mama Bisi says you gave her ₦500. Is that right?"; 10% goes to an open advance) and redeem a cash-out code (shows the amount, then claims the cash-out on Stellar). Own login, so it can sit next to `/app`.
 - **http://localhost:5173/helper**: the helper page, where Meena records cash a member handed her. It keeps its own login, so both pages can be open side by side.
+
+**Design system.** One set of tokens in `apps/web/src/index.css` (colours, a type scale whose floor is 16px, radius, shadows) and shared pieces in `apps/web/src/plus/ui.tsx`: buttons (64px; nothing tappable under 48px), cards, notices, one stroke icon set, skeleton loading, empty and error states, and the success tick (the circle pops, the check draws itself; off with reduced motion). Sign-up illustrations are simple original shapes (`apps/web/src/onboard/art.tsx`). Screenshots: `docs/screens/`.
 
 **Logins.** The demo uses two Supabase Auth users created by `pnpm seed:db`: "Continue as Selvi" (`demo-selvi@example.com`) and "Continue as Meena" (`demo-meena@example.com`), password generated into `VITE_DEMO_LOGIN_PASSWORD` in the root `.env.local`. They are linked through `users.auth_user_id` and `helpers.auth_user_id`. **Production login is phone OTP plus a PIN**, not these demo buttons.
 
@@ -222,7 +291,7 @@ This is a Testnet prototype. Where it cuts corners, it does so in ways that do n
 - `pnpm staff:create`: creates the staff dashboard user (`DEMO_STAFF_EMAIL`) with `app_metadata.role = staff`, and prints how to log in.
 - `pnpm test:functions`: Deno tests for `supabase/functions/_shared` (PINs, caller ids). SQL tests for the money functions are in `supabase/tests/` (run in a rolled-back transaction).
 - `pnpm e2e` (by hand, not CI): runs the India flow against the dev project by voice session and app: state transfer, auto-save, what arrived, pay the flower wholesaler ₹300, seettu, helper cash-in confirmed, my record. Then waits for the chain outbox and checks each contract event on Stellar, printing confirm → on-chain times.
-- `pnpm e2e:ng` (by hand, not CI): the Nigeria demo through the real functions: Mama Bisi records ₦500 and Funmi says Yes, pay Iya Tunde, ajo, advance (and auto-repay from a cash-in), cash-out code redeemed by the agent, my record. Prints Yes → tick seconds and a Stellar Expert link per step. `pnpm e2e:ng --read` only reads (balances, ajo, advance, record, agent float).
+- `pnpm e2e:ng` (by hand, not CI): the Nigeria demo through the real functions: Mama Bisi records ₦500 and Funmi says Yes, pay Iya Tunde, ajo, advance (and auto-repay from a cash-in), cash-out code redeemed by the agent, my record. Prints Yes → tick seconds and a Stellar Expert link per step. `pnpm e2e:ng --read` only reads (balances, ajo, advance, record, agent float). Step 8 (also alone with `pnpm e2e:ng --new-user`): a new person on test number +234 700 000 0301 from sign-up to first payment: a wrong NIN refused, the wallet opened, a bank transfer in, ₦500 to Funmi by phone, ₦300 by code to someone not on Plus that Mama Bisi pays out, the tier limit refusing ₦250,000, and signing in again with phone + PIN.
 
 ### Secrets (Supabase secrets, never committed)
 
