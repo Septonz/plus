@@ -17,7 +17,7 @@ const DEMO = [
 ]
 
 const Loading = () => (
-  <div className="grid min-h-dvh place-items-center text-4xl text-brick" role="status" aria-label="Loading"><Spinner /></div>
+  <div className="grid min-h-dvh place-items-center text-4xl text-accent-ink" role="status" aria-label="Loading"><Spinner /></div>
 )
 
 export default function Welcome() {
@@ -66,39 +66,39 @@ function Door() {
     <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-5 px-4 pb-10 pt-8">
       <div className="text-center">
         <img src="/icons/icon-192.png" alt="" className="mx-auto size-20 rounded-[1.5rem] shadow-lift" />
-        <h1 className="mt-3 text-5xl font-extrabold text-brick">Plus</h1>
-        <p className="mt-1 text-2xl font-bold">Your money, by voice</p>
+        <h1 className="mt-3 text-5xl font-semibold text-accent-ink">Plus</h1>
+        <p className="mt-1 text-2xl font-semibold">Your money, by voice</p>
       </div>
       <ArtWelcome />
       <BigButton className="min-h-20 w-full text-2xl" onClick={() => setView('signup')}>
-        <Icon name="userPlus" /> <Y k="openAccount" sub="text-cream/80" />
+        <Icon name="userPlus" /> <Y k="openAccount" sub="text-on-accent/80" />
       </BigButton>
       <BigButton tone="white" className="w-full" onClick={() => setView('signin')}>
         <Icon name="lock" /> <Y k="haveAccount" />
       </BigButton>
 
       {demoOn !== false && <section className="mt-2 space-y-3" aria-labelledby="demo-people">
-        <h2 id="demo-people" className="flex items-center gap-3 text-base font-bold uppercase tracking-wide text-ink-soft">
-          <span className="h-0.5 flex-1 bg-line" /> Demo people <span className="h-0.5 flex-1 bg-line" />
+        <h2 id="demo-people" className="flex items-center gap-3 text-base font-semibold uppercase tracking-wide text-secondary">
+          <span className="h-0.5 flex-1 bg-hairline" /> Demo people <span className="h-0.5 flex-1 bg-hairline" />
         </h2>
         {DEMO.map((p) => (
           <button
             key={p.email}
             onClick={() => void demo(p.email)}
             disabled={busy !== null}
-            className="flex min-h-16 w-full items-center gap-3 rounded-control bg-white px-4 py-3 text-left shadow-card active:bg-sand disabled:opacity-60"
+            className="flex min-h-16 w-full items-center gap-3 rounded-control bg-surface px-4 py-3 text-left shadow-card active:bg-fill disabled:opacity-60"
           >
-            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-sand text-2xl text-brick">
+            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-fill text-2xl text-accent-ink">
               {busy === p.email ? <Spinner /> : <Icon name="person" />}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-xl font-bold">Continue as {p.label}</span>
-              <span className="block text-base text-ink-soft">{p.note}</span>
+              <span className="block text-xl font-semibold">Continue as {p.label}</span>
+              <span className="block text-base text-secondary">{p.note}</span>
             </span>
           </button>
         ))}
         {error && <Notice tone="chili">{error}</Notice>}
-        <p className="text-center text-base text-ink-soft">Stellar testnet. All money is simulated.</p>
+        <p className="text-center text-base text-secondary">Stellar testnet. All money is simulated.</p>
       </section>}
     </main>
   )

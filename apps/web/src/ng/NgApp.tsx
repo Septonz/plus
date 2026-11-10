@@ -1,16 +1,18 @@
-// Plus Nigeria (Funmi): her Stellar wallet is her account. Screens and wording come from the
-// Nigeria market pack (getMarket('ng').screens). Big icons, simple English with Yoruba underneath,
-// the mic on every screen, and the confirm sheet that opens by itself for actions she started.
+// Plus Nigeria (Funmi): her Stellar wallet is her account. Four tabs (Home, Pay, Activity,
+// Profile); Home is a stack of passes that open full-screen; the mic floats bottom centre on every
+// screen; the confirm sheet opens by itself for actions she started (by voice or taps).
+import { AnimatePresence } from 'motion/react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getMarket, type Screen } from '@plus/markets'
+import type { Screen } from '@plus/markets'
+import { BottomNav, CardDetail, PageHeader, useMarketAccent } from '../ds/components'
 import { supabase } from '../lib/supabase'
 import { tool, type ToolResult } from '../plus/api'
 import type { PendingAction, PlusData } from '../plus/data'
-import { ENGLISH, Icon, LangContext } from '../plus/ui'
+import { ENGLISH, LangContext } from '../plus/ui'
 import { VoiceButton } from '../plus/voice'
 import { NgConfirmSheet } from './confirm'
-import { AddCash, Advance, Ajo, CashOut, Home, Pay, Record, Settings } from './screens'
-import { MIC_WORDS, Y, type WKey } from './words'
+import { AddCash, Advance, Ajo, CashOut, Home, Pay, Record, Settings, WalletDetail, type Detail } from './screens'
+import { MIC_WORDS, W, yo } from './words'
 
 export type Wallet = { NGNT: bigint; USDC: bigint; updated_at: string | null }
 export type Go = (s: Screen) => void
@@ -47,17 +49,21 @@ export function useTool(name: string, version: number) {
   return r
 }
 
-const NAV_ICON: Partial<Record<Screen, [string, WKey]>> = {
-  home: ['home', 'home'],
-  pay: ['pay', 'pay'],
-  group: ['group', 'ajo'],
-  cash_out: ['hand', 'cashOut'],
-  record: ['record', 'record'],
+type Tab = 'home' | 'pay' | 'record' | 'settings'
+const TABS: Tab[] = ['home', 'pay', 'record', 'settings']
+const DETAIL_TITLE: Record<Detail, [string, string | undefined]> = {
+  wallet: [W.wallet.en, yo('wallet')],
+  group: [W.ajo.en, yo('ajo')],
+  advance: [W.advance.en, yo('advance')],
+  add_cash: [W.addMoney.en, yo('addMoney')],
+  cash_out: [W.cashOut.en, yo('cashOut')],
 }
 
 export default function NgApp({ data }: { data: PlusData }) {
-  const screens = getMarket('ng').screens
-  const [screen, setScreen] = useState<Screen>('home')
+  useMarketAccent('ng')
+  const [tab, setTab] = useState<Tab>('home')
+  const [open, setOpen] = useState<Detail | null>(null)
+  const [fromPass, setFromPass] = useState(true)
   const wallet = useWallet(data.me?.id, data.version)
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set())
   const [chosen, setChosen] = useState<PendingAction | null>(null)
@@ -68,51 +74,55 @@ export default function NgApp({ data }: { data: PlusData }) {
   const [held, setHeld] = useState<PendingAction | null>(null)
   if (!held && (chosen ?? next)) setHeld(chosen ?? next)
 
-  const go = useCallback<Go>((s) => {
-    setScreen(s)
-    window.scrollTo({ top: 0 })
+  const openDetail = useCallback((d: Detail, viaPass = true) => {
+    setFromPass(viaPass)
+    setOpen(d)
   }, [])
-  const nav = screens.filter((s) => NAV_ICON[s]).slice(0, 5)
+  const go = useCallback<Go>((s) => {
+    if ((TABS as string[]).includes(s)) {
+      setOpen(null)
+      setTab(s as Tab)
+      window.scrollTo({ top: 0 })
+    } else if (s === 'group' || s === 'advance' || s === 'add_cash' || s === 'cash_out') {
+      openDetail(s, false)
+    }
+  }, [openDetail])
   const props = { data, wallet, go, version: data.version }
+  const onAnswer = (a: PendingAction) => setChosen(a)
 
   return (
     <LangContext.Provider value={ENGLISH}>
-      <div className="mx-auto max-w-md px-4 pb-44 pt-5">
-        {screen === 'home' && <Home {...props} onAnswer={(a) => setChosen(a)} />}
-        {screen === 'add_cash' && <AddCash {...props} onAnswer={(a) => setChosen(a)} />}
-        {screen === 'pay' && <Pay {...props} />}
-        {screen === 'group' && <Ajo {...props} />}
-        {screen === 'advance' && <Advance {...props} />}
-        {screen === 'cash_out' && <CashOut {...props} />}
-        {screen === 'record' && <Record {...props} />}
-        {screen === 'settings' && <Settings {...props} onSignOut={() => void supabase?.auth.signOut()} />}
-      </div>
+      <main className="mx-auto max-w-md px-4 pb-44 pt-[max(env(safe-area-inset-top),1.25rem)]">
+        {tab === 'home' && <Home {...props} onAnswer={onAnswer} open={open} onOpen={(d) => openDetail(d)} />}
+        {tab === 'pay' && <div className="space-y-5"><PageHeader title={W.pay.en} /><Pay {...props} /></div>}
+        {tab === 'record' && <div className="space-y-5"><PageHeader title="Activity" /><Record {...props} /></div>}
+        {tab === 'settings' && <div className="space-y-5"><PageHeader title="Profile" /><Settings {...props} onSignOut={() => void supabase?.auth.signOut()} /></div>}
+      </main>
 
-      {screen !== 'home' && (
-        <div className="fixed bottom-28 right-4 z-30">
-          <VoiceButton size="dock" words={MIC_WORDS} />
-        </div>
-      )}
+      <AnimatePresence>
+        {open && (
+          <CardDetail key={open} id={open} title={DETAIL_TITLE[open][0]} sub={DETAIL_TITLE[open][1]} fromPass={fromPass} onClose={() => setOpen(null)}>
+            {open === 'wallet' && <WalletDetail wallet={wallet} onOpen={(d) => openDetail(d, false)} />}
+            {open === 'group' && <Ajo {...props} />}
+            {open === 'advance' && <Advance {...props} />}
+            {open === 'add_cash' && <AddCash {...props} onAnswer={onAnswer} />}
+            {open === 'cash_out' && <CashOut {...props} />}
+          </CardDetail>
+        )}
+      </AnimatePresence>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-sand-deep bg-white pb-[env(safe-area-inset-bottom)]">
-        <ul className="mx-auto grid max-w-md" style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}>
-          {nav.map((s) => {
-            const [icon, k] = NAV_ICON[s]!
-            return (
-              <li key={s}>
-                <button
-                  onClick={() => go(s)}
-                  aria-current={screen === s ? 'page' : undefined}
-                  className={`flex min-h-20 w-full flex-col items-center justify-start gap-1 px-1 pt-3 text-base font-bold leading-tight ${screen === s ? 'text-brick' : 'text-ink-soft'}`}
-                >
-                  <Icon name={icon} className="text-3xl" />
-                  <Y k={k} className="text-center text-sm" sub="hidden" />
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      </nav>
+      <VoiceButton words={MIC_WORDS} />
+
+      <BottomNav<Tab>
+        active={open ? null : tab}
+        onSelect={(k) => go(k)}
+        items={[
+          { key: 'home', label: W.home.en, icon: 'home' },
+          { key: 'pay', label: W.pay.en, icon: 'pay' },
+          { key: 'record', label: 'Activity', icon: 'activity' },
+          { key: 'settings', label: 'Profile', icon: 'profile' },
+        ]}
+      />
 
       {held && (
         <NgConfirmSheet

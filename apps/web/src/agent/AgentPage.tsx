@@ -32,18 +32,18 @@ const Onboarding = lazy(() => import('../onboard/Onboarding.tsx'))
 type Answer = Partial<Me> & { ok?: boolean; error?: string; text?: string; amount_text?: string; attempts_left?: number }
 
 const STATUS: Record<string, [string, string]> = {
-  awaiting_user: ['Waiting for her Yes', 'bg-sand text-ink'],
-  confirmed: ['Sending…', 'bg-sand text-ink'],
-  on_stellar: ['✓ On Stellar', 'bg-leaf-soft text-leaf'],
-  sending: ['Sending…', 'bg-sand text-ink'],
-  rejected: ['She said No', 'bg-chili-soft text-chili'],
-  expired: ['Expired', 'bg-sand text-ink-soft'],
+  awaiting_user: ['Waiting for her Yes', 'bg-fill text-label'],
+  confirmed: ['Sending…', 'bg-fill text-label'],
+  on_stellar: ['✓ On Stellar', 'bg-success-soft text-success'],
+  sending: ['Sending…', 'bg-fill text-label'],
+  rejected: ['She said No', 'bg-danger-soft text-danger'],
+  expired: ['Expired', 'bg-fill text-secondary'],
 }
 
 export default function AgentPage() {
   const { session, ready } = useSession()
   return (
-    <div className="min-h-dvh bg-cream text-ink">
+    <div className="min-h-dvh bg-canvas text-label">
       {!ready ? null : session ? <Signed /> : (
         <DemoChoice people={[{ email: DEMO_MAMA_BISI_EMAIL, label: 'Continue as Mama Bisi', note: 'Plus cash agent · Bodija market, Ibadan' }]} />
       )}
@@ -54,14 +54,14 @@ export default function AgentPage() {
 function Phone({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <label className="block">
-      <span className="text-xl font-bold">Their phone</span>
+      <span className="text-xl font-semibold">Their phone</span>
       <input
         inputMode="tel"
         autoComplete="off"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="0803 123 4567"
-        className="mt-2 block min-h-16 w-full rounded-control border-2 border-line bg-white px-4 text-2xl font-bold focus:border-brick"
+        className="mt-2 block min-h-16 w-full rounded-control border-2 border-hairline bg-surface px-4 text-2xl font-semibold focus:border-accent"
       />
     </label>
   )
@@ -127,7 +127,7 @@ function Signed() {
   if (!me) {
     return (
       <div className="mx-auto max-w-md space-y-4 px-4 pt-6">
-        <p className="flex items-center gap-2 text-xl font-bold text-ink-soft" role="status"><Spinner /> Loading your float…</p>
+        <p className="flex items-center gap-2 text-xl font-semibold text-secondary" role="status"><Spinner /> Loading your float…</p>
         <LoadingList rows={3} />
       </div>
     )
@@ -145,25 +145,25 @@ function Signed() {
     <div className="mx-auto max-w-md space-y-5 px-4 pb-16 pt-6">
       <header className="flex items-center justify-between">
         <div>
-          <p className="text-base font-bold uppercase tracking-wide text-saffron">Plus cash agent</p>
-          <h1 className="text-3xl font-extrabold">{me.agent.name}</h1>
+          <p className="text-base font-semibold uppercase tracking-wide text-warning">Plus cash agent</p>
+          <h1 className="text-3xl font-semibold">{me.agent.name}</h1>
         </div>
-        <button onClick={() => void supabase?.auth.signOut()} className="min-h-12 shrink-0 rounded-full border-2 border-line bg-white px-4 text-base font-bold active:bg-sand">Sign out</button>
+        <button onClick={() => void supabase?.auth.signOut()} className="min-h-12 shrink-0 rounded-full border-2 border-hairline bg-surface px-4 text-base font-semibold active:bg-fill">Sign out</button>
       </header>
 
-      <Card className="bg-brick! text-cream shadow-lift!">
+      <Card className="bg-accent! text-on-accent shadow-lift!">
         <p className="text-lg font-semibold">Float on Stellar</p>
-        <p className="mt-1 text-4xl font-extrabold text-turmeric">{me.float_text}</p>
-        <p className="mt-1 text-base text-cream/80">
+        <p className="mt-1 text-4xl font-semibold text-warning">{me.float_text}</p>
+        <p className="mt-1 text-base text-on-accent/80">
           {me.float_free_text} free · {me.left_today_text} left today (limit {me.limit_text})
         </p>
-        {me.wallet_url && <a href={me.wallet_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-base font-bold text-cream underline">See float on Stellar Expert</a>}
+        {me.wallet_url && <a href={me.wallet_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-base font-semibold text-on-accent underline">See float on Stellar Expert</a>}
       </Card>
 
       <div className="grid grid-cols-3 gap-2" role="tablist">
         {([['cash', 'add', 'Record cash'], ['code', 'hand', 'Redeem code'], ['register', 'userPlus', 'Register']] as const).map(([t, icon, label]) => (
           <button key={t} role="tab" aria-selected={tab === t} onClick={() => { setTab(t); setMsg(null) }}
-            className={`flex min-h-24 flex-col items-center justify-center gap-1 rounded-control px-1 text-center text-lg font-extrabold leading-tight ${tab === t ? 'bg-brick text-cream' : 'bg-white shadow-card active:bg-sand'}`}>
+            className={`flex min-h-24 flex-col items-center justify-center gap-1 rounded-control px-1 text-center text-lg font-semibold leading-tight ${tab === t ? 'bg-accent text-on-accent' : 'bg-surface shadow-card active:bg-fill'}`}>
             <Icon name={icon} className="text-3xl" /> {label}
           </button>
         ))}
@@ -171,7 +171,7 @@ function Signed() {
 
       {tab === 'register' ? (
         <Card>
-          <Suspense fallback={<p className="flex items-center gap-2 py-6 text-xl font-bold" role="status"><Spinner /> Loading…</p>}>
+          <Suspense fallback={<p className="flex items-center gap-2 py-6 text-xl font-semibold" role="status"><Spinner /> Loading…</p>}>
             <Onboarding mode="agent" onExit={() => setTab('cash')} />
           </Suspense>
         </Card>
@@ -180,19 +180,19 @@ function Signed() {
         <Phone value={phone} onChange={setPhone} />
         {tab === 'cash' ? (
           <>
-            <p className="mt-4 text-xl font-bold">Cash she gave you</p>
-            <p className="my-3 text-center text-5xl font-extrabold text-brick" aria-live="polite">{naira(BigInt(amount || '0') * 100n)}</p>
+            <p className="mt-4 text-xl font-semibold">Cash she gave you</p>
+            <p className="my-3 text-center text-5xl font-semibold text-accent-ink" aria-live="polite">{naira(BigInt(amount || '0') * 100n)}</p>
             <Keypad onKey={(k) => setAmount((a) => applyKey(a, k, 7))} />
             <BigButton className="mt-4 w-full" onClick={record} disabled={!amount || !phone || busy}>
               <Icon name="hand" /> Record cash
             </BigButton>
-            <p className="mt-2 text-base text-ink-soft">Nothing moves until she says Yes in her Plus app.</p>
+            <p className="mt-2 text-base text-secondary">Nothing moves until she says Yes in her Plus app.</p>
           </>
         ) : (
           <>
-            <p className="mt-4 text-xl font-bold">Her 6-digit code</p>
-            <p className="my-3 text-center font-mono text-5xl font-extrabold tracking-[0.2em]" aria-live="polite">{code.padEnd(6, '·')}</p>
-            <p className="-mt-1 mb-3 text-center text-base text-ink-soft">Her own cash-out code, or a code someone sent to this phone.</p>
+            <p className="mt-4 text-xl font-semibold">Her 6-digit code</p>
+            <p className="my-3 text-center font-mono text-5xl font-semibold tracking-[0.2em]" aria-live="polite">{code.padEnd(6, '·')}</p>
+            <p className="-mt-1 mb-3 text-center text-base text-secondary">Her own cash-out code, or a code someone sent to this phone.</p>
             <Keypad onKey={(k) => { setCode((c) => applyKey(c, k, 6, true)); setChecked(null) }} />
             {checked ? (
               <BigButton tone="leaf" className="mt-4 w-full" onClick={redeem} disabled={busy}>
@@ -206,7 +206,7 @@ function Signed() {
         {msg && <div className="mt-3"><Notice tone={msg.tone}>{msg.text}</Notice></div>}
       </Card>
 
-      <h2 className="text-2xl font-extrabold">{tab === 'cash' ? 'Recent cash-ins' : 'Codes you redeemed'}</h2>
+      <h2 className="text-2xl font-semibold">{tab === 'cash' ? 'Recent cash-ins' : 'Codes you redeemed'}</h2>
       {(tab === 'cash' ? me.recent : me.redeemed).length === 0 ? (
         <EmptyState icon={tab === 'cash' ? 'add' : 'hand'} title={tab === 'cash' ? 'No cash-ins yet' : 'No codes redeemed yet'}>
           {tab === 'cash' ? 'Cash you record shows here with its tick on Stellar.' : 'Codes you pay out show here.'}
@@ -214,13 +214,13 @@ function Signed() {
       ) : (
       <ul className="space-y-2">
         {(tab === 'cash' ? me.recent : me.redeemed).map((r) => {
-          const [label, cls] = STATUS[r.status] ?? [r.status, 'bg-sand']
-          const badge = <span className={`inline-block whitespace-nowrap rounded-full px-3 py-1 text-base font-bold ${cls}`}>{label}</span>
+          const [label, cls] = STATUS[r.status] ?? [r.status, 'bg-fill']
+          const badge = <span className={`inline-block whitespace-nowrap rounded-full px-3 py-1 text-base font-semibold ${cls}`}>{label}</span>
           return (
-            <li key={r.id} className="flex items-center justify-between gap-3 rounded-control bg-white p-4 shadow-card">
+            <li key={r.id} className="flex items-center justify-between gap-3 rounded-control bg-surface p-4 shadow-card">
               <div className="min-w-0">
-                <p className="text-xl font-bold">{r.name} · {r.amount_text}</p>
-                <p className="text-base text-ink-soft">{when(r.at)}</p>
+                <p className="text-xl font-semibold">{r.name} · {r.amount_text}</p>
+                <p className="text-base text-secondary">{when(r.at)}</p>
               </div>
               {r.url ? <a href={r.url} target="_blank" rel="noreferrer" className="shrink-0">{badge}</a> : badge}
             </li>

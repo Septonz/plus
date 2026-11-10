@@ -21,10 +21,10 @@ type Me = {
 }
 
 const STATUS: Record<string, [Key, string]> = {
-  awaiting_user: ['statusAwaiting', 'bg-sand text-ink'],
-  confirmed: ['statusConfirmed', 'bg-leaf-soft text-leaf'],
-  rejected: ['statusRejected', 'bg-chili-soft text-chili'],
-  expired: ['statusExpired', 'bg-sand text-ink-soft'],
+  awaiting_user: ['statusAwaiting', 'bg-fill text-label'],
+  confirmed: ['statusConfirmed', 'bg-success-soft text-success'],
+  rejected: ['statusRejected', 'bg-danger-soft text-danger'],
+  expired: ['statusExpired', 'bg-fill text-secondary'],
 }
 
 export default function HelperPage() {
@@ -32,7 +32,7 @@ export default function HelperPage() {
   const { session, ready } = useSession()
   return (
     <LangContext.Provider value={{ lang, setLang }}>
-      <div className="min-h-dvh bg-cream text-ink">
+      <div className="min-h-dvh bg-canvas text-label">
         {!ready ? null : session ? <Signed /> : <DemoLogin email={DEMO_MEENA_EMAIL} label="continueAsMeena" />}
       </div>
     </LangContext.Provider>
@@ -90,29 +90,29 @@ function Signed() {
     <div className="mx-auto max-w-md space-y-5 px-4 pb-16 pt-6">
       <header className="flex items-center justify-between">
         <div>
-          <p className="text-base font-bold uppercase tracking-wide text-saffron">
+          <p className="text-base font-semibold uppercase tracking-wide text-warning">
             <L k="helperTitle" />
           </p>
-          <h1 className="text-3xl font-extrabold">{me.helper.name}</h1>
+          <h1 className="text-3xl font-semibold">{me.helper.name}</h1>
         </div>
-        <button onClick={() => void supabase?.auth.signOut()} className="min-h-11 rounded-full border-2 border-sand-deep bg-white px-4 text-base font-bold">
+        <button onClick={() => void supabase?.auth.signOut()} className="min-h-11 rounded-full border-2 border-fill-strong bg-surface px-4 text-base font-semibold">
           <L k="signOut" />
         </button>
       </header>
 
-      <Card className="bg-brick! text-cream">
-        <L k="leftToday" sub="text-cream/80" className="text-lg font-semibold" />
-        <p className="mt-1 text-4xl font-extrabold text-turmeric">{me.left_today_text}</p>
-        <p className="mt-1 text-base text-cream/80">
+      <Card className="bg-accent! text-on-accent">
+        <L k="leftToday" sub="text-on-accent/80" className="text-lg font-semibold" />
+        <p className="mt-1 text-4xl font-semibold text-warning">{me.left_today_text}</p>
+        <p className="mt-1 text-base text-on-accent/80">
           {me.used_today_text} / {me.limit_text}
         </p>
       </Card>
 
       <Card>
-        <h2 className="text-2xl font-extrabold">
+        <h2 className="text-2xl font-semibold">
           <L k="recordCash" />
         </h2>
-        <p className="mt-4 text-xl font-bold">
+        <p className="mt-4 text-xl font-semibold">
           <L k="whoGaveCash" />
         </p>
         <div className="mt-3 grid grid-cols-2 gap-3">
@@ -120,7 +120,7 @@ function Signed() {
             <button
               key={p.user_id}
               onClick={() => setWho(p.user_id)}
-              className={`flex min-h-16 items-center gap-2 rounded-2xl px-4 text-xl font-bold ${who === p.user_id ? 'bg-brick text-cream' : 'bg-sand text-ink'}`}
+              className={`flex min-h-16 items-center gap-2 rounded-2xl px-4 text-xl font-semibold ${who === p.user_id ? 'bg-accent text-on-accent' : 'bg-fill text-label'}`}
             >
               <Icon name="person" /> {p.name}
             </button>
@@ -128,12 +128,12 @@ function Signed() {
         </div>
         {who && (
           <>
-            <p className="my-4 text-center text-5xl font-extrabold text-brick" aria-live="polite">
+            <p className="my-4 text-center text-5xl font-semibold text-accent-ink" aria-live="polite">
               ₹{amount ? Number(amount).toLocaleString('en-IN') : '0'}
             </p>
             <Keypad onKey={(k) => setAmount((a) => applyKey(a, k, 6))} />
             <BigButton className="mt-4 w-full" onClick={record} disabled={!amount || busy}>
-              <Icon name="hand" /> <L k="recordCash" sub="text-cream/80" />
+              <Icon name="hand" /> <L k="recordCash" sub="text-on-accent/80" />
             </BigButton>
           </>
         )}
@@ -144,21 +144,21 @@ function Signed() {
         )}
       </Card>
 
-      <h2 className="text-2xl font-extrabold">
+      <h2 className="text-2xl font-semibold">
         <L k="recent" />
       </h2>
       <ul className="space-y-2">
         {me.recent.map((r) => {
-          const [k, cls] = STATUS[r.status] ?? ['statusAwaiting', 'bg-sand']
+          const [k, cls] = STATUS[r.status] ?? ['statusAwaiting', 'bg-fill']
           return (
-            <li key={r.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-[0_2px_0_0_var(--color-sand-deep)]">
+            <li key={r.id} className="flex items-center justify-between gap-3 rounded-2xl bg-surface p-4 shadow-[0_2px_0_0_var(--color-sand-deep)]">
               <div>
-                <p className="text-xl font-bold">
+                <p className="text-xl font-semibold">
                   {r.name} · {r.amount_text}
                 </p>
-                <p className="text-base text-ink-soft">{whenText(r.at, 'ta')}</p>
+                <p className="text-base text-secondary">{whenText(r.at, 'ta')}</p>
               </div>
-              <span className={`rounded-full px-3 py-1 text-base font-bold ${cls}`}>
+              <span className={`rounded-full px-3 py-1 text-base font-semibold ${cls}`}>
                 <L k={k} sub="hidden" />
               </span>
             </li>

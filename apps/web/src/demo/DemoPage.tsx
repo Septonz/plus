@@ -57,22 +57,22 @@ function StaffLogin() {
     if (error) setError(error.message)
   }
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-cream p-6 text-ink">
-      <form onSubmit={submit} className="w-full max-w-md space-y-4 rounded-3xl bg-white p-8 shadow-[0_3px_0_0_var(--color-sand-deep)]">
-        <h1 className="text-4xl font-extrabold text-brick">Plus · demo view</h1>
-        <p className="text-lg text-ink-soft">Staff login (created with <code>pnpm staff:create</code>).</p>
+    <main className="flex min-h-dvh items-center justify-center bg-canvas p-6 text-label">
+      <form onSubmit={submit} className="w-full max-w-md space-y-4 rounded-3xl bg-surface p-8 shadow-[0_3px_0_0_var(--color-sand-deep)]">
+        <h1 className="text-4xl font-semibold text-accent-ink">Plus · demo view</h1>
+        <p className="text-lg text-secondary">Staff login (created with <code>pnpm staff:create</code>).</p>
         <label className="block">
-          <span className="text-lg font-bold">Email</span>
+          <span className="text-lg font-semibold">Email</span>
           <input type="email" required autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 block min-h-14 w-full rounded-2xl border-2 border-sand-deep px-4 text-xl" />
+            className="mt-1 block min-h-14 w-full rounded-2xl border-2 border-fill-strong px-4 text-xl" />
         </label>
         <label className="block">
-          <span className="text-lg font-bold">Password</span>
+          <span className="text-lg font-semibold">Password</span>
           <input type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 block min-h-14 w-full rounded-2xl border-2 border-sand-deep px-4 text-xl" />
+            className="mt-1 block min-h-14 w-full rounded-2xl border-2 border-fill-strong px-4 text-xl" />
         </label>
-        {error && <p className="rounded-2xl bg-chili-soft p-3 text-lg font-semibold text-chili">{error}</p>}
-        <button disabled={busy} className="min-h-16 w-full rounded-2xl bg-brick text-2xl font-extrabold text-cream disabled:opacity-60">
+        {error && <p className="rounded-2xl bg-danger-soft p-3 text-lg font-semibold text-danger">{error}</p>}
+        <button disabled={busy} className="min-h-16 w-full rounded-2xl bg-accent text-2xl font-semibold text-on-accent disabled:opacity-60">
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
@@ -82,9 +82,9 @@ function StaffLogin() {
 
 function NotStaff({ session }: { session: Session }) {
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-cream p-6 text-center text-ink">
-      <p className="text-2xl font-bold">{session.user.email} is not a staff login.</p>
-      <button onClick={() => void supabase?.auth.signOut()} className="min-h-14 rounded-2xl bg-brick px-6 text-xl font-bold text-cream">Sign out</button>
+    <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-canvas p-6 text-center text-label">
+      <p className="text-2xl font-semibold">{session.user.email} is not a staff login.</p>
+      <button onClick={() => void supabase?.auth.signOut()} className="min-h-14 rounded-2xl bg-accent px-6 text-xl font-semibold text-on-accent">Sign out</button>
     </main>
   )
 }
@@ -104,21 +104,21 @@ function Stage() {
     setMounted((s) => new Set(s).add(m))
   }
   return (
-    <div className="flex h-dvh flex-col bg-cream text-ink">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b-4 border-sand-deep bg-white px-8 py-4">
+    <div className="flex h-dvh flex-col bg-canvas text-label">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b-4 border-fill-strong bg-surface px-8 py-4">
         <div>
-          <h1 className="text-4xl font-extrabold text-brick">Plus <span className="font-bold text-ink">· live on Stellar</span></h1>
-          <p className="text-xl text-ink-soft">{PEOPLE[market].name}: {PEOPLE[market].story}</p>
+          <h1 className="text-4xl font-semibold text-accent-ink">Plus <span className="font-semibold text-label">· live on Stellar</span></h1>
+          <p className="text-xl text-secondary">{PEOPLE[market].name}: {PEOPLE[market].story}</p>
         </div>
-        <div role="radiogroup" aria-label="Country" className="inline-flex rounded-full bg-sand p-1.5">
+        <div role="radiogroup" aria-label="Country" className="inline-flex rounded-full bg-fill p-1.5">
           {(['ng', 'in'] as const).map((m) => (
             <button key={m} role="radio" aria-checked={market === m} onClick={() => choose(m)}
-              className={`min-h-14 rounded-full px-8 text-2xl font-extrabold ${market === m ? 'bg-brick text-cream shadow' : 'text-ink-soft'}`}>
+              className={`min-h-14 rounded-full px-8 text-2xl font-semibold ${market === m ? 'bg-accent text-on-accent shadow' : 'text-secondary'}`}>
               {PEOPLE[m].flag}
             </button>
           ))}
         </div>
-        <button onClick={() => void supabase?.auth.signOut()} className="text-lg font-semibold text-ink-soft underline">Sign out</button>
+        <button onClick={() => void supabase?.auth.signOut()} className="text-lg font-semibold text-secondary underline">Sign out</button>
       </header>
 
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-8 p-6 lg:grid-cols-[auto_1fr]">
@@ -150,8 +150,8 @@ function Phone({ src, title, hidden }: { src: string; title: string; hidden: boo
     // display:none keeps the iframe loaded (and signed in), so switching country is instant.
     <div ref={box} className={`h-full justify-center ${hidden ? 'hidden' : 'flex'}`} aria-hidden={hidden}>
       <div style={{ width: 414 * scale, height: 868 * scale }}>
-        <div className="origin-top-left rounded-[3.25rem] border-[12px] border-ink bg-ink shadow-2xl" style={{ width: 414, height: 868, transform: `scale(${scale})` }}>
-          <iframe src={src} title={title} allow="microphone" className="size-full rounded-[2.5rem] bg-cream" style={{ width: 390, height: 844 }} />
+        <div className="origin-top-left rounded-[3.25rem] border-[12px] border-label bg-scrim shadow-2xl" style={{ width: 414, height: 868, transform: `scale(${scale})` }}>
+          <iframe src={src} title={title} allow="microphone" className="size-full rounded-[2.5rem] bg-canvas" style={{ width: 390, height: 844 }} />
         </div>
       </div>
     </div>
@@ -161,12 +161,12 @@ function Phone({ src, title, hidden }: { src: string; title: string; hidden: boo
 // ---------------------------------------------------------------------------
 
 const ACCOUNT_STYLE: Record<string, string> = {
-  Funmi: 'bg-brick text-cream',
-  'Mama Bisi': 'bg-saffron text-ink',
-  'Ajo pot': 'bg-leaf text-white',
-  'Advance pool': 'bg-ink text-cream',
-  'Seettu record': 'bg-leaf text-white',
-  'Advance record': 'bg-ink text-cream',
+  Funmi: 'bg-accent text-on-accent',
+  'Mama Bisi': 'bg-warning text-label',
+  'Ajo pot': 'bg-success text-white',
+  'Advance pool': 'bg-scrim text-on-accent',
+  'Seettu record': 'bg-success text-white',
+  'Advance record': 'bg-scrim text-on-accent',
 }
 
 const ATTEST_WORDS: Record<string, string> = { pay: 'payment', incoming: 'money in', saved: 'saved', group_contribution: 'seettu', cash_out: 'cash out' }
@@ -227,38 +227,38 @@ function Feed({ market }: { market: Market }) {
   }, [rows])
 
   return (
-    <section aria-label="Stellar transactions" className="flex min-h-0 flex-col rounded-[2rem] bg-white shadow-[0_3px_0_0_var(--color-sand-deep)]">
-      <div className="flex flex-wrap items-end justify-between gap-2 border-b-2 border-sand px-6 py-4">
-        <h2 className="text-3xl font-extrabold">On Stellar, as it happens</h2>
-        {median && <p className="text-2xl text-ink-soft">Yes → confirmed: <b className="text-leaf">{median.value.toFixed(1)} s</b> median of {median.n}</p>}
+    <section aria-label="Stellar transactions" className="flex min-h-0 flex-col rounded-[2rem] bg-surface shadow-[0_3px_0_0_var(--color-sand-deep)]">
+      <div className="flex flex-wrap items-end justify-between gap-2 border-b-2 border-fill px-6 py-4">
+        <h2 className="text-3xl font-semibold">On Stellar, as it happens</h2>
+        {median && <p className="text-2xl text-secondary">Yes → confirmed: <b className="text-success">{median.value.toFixed(1)} s</b> median of {median.n}</p>}
       </div>
-      {error && <p className="m-4 rounded-2xl bg-chili-soft p-4 text-xl text-chili">{error}</p>}
-      <ol className="min-h-0 flex-1 divide-y-2 divide-sand overflow-y-auto" aria-live="polite">
-        {rows === null && <li className="p-6 text-2xl text-ink-soft">Loading…</li>}
-        {rows?.length === 0 && <li className="p-6 text-2xl text-ink-soft">Nothing yet. Tap something on the phone.</li>}
+      {error && <p className="m-4 rounded-2xl bg-danger-soft p-4 text-xl text-danger">{error}</p>}
+      <ol className="min-h-0 flex-1 divide-y-2 divide-fill overflow-y-auto" aria-live="polite">
+        {rows === null && <li className="p-6 text-2xl text-secondary">Loading…</li>}
+        {rows?.length === 0 && <li className="p-6 text-2xl text-secondary">Nothing yet. Tap something on the phone.</li>}
         {rows?.map((r) => {
           const amount = r.amount_minor !== null ? formatMoney(BigInt(Math.abs(Number(r.amount_minor))), market) : null
           const done = r.status === 'done'
           return (
-            <li key={r.id} className={`grid grid-cols-[auto_1fr_auto] items-center gap-x-5 gap-y-1 px-6 py-4 transition-colors ${fresh.has(r.id) ? 'bg-turmeric/25' : ''}`}>
-              <span className={`row-span-2 rounded-2xl px-4 py-2 text-xl font-extrabold ${ACCOUNT_STYLE[r.account] ?? 'bg-sand text-ink'}`}>{r.account}</span>
-              <p className="text-2xl font-bold">{describe(r, market)}{amount && <span className="text-brick"> · {amount}</span>}</p>
-              <p className="row-span-2 text-right text-2xl font-extrabold">
+            <li key={r.id} className={`grid grid-cols-[auto_1fr_auto] items-center gap-x-5 gap-y-1 px-6 py-4 transition-colors ${fresh.has(r.id) ? 'bg-warning/25' : ''}`}>
+              <span className={`row-span-2 rounded-2xl px-4 py-2 text-xl font-semibold ${ACCOUNT_STYLE[r.account] ?? 'bg-fill text-label'}`}>{r.account}</span>
+              <p className="text-2xl font-semibold">{describe(r, market)}{amount && <span className="text-accent-ink"> · {amount}</span>}</p>
+              <p className="row-span-2 text-right text-2xl font-semibold">
                 {done ? (
-                  <span className="text-leaf">✓ {r.automatic ? 'automatic' : `${Number(r.seconds).toFixed(1)} s`}</span>
+                  <span className="text-success">✓ {r.automatic ? 'automatic' : `${Number(r.seconds).toFixed(1)} s`}</span>
                 ) : r.status === 'failed' ? (
-                  <span className="text-chili">retrying</span>
+                  <span className="text-danger">retrying</span>
                 ) : (
-                  <span className="animate-pulse text-saffron">⏳ sending</span>
+                  <span className="animate-pulse text-warning">⏳ sending</span>
                 )}
               </p>
-              <p className="text-lg text-ink-soft">
+              <p className="text-lg text-secondary">
                 {new Date(r.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
                 {done && !r.automatic && ' · from her Yes to confirmed on-chain'}
                 {r.tx_hash && (
                   <>
                     {' · '}
-                    <a href={`${EXPERT}/tx/${r.tx_hash}`} target="_blank" rel="noreferrer" className="font-bold text-brick underline">
+                    <a href={`${EXPERT}/tx/${r.tx_hash}`} target="_blank" rel="noreferrer" className="font-semibold text-accent-ink underline">
                       Stellar Expert {r.tx_hash.slice(0, 8)}↗
                     </a>
                   </>

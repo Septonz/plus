@@ -31,9 +31,9 @@ export function AutoSignIn({ email, name }: { email: string; name: string }) {
     void supabase.auth.signInWithPassword({ email, password: DEMO_PASSWORD }).then(({ error }) => error && setError(error.message))
   }, [email])
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-cream p-6 text-ink">
+    <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-canvas p-6 text-label">
       <img src="/icons/icon-192.png" alt="" className="size-24 rounded-[2rem] shadow-lg" />
-      {error ? <Notice tone="chili">{error}</Notice> : <p className="text-2xl font-bold">Opening {name}'s Plus…</p>}
+      {error ? <Notice tone="chili">{error}</Notice> : <p className="text-2xl font-semibold">Opening {name}'s Plus…</p>}
     </main>
   )
 }
@@ -52,22 +52,22 @@ export function DemoChoice({ people }: { people: { email: string; label: string;
     if (error) setError(error.message)
   }
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 bg-cream px-6 py-10 text-ink">
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 bg-canvas px-6 py-10 text-label">
       <div className="text-center">
         <img src="/icons/icon-192.png" alt="" className="mx-auto size-28 rounded-[2rem] shadow-lg" />
-        <h1 className="mt-5 text-5xl font-extrabold text-brick">Plus</h1>
-        <p className="mt-3 text-2xl font-bold">Your money, by voice</p>
+        <h1 className="mt-5 text-5xl font-semibold text-accent-ink">Plus</h1>
+        <p className="mt-3 text-2xl font-semibold">Your money, by voice</p>
       </div>
       {people.map((p, i) => (
         <BigButton key={p.email} tone={i === 0 ? 'brick' : 'white'} className="min-h-20 w-full text-2xl" onClick={() => void signIn(p.email)} disabled={busy}>
           <span className="flex flex-col leading-tight">
             <span>{p.label}</span>
-            <span className={`text-base font-normal ${i === 0 ? 'text-cream/80' : 'text-ink-soft'}`}>{p.note}</span>
+            <span className={`text-base font-normal ${i === 0 ? 'text-on-accent/80' : 'text-secondary'}`}>{p.note}</span>
           </span>
         </BigButton>
       ))}
       {error && <Notice tone="chili">{error}</Notice>}
-      <p className="text-center text-base text-ink-soft">Demo only. In production: phone OTP plus PIN.</p>
+      <p className="text-center text-base text-secondary">Demo only. In production: phone OTP plus PIN.</p>
     </main>
   )
 }
@@ -87,21 +87,21 @@ export function DemoLogin({ email, label }: { email: string; label: Key }) {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-8 bg-cream px-6 py-10 text-ink">
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-8 bg-canvas px-6 py-10 text-label">
       <div className="text-center">
         <img src="/icons/icon-192.png" alt="" className="mx-auto size-28 rounded-[2rem] shadow-lg" />
-        <h1 className="mt-5 text-5xl font-extrabold text-brick">
+        <h1 className="mt-5 text-5xl font-semibold text-accent-ink">
           <L k="appName" />
         </h1>
-        <p className="mt-3 text-2xl font-bold">
+        <p className="mt-3 text-2xl font-semibold">
           <L k="tagline" />
         </p>
       </div>
       <BigButton className="min-h-20 w-full text-2xl" onClick={signIn} disabled={busy}>
-        <L k={label} sub="text-cream/80" />
+        <L k={label} sub="text-on-accent/80" />
       </BigButton>
       {error && <Notice tone="chili">{error}</Notice>}
-      <p className="text-center text-base text-ink-soft">
+      <p className="text-center text-base text-secondary">
         <L k="demoLoginNote" />
       </p>
     </main>

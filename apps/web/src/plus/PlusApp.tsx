@@ -19,7 +19,7 @@ const NgApp = lazy(() => import('../ng/NgApp.tsx'))
 const Welcome = lazy(() => import('../onboard/Welcome.tsx'))
 
 const Loading = () => (
-  <div className="grid min-h-dvh place-items-center text-4xl text-brick" role="status" aria-label="Loading">
+  <div className="grid min-h-dvh place-items-center text-4xl text-accent-ink" role="status" aria-label="Loading">
     <Spinner />
   </div>
 )
@@ -49,7 +49,7 @@ export default function PlusApp() {
 
   return (
     <LangContext.Provider value={{ lang, setLang }}>
-      <div className="min-h-dvh bg-cream text-ink">
+      <div className="min-h-dvh bg-canvas text-label">
         {!ready ? null : session ? (
           <ConversationProvider>
             <Signed authUserId={session.user.id} />
@@ -96,7 +96,7 @@ function Signed({ authUserId }: { authUserId: string }) {
     return (
       <div className="mx-auto max-w-md space-y-4 p-6">
         <Notice tone="chili">This login is not linked to a Plus account.</Notice>
-        <button onClick={() => void signOut()} className="min-h-12 w-full rounded-control border-2 border-line bg-white text-lg font-bold">Sign out</button>
+        <button onClick={() => void signOut()} className="min-h-12 w-full rounded-control border-2 border-hairline bg-surface text-lg font-semibold">Sign out</button>
       </div>
     )
   }
@@ -125,7 +125,7 @@ function Signed({ authUserId }: { authUserId: string }) {
               setLang(next)
               void tool('update_settings', { language: next }).catch(() => null)
             }}
-            className="min-h-12 rounded-full border-2 border-line bg-white px-4 text-base font-bold active:bg-sand"
+            className="min-h-12 rounded-full border-2 border-hairline bg-surface px-4 text-base font-semibold active:bg-fill"
             aria-label="Language / மொழி"
           >
             {lang === 'ta' ? 'English' : 'தமிழ்'}
@@ -148,14 +148,14 @@ function Signed({ authUserId }: { authUserId: string }) {
         </div>
       )}
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-sand-deep bg-white pb-[env(safe-area-inset-bottom)]">
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-fill-strong bg-surface pb-[env(safe-area-inset-bottom)]">
         <ul className="mx-auto grid max-w-md grid-cols-4">
           {nav.map(([s, icon, k]) => (
             <li key={s}>
               <button
                 onClick={() => go(s)}
                 aria-current={screen === s ? 'page' : undefined}
-                className={`flex min-h-20 w-full flex-col items-center justify-start gap-1 px-1 pt-3 text-base font-bold ${screen === s ? 'text-brick' : 'text-ink-soft'}`}
+                className={`flex min-h-20 w-full flex-col items-center justify-start gap-1 px-1 pt-3 text-base font-semibold ${screen === s ? 'text-accent-ink' : 'text-secondary'}`}
               >
                 <Icon name={icon} className="text-2xl" />
                 <span className="text-center leading-tight">{lang === 'ta' ? <L k={k} sub="hidden" /> : <L k={k} />}</span>

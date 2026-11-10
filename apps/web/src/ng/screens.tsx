@@ -1,68 +1,30 @@
 // Plus Nigeria screens. Every money action goes prepare -> confirm sheet -> Stellar; reads come
 // from the balance cache and the agent-tools read tools (the same tools the voice agent uses).
 // Each screen has a loading state (skeletons), an empty state and an error state with a retry.
+// Home is a stack of passes (Wallet, Ajo, Advance); a pass opens full-screen (NgApp's CardDetail).
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { getMarket } from '@plus/markets'
+import {
+  AmountDisplay, Bilingual, Button, Card, CardStack, EmptyState, Icon, ListGroup, ListRow, Notice, NumPad, Pass,
+  PinPad, Section, Segmented, Skeleton, Spinner, Tick, VerifiedMark, applyKey,
+} from '../ds/components'
 import { tool, type ToolResult } from '../plus/api'
 import type { PendingAction, PlusData } from '../plus/data'
-import {
-  applyKey, BigButton, Card, CopyButton, EmptyState, ErrorState, Icon, Keypad, LoadingList, Notice, PinDots, Skeleton, Spinner, SuccessTick, TextField,
-} from '../plus/ui'
-import { VoiceButton } from '../plus/voice'
+import { CopyButton, ErrorState, LoadingList, TextField } from '../plus/ui'
 import { CodeBox } from './confirm'
 import { useTool, type Go, type Wallet } from './NgApp'
-import { forScreen, MIC_WORDS, naira, W, when, Y, type WKey } from './words'
+import { forScreen, naira, W, when, yo } from './words'
 
 type Props = { data: PlusData; wallet: Wallet | null; go: Go; version: number }
 type Row = Record<string, unknown>
 const EXPLORER = 'https://stellar.expert/explorer/testnet'
 const NG = getMarket('ng')
 
-export function Title({ k, go, right }: { k: WKey; go?: Go; right?: ReactNode }) {
-  return (
-    <header className="flex items-center gap-3 pb-1">
-      {go && (
-        <button onClick={() => go('home')} aria-label="Back" className="grid size-12 shrink-0 place-items-center rounded-full bg-sand text-2xl font-bold active:bg-sand-deep">
-          <Icon name="back" />
-        </button>
-      )}
-      <h1 className="min-w-0 flex-1 text-3xl font-extrabold">
-        <Y k={k} />
-      </h1>
-      {right}
-    </header>
-  )
-}
-
-function Tile({ icon, k, onClick, children }: { icon: string; k: WKey; onClick: () => void; children?: ReactNode }) {
-  return (
-    <button onClick={onClick} className="flex min-h-36 flex-col items-start gap-2 rounded-card bg-white p-4 text-left shadow-card active:bg-sand">
-      <span className="grid size-12 place-items-center rounded-full bg-brick-soft text-3xl text-brick">
-        <Icon name={icon} />
-      </span>
-      <span className="text-xl font-extrabold leading-tight">
-        <Y k={k} />
-      </span>
-      {children && <span className="mt-auto text-base font-semibold text-ink-soft">{children}</span>}
-    </button>
-  )
-}
-
-function Tick({ url, pending }: { url?: string | null; pending?: boolean }) {
-  if (pending) {
-    return (
-      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-sand px-3 py-1.5 text-base font-semibold text-ink-soft">
-        <Spinner /> Sending
-      </span>
-    )
-  }
-  const body = (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-leaf-soft px-3 py-1.5 text-base font-bold text-leaf-deep">
-      <Icon name="check" /> Stellar
-    </span>
-  )
-  // A tick is a link to the transaction on Stellar Expert: anyone can check it.
-  return url ? <a href={url} target="_blank" rel="noreferrer" aria-label={`${W.verified.en}: open the transaction`} className="shrink-0">{body}</a> : body
+/** A read tool's three states in one place. */
+function Loaded({ r, rows = 3, children }: { r: ToolResult | null; rows?: number; children: (r: ToolResult) => ReactNode }) {
+  if (!r) return <LoadingList rows={rows} />
+  if (r.error === 'network') return <ErrorState text="No connection. Your money is safe." onRetry={() => window.location.reload()} />
+  return <>{children(r)}</>
 }
 
 /** Cash-ins from an agent waiting for her Yes or No. */
@@ -72,157 +34,159 @@ function Waiting({ data, onAnswer }: { data: PlusData; onAnswer: (a: PendingActi
   return (
     <div className="space-y-3">
       {cashIns.map((a) => (
-        <Card key={a.id} className="border-4 border-saffron">
-          <p className="text-base font-bold uppercase tracking-wide text-saffron-deep">
-            <Y k="waiting" sub="text-saffron-deep/80" />
+        <Card key={a.id} className="border border-warning/30 bg-warning-soft!">
+          <p className="flex items-center gap-2 text-sm font-medium text-warning-strong">
+            <Icon name="cash" /> <Bilingual main={W.waiting.en} sub={yo('waiting')} subClass="text-warning-strong/80" />
           </p>
-          <p className="mt-2 text-2xl font-extrabold">{a.readback}</p>
-          <BigButton className="mt-3 w-full" onClick={() => onAnswer(a)}>
-            <Y k="isThatRight" sub="text-cream/80" />
-          </BigButton>
+          <p className="mt-2 text-xl font-medium">{a.readback}</p>
+          <Button className="mt-4 w-full" onClick={() => onAnswer(a)}>{W.isThatRight.en}</Button>
         </Card>
       ))}
     </div>
   )
 }
 
-/** A read tool's three states in one place. */
-function Loaded({ r, rows = 3, children }: { r: ToolResult | null; rows?: number; children: (r: ToolResult) => ReactNode }) {
-  const [retry, setRetry] = useState(0)
-  if (!r) return <LoadingList rows={rows} />
-  if (r.error === 'network') return <ErrorState key={retry} text="No connection. Your money is safe." onRetry={() => { setRetry((n) => n + 1); window.location.reload() }} />
-  return <>{children(r)}</>
-}
+// ---------------------------------------------------------------------------- Home
 
-// ---------------------------------------------------------------------------
+export type Detail = 'wallet' | 'group' | 'advance' | 'add_cash' | 'cash_out'
 
-export function Home({ data, wallet, go, version, onAnswer }: Props & { onAnswer: (a: PendingAction) => void }) {
+export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Props & { onAnswer: (a: PendingAction) => void; open: Detail | null; onOpen: (d: Detail) => void }) {
   const ajo = useTool('group_status', version)
   const adv = useTool('advance_status', version)
   const rec = useTool('my_record', version)
-  const latest = ((rec?.recent ?? []) as Row[]).filter((t) => t.kind !== 'adjustment').slice(0, 3)
+  const latest = ((rec?.recent ?? []) as Row[]).filter((t) => t.kind !== 'adjustment').slice(0, 5)
   const sending = data.txs.filter((t) => t.status === 'pending').length
+  const name = data.me?.name ?? ''
+  const members = (ajo?.members ?? []) as Row[]
+  const paid = members.filter((m) => m.paid_this_round).length
+
   return (
-    <div className="space-y-5">
-      <header className="flex items-start justify-between gap-3">
+    <div className="space-y-6">
+      <header className="flex items-center justify-between gap-3 pt-1">
         <div className="min-w-0">
-          <p className="text-xl font-bold text-ink-soft">
-            <Y k="hello" />
-          </p>
-          <h1 className="truncate text-4xl font-extrabold">{data.me?.name ?? ''}</h1>
+          <p className="text-base text-secondary">{W.hello.en}</p>
+          <h1 className="truncate text-3xl font-semibold">{name}</h1>
         </div>
-        <button onClick={() => go('settings')} aria-label="Settings" className="grid size-12 shrink-0 place-items-center rounded-full bg-sand text-2xl active:bg-sand-deep">
-          <Icon name="settings" />
+        <button onClick={() => go('settings')} aria-label="Profile" className="grid size-11 shrink-0 place-items-center rounded-full bg-fill text-base font-semibold text-label active:bg-fill-strong">
+          {name.slice(0, 1).toUpperCase() || <Icon name="profile" />}
         </button>
       </header>
 
-      <section className="rounded-card bg-brick p-5 text-cream shadow-lift">
-        <p className="text-lg font-semibold">
-          <Y k="wallet" sub="text-cream/80" />
-        </p>
-        {wallet ? (
-          <p className="mt-1 text-5xl font-extrabold tracking-tight text-turmeric">{naira(wallet.NGNT)}</p>
-        ) : (
-          <Skeleton className="mt-2 h-12 w-48 opacity-30" />
-        )}
-        <p className="mt-2 flex items-center gap-2 text-base text-cream/85">
-          {sending > 0 ? <><Spinner /> {sending} sending on Stellar…</> : <><Icon name="check" /> Your wallet is on Stellar</>}
-          {wallet && wallet.USDC > 0n && <span>· ${(Number(wallet.USDC) / 100).toFixed(2)}</span>}
-        </p>
-      </section>
-
       <Waiting data={data} onAnswer={onAnswer} />
 
-      <div className="flex justify-center py-1">
-        <VoiceButton words={MIC_WORDS} />
-      </div>
+      <CardStack>
+        <Pass
+          id="wallet"
+          tone="wallet"
+          icon="wallet"
+          title={W.wallet.en}
+          hidden={open === 'wallet'}
+          onOpen={() => onOpen('wallet')}
+          note={sending > 0 ? `${sending} sending…` : 'Add money · Cash out'}
+        >
+          {wallet ? <AmountDisplay text={naira(wallet.NGNT)} size="lg" /> : <Skeleton className="h-12 w-48 opacity-30" />}
+        </Pass>
+        <Pass
+          id="group"
+          icon="group"
+          title={W.ajo.en}
+          sub={ajo ? (ajo.in_group ? String(ajo.name) : 'Not in one yet') : ' '}
+          value={ajo?.in_group ? (ajo.paid_this_period ? 'Paid' : ajo.on_its_way ? 'Sending' : String(ajo.amount_text)) : undefined}
+          hidden={open === 'group'}
+          onOpen={() => onOpen('group')}
+        >
+          {ajo?.in_group ? (
+            <span className="block">
+              <span className="mb-1.5 flex justify-between text-sm text-secondary"><span>{paid} of {members.length} paid this round</span></span>
+              <span className="block h-1.5 overflow-hidden rounded-full bg-fill">
+                <span className="block h-full rounded-full bg-accent" style={{ width: `${members.length ? (paid / members.length) * 100 : 0}%` }} />
+              </span>
+            </span>
+          ) : null}
+        </Pass>
+        <Pass
+          id="advance"
+          icon="advance"
+          title={W.advance.en}
+          sub={adv ? (adv.open ? 'Paying back by itself' : adv.eligible ? 'One fee, no interest' : 'Not yet') : ' '}
+          value={adv ? (adv.open ? String(adv.owed_text) : adv.eligible ? `Up to ${String(adv.limit_text)}` : undefined) : undefined}
+          hidden={open === 'advance'}
+          onOpen={() => onOpen('advance')}
+        />
+      </CardStack>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Tile icon="add" k="addMoney" onClick={() => go('add_cash')}>Bank or cash</Tile>
-        <Tile icon="hand" k="cashOut" onClick={() => go('cash_out')}>Get a code</Tile>
-        <Tile icon="group" k="ajo" onClick={() => go('group')}>
-          {ajo ? (ajo.in_group ? (ajo.paid_this_period ? 'Paid this round ✓' : ajo.on_its_way ? 'Sending…' : `${String(ajo.amount_text)} due`) : 'Not in one') : <Skeleton className="h-5 w-24" />}
-        </Tile>
-        <Tile icon="advance" k="advance" onClick={() => go('advance')}>
-          {adv ? (adv.open ? `${String(adv.owed_text)} left` : adv.eligible ? `Up to ${String(adv.limit_text)}` : 'Not yet') : <Skeleton className="h-5 w-24" />}
-        </Tile>
-      </div>
-
-      <section className="space-y-3">
-        <div className="flex items-end justify-between">
-          <h2 className="text-2xl font-extrabold"><Y k="latest" /></h2>
-          {latest.length > 0 && <button onClick={() => go('record')} className="min-h-12 px-1 text-lg font-bold text-brick underline">See all</button>}
-        </div>
-        <Loaded r={rec} rows={2}>
+      <Section title="Recent activity" action={latest.length > 0 && <button onClick={() => go('record')} className="min-h-11 px-1 text-base font-medium text-accent-ink">See all</button>}>
+        <Loaded r={rec} rows={3}>
           {() => latest.length > 0 ? (
-            <ul className="space-y-2">{latest.map((t) => <TxRow key={String(t.id)} t={t} />)}</ul>
+            <ListGroup>{latest.map((t) => <TxRow key={String(t.id)} t={t} />)}</ListGroup>
           ) : (
-            <EmptyState icon="record" title="Nothing yet">Money in and out shows here, each with its tick on Stellar.</EmptyState>
+            <EmptyState icon="activity" title="Nothing yet">Money in and out shows here.</EmptyState>
           )}
         </Loaded>
-      </section>
+      </Section>
     </div>
   )
 }
 
+/** The wallet opened: balance, Add money and Cash out. */
+export function WalletDetail({ wallet, onOpen }: { wallet: Wallet | null; onOpen: (d: Detail) => void }) {
+  return (
+    <>
+      <div className="rounded-card p-6 text-white shadow-lift" style={{ background: 'var(--wallet)' }}>
+        {wallet ? <AmountDisplay text={naira(wallet.NGNT)} size="xl" label="Available" /> : <Skeleton className="h-14 w-56 opacity-30" />}
+        <p className="mt-3 text-sm text-white/75">Naira in your Plus wallet. Only you can spend it.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Button variant="secondary" onClick={() => onOpen('add_cash')}><Icon name="add" /> {W.addMoney.en}</Button>
+        <Button variant="secondary" onClick={() => onOpen('cash_out')}><Icon name="cash" /> {W.cashOut.en}</Button>
+      </div>
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------- Add money
+
 /** Add money: her own bank account number (simulated partner bank), or cash with an agent. */
-export function AddCash({ data, go, version, onAnswer }: Props & { onAnswer: (a: PendingAction) => void }) {
+export function AddCash({ data, version, onAnswer }: Props & { onAnswer: (a: PendingAction) => void }) {
   const bank = useTool('bank_details', version)
   return (
-    <div className="space-y-5">
-      <Title k="addMoney" go={go} />
+    <>
       <Waiting data={data} onAnswer={onAnswer} />
-
-      <section className="space-y-3">
-        <h2 className="flex items-center gap-2 text-2xl font-extrabold"><Icon name="bank" className="text-brick" /> <Y k="bankTransfer" /></h2>
+      <Section title={W.bankTransfer.en}>
         <Loaded r={bank} rows={1}>
           {(b) => b.ok === false ? (
             <Notice>{forScreen(b.text)}</Notice>
           ) : (
-            <Card className="space-y-3">
-              <p className="text-lg text-ink-soft">Anyone can send you naira from any bank app to:</p>
-              <dl className="space-y-2">
-                <div>
-                  <dt className="text-base font-semibold text-ink-soft">Account number</dt>
-                  <dd className="font-mono text-4xl font-extrabold tracking-wider">{String(b.account_number_text)}</dd>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <dt className="text-base font-semibold text-ink-soft">Bank</dt>
-                    <dd className="text-lg font-bold">{String(b.bank_label)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-base font-semibold text-ink-soft">Name</dt>
-                    <dd className="text-lg font-bold">{String(b.account_name)}</dd>
-                  </div>
-                </div>
+            <Card className="space-y-4">
+              <p className="text-base text-secondary">Anyone can send you naira from any bank app to:</p>
+              <div>
+                <p className="text-sm text-secondary">Account number</p>
+                <p className="num font-mono text-4xl font-light tracking-wider">{String(b.account_number_text)}</p>
+              </div>
+              <dl className="grid grid-cols-2 gap-3 text-base">
+                <div><dt className="text-sm text-secondary">Bank</dt><dd className="font-medium">{String(b.bank_label)}</dd></div>
+                <div><dt className="text-sm text-secondary">Name</dt><dd className="font-medium">{String(b.account_name)}</dd></div>
               </dl>
               <CopyButton text={String(b.account_number)} label="Copy account number" />
-              <p className="text-base text-ink-soft">It lands in your wallet on Stellar in seconds. If you have an advance, 10% of it pays that back.</p>
+              <p className="text-sm text-secondary">It lands in your wallet in seconds. If you have an advance, 10% of it pays that back.</p>
             </Card>
           )}
         </Loaded>
         {bank?.ok !== false && bank && <SimulateTransfer data={data} />}
-      </section>
+      </Section>
 
-      <section className="space-y-3">
-        <h2 className="flex items-center gap-2 text-2xl font-extrabold"><Icon name="hand" className="text-brick" /> <Y k="agentCash" /></h2>
-        <Card>
-          <ol className="space-y-4 text-lg">
-            {[
-              <>Give your cash to <b>Mama Bisi</b>, the Plus agent at the market.</>,
-              <>She records it with your phone number.</>,
-              <>Plus asks you: <b>is that right?</b> Tap Yes. The naira lands in your wallet on Stellar.</>,
-            ].map((li, i) => (
-              <li key={i} className="flex gap-3">
-                <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brick text-xl font-extrabold text-cream">{i + 1}</span>
-                <span className="pt-1.5">{li}</span>
-              </li>
-            ))}
-          </ol>
-        </Card>
-      </section>
-    </div>
+      <Section title={W.agentCash.en}>
+        <ListGroup>
+          {[
+            ['Give your cash to Mama Bisi', 'The Plus agent at the market'],
+            ['She records it with your phone number', 'You get a message in the app'],
+            ['Tap Yes: is that right?', 'The naira lands in your wallet'],
+          ].map(([a, b], i) => (
+            <ListRow key={i} icon={['hand', 'phone', 'check'][i]} iconTone="accent" title={a} subtitle={b} />
+          ))}
+        </ListGroup>
+      </Section>
+    </>
   )
 }
 
@@ -251,49 +215,40 @@ function SimulateTransfer({ data }: { data: PlusData }) {
   }
 
   return (
-    <Card className="space-y-3 border-2 border-dashed border-sky/40 bg-sky-soft!">
-      <p className="flex items-center gap-2 text-base font-bold uppercase tracking-wide text-sky"><Icon name="star4" /> Demo</p>
+    <Card className="space-y-4 border border-dashed border-fill-strong bg-surface-2! shadow-none!">
+      <p className="flex items-center gap-2 text-sm font-medium text-secondary"><Icon name="star4" /> Demo</p>
       {tx?.status === 'completed' ? (
         <div className="space-y-2 text-center">
-          <SuccessTick size="md" />
-          <p className="text-xl font-extrabold text-leaf-deep">{naira(BigInt(tx.amount))} arrived{secs !== null && ` in ${secs.toFixed(1)} s`}</p>
-          {tx.chain_tx_hash && (
-            <a href={`${EXPLORER}/tx/${tx.chain_tx_hash}`} target="_blank" rel="noreferrer" className="inline-flex min-h-12 items-center gap-1 text-lg font-bold text-brick underline">
-              <Icon name="link" /> See it on Stellar Expert
-            </a>
-          )}
-          <button onClick={() => setTxId(null)} className="block min-h-12 w-full text-lg font-bold text-sky underline">Simulate another</button>
+          <Tick size="md" />
+          <p className="text-lg font-medium">{naira(BigInt(tx.amount))} arrived{secs !== null && ` in ${secs.toFixed(1)} s`}</p>
+          <VerifiedMark url={tx.chain_tx_hash ? `${EXPLORER}/tx/${tx.chain_tx_hash}` : null} />
+          <Button variant="plain" className="w-full" onClick={() => setTxId(null)}>Simulate another</Button>
         </div>
       ) : txId ? (
-        <p className="flex items-center justify-center gap-2 py-3 text-xl font-bold" role="status"><Spinner /> Partner bank is paying your wallet…</p>
+        <p className="flex items-center justify-center gap-2 py-3 text-lg text-secondary" role="status"><Spinner /> Partner bank is paying your wallet…</p>
       ) : (
         <>
-          <p className="text-lg">Pretend someone sent a bank transfer to this account:</p>
-          <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Amount">
-            {['2000', '5000', '10000'].map((a) => (
-              <button key={a} role="radio" aria-checked={amount === a} onClick={() => setAmount(a)}
-                className={`min-h-12 rounded-control border-2 text-lg font-bold ${amount === a ? 'border-sky bg-sky text-white' : 'border-sky/30 bg-white'}`}>
-                {naira(BigInt(a) * 100n)}
-              </button>
-            ))}
-          </div>
-          {msg && <Notice tone="chili">{msg}</Notice>}
-          <BigButton className="w-full bg-sky! text-white!" loading={busy} onClick={() => void send()}>Simulate transfer received</BigButton>
-          <p className="text-base text-ink-soft">From “Chidi Okeke”, via Partner bank (simulated).</p>
+          <p className="text-base">Pretend someone sent a bank transfer to this account:</p>
+          <Segmented label="Amount" value={amount} onChange={setAmount} options={['2000', '5000', '10000'].map((a) => [a, naira(BigInt(a) * 100n)])} />
+          {msg && <Notice tone="danger">{msg}</Notice>}
+          <Button variant="secondary" className="w-full" loading={busy} onClick={() => void send()}>Simulate transfer received</Button>
+          <p className="text-sm text-secondary">From “Chidi Okeke”, via Partner bank (simulated).</p>
         </>
       )}
     </Card>
   )
 }
 
-function AmountPad({ value, onChange, max = 7 }: { value: string; onChange: (v: string) => void; max?: number }) {
+// ---------------------------------------------------------------------------- Pay
+
+function AmountEntry({ value, onChange, max = 7 }: { value: string; onChange: (v: string) => void; max?: number }) {
   return (
-    <>
-      <p className="my-2 text-center text-5xl font-extrabold tracking-tight text-brick" aria-live="polite">
-        {naira(BigInt(value || '0') * 100n)}
-      </p>
-      <Keypad onKey={(k) => onChange(applyKey(value, k, max))} />
-    </>
+    <div className="space-y-5">
+      <div className="py-2 text-center" aria-live="polite">
+        <AmountDisplay text={naira(BigInt(value || '0') * 100n)} size="xl" className={value ? '' : 'text-secondary'} />
+      </div>
+      <NumPad onKey={(k) => onChange(applyKey(value, k, max))} />
+    </div>
   )
 }
 
@@ -315,7 +270,7 @@ const localPhone = (e164: string | null | undefined) =>
   e164 && e164.startsWith('+234') ? `0${e164.slice(4, 7)} ${e164.slice(7, 10)} ${e164.slice(10)}` : e164 ?? ''
 
 /** Pay: a saved person, or anyone by phone number (on Plus: wallet to wallet; not on Plus: a cash code). */
-export function Pay({ data, go }: Props) {
+export function Pay({ data }: Props) {
   const payees = data.payees
   const [tab, setTab] = useState<'saved' | 'phone'>(payees.length > 0 ? 'saved' : 'phone')
   const [who, setWho] = useState<string | null>(null)
@@ -325,79 +280,65 @@ export function Pay({ data, go }: Props) {
   const { busy, msg, run } = useSubmit()
   const ready = tab === 'saved' ? Boolean(who) : phone.replace(/\D/g, '').length >= 10
   return (
-    <div className="space-y-5">
-      <Title k="pay" go={go} />
-      <div className="grid grid-cols-2 gap-2 rounded-control bg-sand p-1" role="tablist">
-        {([['saved', 'savedPeople'], ['phone', 'newNumber']] as const).map(([t, k]) => (
-          <button key={t} role="tab" aria-selected={tab === t} onClick={() => { setTab(t); setAmount('') }}
-            className={`min-h-14 rounded-xl px-2 text-lg font-bold ${tab === t ? 'bg-white text-brick shadow-card' : 'text-ink-soft'}`}>
-            {W[k].en}
-          </button>
-        ))}
-      </div>
+    <div className="space-y-6">
+      <Segmented label="Pay" value={tab} onChange={(t) => { setTab(t); setAmount('') }} options={[['saved', W.savedPeople.en], ['phone', W.newNumber.en]]} />
 
       {tab === 'saved' ? (
         payees.length === 0 ? (
-          <EmptyState icon="person" title="No saved people yet" action={<button onClick={() => setTab('phone')} className="min-h-12 text-lg font-bold text-brick underline">Pay a phone number</button>}>
+          <EmptyState icon="person" title="No saved people yet" action={<Button variant="plain" size="md" onClick={() => setTab('phone')}>Pay a phone number</Button>}>
             After you pay someone, tap “Save this person”.
           </EmptyState>
         ) : (
-          <div className="grid gap-2">
-            <p className="text-xl font-bold"><Y k="whoPay" /></p>
-            {payees.map((p) => (
-              <button key={p.id} onClick={() => setWho(p.name)} aria-pressed={who === p.name}
-                className={`flex min-h-16 items-center gap-3 rounded-control px-4 py-2 text-left ${who === p.name ? 'bg-brick text-cream' : 'bg-white shadow-card active:bg-sand'}`}>
-                <span className={`grid size-11 shrink-0 place-items-center rounded-full text-2xl ${who === p.name ? 'bg-cream/20' : 'bg-sand text-brick'}`}><Icon name="person" /></span>
-                <span className="min-w-0">
-                  <span className="block truncate text-xl font-bold">{p.name}</span>
-                  {p.phone && <span className={`block text-base ${who === p.name ? 'text-cream/80' : 'text-ink-soft'}`}>{localPhone(p.phone)}</span>}
-                </span>
-              </button>
-            ))}
-          </div>
+          <Section title={W.whoPay.en}>
+            <ListGroup>
+              {payees.map((p) => (
+                <ListRow key={p.id} icon="person" iconTone={who === p.name ? 'accent' : 'neutral'} title={p.name} subtitle={p.phone ? localPhone(p.phone) : undefined} selected={who === p.name} onClick={() => setWho(p.name)} />
+              ))}
+            </ListGroup>
+          </Section>
         )
       ) : (
         <Card className="space-y-4">
           <TextField label="Their phone number" value={phone} onChange={setPhone} inputMode="tel" placeholder="0803 555 0101" autoComplete="off" />
           <TextField label="Their name (for your record)" value={name} onChange={setName} placeholder="Mama Ngozi" maxLength={40} />
-          <p className="flex gap-2 text-base text-ink-soft">
-            <Icon name="info" className="mt-0.5 text-lg text-sky" />
+          <p className="flex gap-2 text-sm text-secondary">
+            <Icon name="info" className="mt-0.5" />
             <span>On Plus? It goes straight to their wallet. Not on Plus? They get a text with a code and collect cash at any Plus agent.</span>
           </p>
         </Card>
       )}
 
       {ready && (
-        <Card>
-          <p className="text-xl font-bold"><Y k="howMuch" /></p>
-          <AmountPad value={amount} onChange={setAmount} />
-          {msg && <div className="mt-3"><Notice tone="chili">{msg}</Notice></div>}
-          <BigButton className="mt-4 w-full" loading={busy} disabled={!amount} onClick={async () => {
-            const r = await run('prepare_pay', tab === 'saved' ? { payee: who, amount } : { phone, name: name.trim() || undefined, amount })
-            if (r.ok) setAmount('')
-          }}>
-            <Y k="next" sub="text-cream/80" />
-          </BigButton>
-        </Card>
+        <Section title={W.howMuch.en}>
+          <Card className="space-y-4">
+            <AmountEntry value={amount} onChange={setAmount} />
+            {msg && <Notice tone="danger">{msg}</Notice>}
+            <Button className="w-full" loading={busy} disabled={!amount} onClick={async () => {
+              const r = await run('prepare_pay', tab === 'saved' ? { payee: who, amount } : { phone, name: name.trim() || undefined, amount })
+              if (r.ok) setAmount('')
+            }}>
+              {W.next.en}
+            </Button>
+          </Card>
+        </Section>
       )}
     </div>
   )
 }
 
-export function Ajo({ go, version }: Props) {
+// ---------------------------------------------------------------------------- Ajo
+
+export function Ajo({ version }: Props) {
   const g = useTool('group_status', version)
   const { busy, msg, run } = useSubmit()
   return (
-    <div className="space-y-5">
-      <Title k="ajo" go={go} />
-      <Loaded r={g} rows={5}>
-        {(g) => !g.in_group ? (
-          <EmptyState icon="group" title="Not in an ajo yet">{forScreen(g.text)}</EmptyState>
-        ) : (
-          <AjoBody g={g} busy={busy} msg={msg} pay={() => void run('prepare_ajo_contribution', {})} />
-        )}
-      </Loaded>
-    </div>
+    <Loaded r={g} rows={5}>
+      {(g) => !g.in_group ? (
+        <EmptyState icon="group" title="Not in an ajo yet">{forScreen(g.text)}</EmptyState>
+      ) : (
+        <AjoBody g={g} busy={busy} msg={msg} pay={() => void run('prepare_ajo_contribution', {})} />
+      )}
+    </Loaded>
   )
 }
 
@@ -406,262 +347,252 @@ function AjoBody({ g, busy, msg, pay }: { g: ToolResult; busy: boolean; msg: str
   const paid = members.filter((m) => m.paid_this_round).length
   return (
     <>
-      <Card className="space-y-3">
-        <h2 className="text-2xl font-extrabold">{String(g.name)}</h2>
-        <p className="text-lg text-ink-soft">{String(g.amount_text)} each, every {Number(g.period_days) === 1 ? 'day' : `${String(g.period_days)} days`}</p>
+      <Card className="space-y-4">
         <div>
-          <div className="flex justify-between text-base font-bold"><span>{paid} of {members.length} paid</span><span>this round</span></div>
-          <div className="mt-1 h-3 overflow-hidden rounded-full bg-sand" aria-hidden="true">
-            <div className="h-full rounded-full bg-leaf transition-all" style={{ width: `${members.length ? (paid / members.length) * 100 : 0}%` }} />
+          <h2 className="text-2xl font-semibold">{String(g.name)}</h2>
+          <p className="text-base text-secondary">{String(g.amount_text)} each, every {Number(g.period_days) === 1 ? 'day' : `${String(g.period_days)} days`}</p>
+        </div>
+        <div>
+          <div className="mb-1.5 flex justify-between text-sm text-secondary"><span>{paid} of {members.length} paid</span><span>this round</span></div>
+          <div className="h-2 overflow-hidden rounded-full bg-fill" aria-hidden="true">
+            <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${members.length ? (paid / members.length) * 100 : 0}%` }} />
           </div>
         </div>
-        <p className="text-lg">
-          This round's pot goes to <b>{members.find((m) => m.is_turn)?.is_me ? 'you' : String(g.turn_name)}</b> on{' '}
+        <p className="text-base">
+          This round's pot goes to <b className="font-semibold">{members.find((m) => m.is_turn)?.is_me ? 'you' : String(g.turn_name)}</b> on{' '}
           {new Date(String(g.next_due)).toLocaleString('en-NG', { weekday: 'long', hour: 'numeric', minute: '2-digit' })}.
         </p>
         {!g.paid_this_period && !g.on_its_way && (
-          <BigButton className="w-full" loading={busy} onClick={pay}>
-            <Y k="payMyPart" sub="text-cream/80" /> {String(g.amount_text)}
-          </BigButton>
+          <Button className="w-full" loading={busy} onClick={pay}>
+            {W.payMyPart.en} · {String(g.amount_text)}
+          </Button>
         )}
-        {msg && <Notice tone="chili">{msg}</Notice>}
+        {msg && <Notice tone="danger">{msg}</Notice>}
       </Card>
-      <h2 className="text-2xl font-extrabold"><Y k="members" /></h2>
-      <ul className="space-y-2">
-        {members.map((m) => (
-          <li key={String(m.position)} className={`flex items-center justify-between gap-2 rounded-control p-4 ${m.is_me ? 'bg-sand' : 'bg-white'} shadow-card`}>
-            <div className="min-w-0">
-              <p className="truncate text-xl font-bold">
-                {String(m.name)} {m.is_me ? '(you)' : ''} {m.is_turn ? '★' : ''}
-              </p>
-              {Boolean(m.is_turn) && <p className="text-base text-ink-soft">Collects this round</p>}
-            </div>
-            {m.paid_this_round ? <Tick url={(m.url as string | null) ?? (g.contract_url as string | null)} /> : m.is_me && g.on_its_way ? <Tick pending /> : <span className="shrink-0 text-base font-semibold text-ink-soft">{W.notYet.en}</span>}
-          </li>
-        ))}
-      </ul>
-      <p className="text-base text-ink-soft">The ticks are read from the Plus contract on Stellar, not from our database.</p>
+      <Section title={W.members.en}>
+        <ListGroup>
+          {members.map((m) => (
+            <ListRow
+              key={String(m.position)}
+              icon="person"
+              iconTone={m.is_me ? 'accent' : 'neutral'}
+              title={`${String(m.name)}${m.is_me ? ' (you)' : ''}`}
+              subtitle={m.is_turn ? 'Collects this round' : undefined}
+              trailing={m.paid_this_round ? <VerifiedMark url={(m.url as string | null) ?? (g.contract_url as string | null)} label="Paid" /> : m.is_me && g.on_its_way ? <VerifiedMark pending pendingLabel="Sending" /> : <span className="text-sm text-secondary">{W.notYet.en}</span>}
+            />
+          ))}
+        </ListGroup>
+        <p className="px-1 text-sm text-secondary">Each tick is verified on Stellar, not just in our records.</p>
+      </Section>
     </>
   )
 }
 
-/** The four promises, said the same way on every advance screen (and by the voice agent). */
+// ---------------------------------------------------------------------------- Advance
+
 function AdvanceRules({ fee, pct }: { fee: string | null; pct: number }) {
-  const rules: [WKey, string][] = [
-    ['oneFee', fee ? `${W.oneFee.en}: ${fee}` : W.oneFee.en],
-    ['noInterest', W.noInterest.en],
-    ['noLateFees', W.noLateFees.en],
-    ['repaysItself', `${W.repaysItself.en}: ${pct}% of each cash-in`],
+  const rules: [string, string, string | undefined][] = [
+    ['check', fee ? `${W.oneFee.en}: ${fee}` : W.oneFee.en, yo('oneFee')],
+    ['check', W.noInterest.en, yo('noInterest')],
+    ['check', W.noLateFees.en, yo('noLateFees')],
+    ['check', `${W.repaysItself.en}: ${pct}% of each cash-in`, yo('repaysItself')],
   ]
   return (
-    <ul className="mt-3 space-y-2 text-lg">
-      {rules.map(([k, en]) => (
-        <li key={k} className="flex gap-2">
-          <Icon name="check" className="mt-1 text-leaf" />
-          <span className="flex flex-col leading-tight">
-            <span className="font-semibold">{en}</span>
-            <span className="text-base text-ink-soft">{W[k].yo}</span>
-          </span>
-        </li>
-      ))}
-    </ul>
+    <ListGroup>
+      {rules.map(([icon, en, y]) => <ListRow key={en} icon={icon} iconTone="success" title={<Bilingual main={en} sub={y} />} />)}
+    </ListGroup>
   )
 }
 
-function IfBehind() {
-  return (
-    <Notice>
-      <span className="flex flex-col gap-1">
-        <span className="font-semibold">{W.ifBehind.en} {W.nobodyCalled.en}</span>
-        <span className="text-base font-normal text-ink-soft">{W.ifBehind.yo} {W.nobodyCalled.yo}</span>
-      </span>
-    </Notice>
-  )
-}
-
-export function Advance({ go, version }: Props) {
+export function Advance({ version }: Props) {
   const a = useTool('advance_status', version)
   const { busy, msg, run } = useSubmit()
   const pct = Number(a?.repay_pct ?? NG.advance.repayFromCashInBps / 100)
   return (
-    <div className="space-y-5">
-      <Title k="advance" go={go} />
+    <>
       <Loaded r={a} rows={2}>
         {(a) => {
           const options = (a.options ?? []) as Row[]
           const top = options.at(-1)
           return a.open ? (
-            <Card>
-              <p className="text-lg font-semibold">Still to pay back</p>
-              <p className="text-5xl font-extrabold text-brick">{String(a.owed_text)}</p>
-              <p className="mt-2 text-lg">You took {String(a.principal_text)}. Paid back so far: {String(a.repaid_text)}.</p>
+            <>
+              <Card>
+                <AmountDisplay text={String(a.owed_text)} size="lg" label="Still to pay back" />
+                <p className="mt-3 text-base text-secondary">You took {String(a.principal_text)}. Paid back so far: {String(a.repaid_text)}. It also comes first out of your next ajo payout.</p>
+              </Card>
               <AdvanceRules fee={a.fee_text ? String(a.fee_text) : null} pct={pct} />
-              <p className="mt-3 text-lg">It also comes first out of your next ajo payout.</p>
-            </Card>
+            </>
           ) : a.eligible ? (
             <>
               <Card>
-                <p className="text-lg font-semibold">You can take up to</p>
-                <p className="text-5xl font-extrabold text-brick">{String(a.limit_text)}</p>
-                <AdvanceRules fee={top ? `${String(top.fee_text)} on ${String(top.amount_text)}` : null} pct={pct} />
+                <AmountDisplay text={String(a.limit_text)} size="lg" label="You can take up to" />
               </Card>
-              <p className="text-xl font-bold"><Y k="takeAdvance" /></p>
-              <div className="grid gap-3">
-                {options.map((o) => (
-                  <BigButton key={String(o.amount_minor)} tone="white" disabled={busy} className="justify-between! text-left" onClick={() => void run('prepare_advance', { amount: String(BigInt(String(o.amount_minor)) / 100n) })}>
-                    <span className="text-2xl">{String(o.amount_text)}</span>
-                    <span className="text-lg font-semibold text-ink-soft">fee {String(o.fee_text)}</span>
-                  </BigButton>
-                ))}
-              </div>
+              <AdvanceRules fee={top ? `${String(top.fee_text)} on ${String(top.amount_text)}` : null} pct={pct} />
+              <Section title={W.takeAdvance.en}>
+                <ListGroup>
+                  {options.map((o) => (
+                    <ListRow key={String(o.amount_minor)} icon="advance" iconTone="accent" title={String(o.amount_text)} subtitle={`Fee ${String(o.fee_text)}`} chevron
+                      onClick={busy ? undefined : () => void run('prepare_advance', { amount: String(BigInt(String(o.amount_minor)) / 100n) })} />
+                  ))}
+                </ListGroup>
+              </Section>
             </>
           ) : (
             <EmptyState icon="advance" title="Not yet">{forScreen(a.text)}</EmptyState>
           )
         }}
       </Loaded>
-      <IfBehind />
-      {msg && <Notice tone="chili">{msg}</Notice>}
-    </div>
+      <Notice>
+        <Bilingual main={`${W.ifBehind.en} ${W.nobodyCalled.en}`} sub={W.ifBehind.yo ? `${W.ifBehind.yo} ${W.nobodyCalled.yo}` : undefined} />
+      </Notice>
+      {msg && <Notice tone="danger">{msg}</Notice>}
+    </>
   )
 }
 
-export function CashOut({ go, version }: Props) {
+// ---------------------------------------------------------------------------- Cash out
+
+export function CashOut({ version }: Props) {
   const list = useTool('cash_outs', version)
   const [amount, setAmount] = useState('')
   const [shown, setShown] = useState<{ id: string; code: string } | null>(null)
   const { busy, msg, run } = useSubmit()
   const open = ((list?.cash_outs ?? []) as Row[]).filter((c) => c.status === 'issued' && new Date(String(c.expires_at)) > new Date())
   return (
-    <div className="space-y-5">
-      <Title k="cashOut" go={go} />
+    <>
       {open.map((c) => (
-        <Card key={String(c.id)} className="space-y-2">
-          <p className="text-2xl font-extrabold">{String(c.amount_text)} waiting for an agent</p>
-          <p className="text-base text-ink-soft">Unused until {new Date(String(c.expires_at)).toLocaleDateString('en-NG')}, then it comes back to your wallet.</p>
+        <Card key={String(c.id)} className="space-y-3">
+          <p className="text-xl font-medium">{String(c.amount_text)} waiting for an agent</p>
+          <p className="text-sm text-secondary">Unused until {new Date(String(c.expires_at)).toLocaleDateString('en-NG')}, then it comes back to your wallet.</p>
           {shown && shown.id === c.id ? (
             <CodeBox code={shown.code} />
           ) : (
-            <BigButton tone="white" className="w-full" loading={busy} onClick={async () => {
+            <Button variant="secondary" className="w-full" loading={busy} onClick={async () => {
               const r = await run('new_cashout_code', { cash_out_id: c.id })
               if (r.ok) setShown({ id: String(c.id), code: String(r.cash_out_code) })
             }}>
-              <Y k="newCode" />
-            </BigButton>
+              {W.newCode.en}
+            </Button>
           )}
         </Card>
       ))}
-      <Card>
-        <p className="text-xl font-bold">How much cash do you need?</p>
-        <AmountPad value={amount} onChange={setAmount} max={6} />
-        {msg && <div className="mt-3"><Notice tone="chili">{msg}</Notice></div>}
-        <BigButton className="mt-4 w-full" loading={busy} disabled={!amount} onClick={async () => {
-          const r = await run('prepare_cashout', { amount })
-          if (r.ok) setAmount('')
-        }}>
-          <Y k="next" sub="text-cream/80" />
-        </BigButton>
-      </Card>
-      <p className="text-base text-ink-soft">The money waits on Stellar for a registered agent. Only someone with your code gets it; after {NG.cashOutCode?.returnAfterDays ?? 7} days it comes back to you.</p>
-    </div>
+      <Section title="How much cash do you need?">
+        <Card className="space-y-4">
+          <AmountEntry value={amount} onChange={setAmount} max={6} />
+          {msg && <Notice tone="danger">{msg}</Notice>}
+          <Button className="w-full" loading={busy} disabled={!amount} onClick={async () => {
+            const r = await run('prepare_cashout', { amount })
+            if (r.ok) setAmount('')
+          }}>
+            {W.next.en}
+          </Button>
+        </Card>
+      </Section>
+      <p className="px-1 text-sm text-secondary">The money waits for a registered agent. Only someone with your code gets it; after {NG.cashOutCode?.returnAfterDays ?? 7} days it comes back to you.</p>
+    </>
   )
 }
 
-const KIND_ICON: Record<string, string> = { incoming: 'add', pay: 'pay', group_contribution: 'group', advance: 'advance', repay: 'advance', cash_out: 'hand' }
+// ---------------------------------------------------------------------------- Activity
 
-/** One transaction with its "verified on Stellar" tick, which links to the transaction. */
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+const KIND_ICON: Record<string, string> = { incoming: 'in', pay: 'pay', group_contribution: 'group', advance: 'advance', repay: 'advance', cash_out: 'cash' }
+
+/** One transaction with its "Verified on Stellar" tick, which links to the transaction. */
 function TxRow({ t }: { t: Row }) {
   return (
-    <li className="flex items-center justify-between gap-3 rounded-control bg-white p-4 shadow-card">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className={`grid size-11 shrink-0 place-items-center rounded-full text-2xl ${t.outgoing ? 'bg-sand text-brick' : 'bg-leaf-soft text-leaf'}`}>
-          <Icon name={KIND_ICON[String(t.kind)] ?? 'record'} />
+    <ListRow
+      icon={KIND_ICON[String(t.kind)] ?? 'record'}
+      iconTone={t.outgoing ? 'neutral' : 'success'}
+      title={cap(String(t.label))}
+      subtitle={when(String(t.at))}
+      trailing={
+        <span className="flex flex-col items-end gap-0.5">
+          <span className={`num text-lg font-medium ${t.outgoing ? '' : 'text-success'}`}>{t.outgoing ? '−' : '+'}{String(t.amount_text)}</span>
+          {t.status === 'pending' ? <VerifiedMark pending pendingLabel="Sending" /> : t.url ? <VerifiedMark url={String(t.url)} label="Verified" /> : null}
         </span>
-        <div className="min-w-0">
-          <p className="text-xl font-bold">{t.outgoing ? '−' : '+'}{String(t.amount_text)}</p>
-          <p className="truncate text-base text-ink-soft">{String(t.label)} · {when(String(t.at))}</p>
-        </div>
-      </div>
-      {t.status === 'pending' ? <Tick pending /> : t.url ? <Tick url={String(t.url)} /> : null}
-    </li>
+      }
+    />
   )
 }
 
-export function Record({ go, version }: Props) {
+export function Record({ version }: Props) {
   const r = useTool('my_record', version)
   return (
-    <div className="space-y-5">
-      <Title k="record" go={go} />
-      <Loaded r={r} rows={4}>
-        {(r) => {
-          const totals = (r.totals ?? {}) as Row
-          const recent = (r.recent ?? []) as Row[]
-          return (
-            <>
-              <Card>
-                <dl className="grid grid-cols-2 gap-4">
-                  {([['Came in', totals.received_text], ['Paid', totals.paid_text], ['Into ajo', totals.ajo_text], ['Agent cash-ins', r.cash_ins]] as const).map(([k, v]) => (
-                    <div key={k}><dt className="text-base text-ink-soft">{k}</dt><dd className="text-2xl font-extrabold">{String(v ?? '—')}</dd></div>
-                  ))}
-                </dl>
-                <p className="mt-3 text-base text-ink-soft">{String(r.confirmed_on_stellar)} transactions, each checkable on Stellar. Your name is not on the chain.</p>
-                {typeof r.account_url === 'string' && (
-                  <a href={r.account_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex min-h-12 items-center gap-1 text-lg font-bold text-brick underline">
-                    <Icon name="link" /> Your wallet on Stellar Expert
-                  </a>
-                )}
-              </Card>
-              {recent.length > 0 ? (
-                <ul className="space-y-2">{recent.map((t) => <TxRow key={String(t.id)} t={t} />)}</ul>
-              ) : (
-                <EmptyState icon="record" title="Nothing yet">Add money by bank transfer or with an agent, and it shows here.</EmptyState>
-              )}
-            </>
-          )
-        }}
-      </Loaded>
-    </div>
+    <Loaded r={r} rows={4}>
+      {(r) => {
+        const totals = (r.totals ?? {}) as Row
+        const recent = (r.recent ?? []) as Row[]
+        return (
+          <div className="space-y-6">
+            <Card>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-5">
+                {([['Came in', totals.received_text], ['Paid', totals.paid_text], ['Into ajo', totals.ajo_text], ['Agent cash-ins', r.cash_ins]] as const).map(([k, v]) => (
+                  <div key={k}><dt className="text-sm text-secondary">{k}</dt><dd className="num text-2xl font-light">{String(v ?? '—')}</dd></div>
+                ))}
+              </dl>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-hairline pt-3">
+                <p className="text-sm text-secondary">{String(r.confirmed_on_stellar)} records, each checkable. Your name is never on it.</p>
+                {typeof r.account_url === 'string' && <VerifiedMark url={r.account_url} />}
+              </div>
+            </Card>
+            {recent.length > 0 ? (
+              <ListGroup>{recent.map((t) => <TxRow key={String(t.id)} t={t} />)}</ListGroup>
+            ) : (
+              <EmptyState icon="activity" title="Nothing yet">Add money by bank transfer or with an agent, and it shows here.</EmptyState>
+            )}
+          </div>
+        )
+      }}
+    </Loaded>
   )
 }
 
-export function Settings({ go, version, onSignOut }: Props & { onSignOut: () => void }) {
+// ---------------------------------------------------------------------------- Profile
+
+export function Settings({ data, version, onSignOut }: Props & { onSignOut: () => void }) {
   const me = useTool('get_user', version)
   const [pin, setPin] = useState('')
   const { busy, msg, run } = useSubmit()
   const [saved, setSaved] = useState(false)
   const limits = (me?.limits ?? null) as { tier: number; daily_text: string; balance_text: string; advances: boolean } | null
+  const name = data.me?.name ?? ''
   return (
-    <div className="space-y-5">
-      <Title k="settings" go={go} />
-      <Loaded r={me} rows={1}>
+    <div className="space-y-6">
+      <div className="flex items-center gap-4">
+        <span className="grid size-16 shrink-0 place-items-center rounded-full bg-accent-soft text-2xl font-medium text-accent-ink">{name.slice(0, 1).toUpperCase()}</span>
+        <div className="min-w-0">
+          <p className="truncate text-2xl font-semibold">{name}</p>
+          {limits && <p className="text-base text-secondary">Level {limits.tier} · {limits.tier >= 2 ? 'NIN checked' : 'Photo checked'}</p>}
+        </div>
+      </div>
+      <Loaded r={me} rows={2}>
         {() => limits && (
-          <Card className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xl font-bold"><Icon name="shield" className="text-brick" /> Level {limits.tier}</p>
-              <span className="rounded-full bg-leaf-soft px-3 py-1 text-base font-bold text-leaf-deep">{limits.tier >= 2 ? 'NIN checked' : 'Photo checked'}</span>
-            </div>
-            <p className="text-lg">Send up to <b>{limits.daily_text}</b> a day · hold up to <b>{limits.balance_text}</b></p>
-            {me?.virtual_account ? <p className="text-base text-ink-soft">Bank transfers in: {String(me.virtual_account)} · {String(me.bank_label)}</p> : null}
-          </Card>
+          <Section title="Limits">
+            <ListGroup>
+              <ListRow icon="pay" title="Send per day" trailing={<span className="num font-medium">{limits.daily_text}</span>} />
+              <ListRow icon="wallet" title="Hold up to" trailing={<span className="num font-medium">{limits.balance_text}</span>} />
+              {me?.virtual_account ? <ListRow icon="bank" title="Bank transfers in" subtitle={String(me.bank_label)} trailing={<span className="num font-mono text-base">{String(me.virtual_account)}</span>} /> : null}
+            </ListGroup>
+          </Section>
         )}
       </Loaded>
-      <Card>
-        <p className="text-xl font-bold"><Icon name="lock" /> PIN</p>
-        <p className="text-base text-ink-soft">Needed on this screen for payments over {naira(BigInt(NG.pinThreshold) * 100n)}. Never say it out loud.</p>
-        <PinDots length={pin.length} />
-        <Keypad onKey={(k) => setPin((p) => applyKey(p, k, 6, true))} />
-        {msg && <div className="mt-3"><Notice tone="chili">{msg}</Notice></div>}
-        {saved && <div className="mt-3"><Notice tone="leaf">PIN saved.</Notice></div>}
-        <BigButton className="mt-3 w-full" loading={busy} disabled={pin.length < 4} onClick={async () => {
-          const r = await run('set_pin', { pin })
-          setPin('')
-          setSaved(Boolean(r.ok))
-        }}>Save PIN</BigButton>
-      </Card>
-      <BigButton tone="white" className="w-full" onClick={onSignOut}><Y k="signOut" /></BigButton>
-      <p className="text-center text-base text-ink-soft">
-        <a className="underline" href={EXPLORER} target="_blank" rel="noreferrer">Stellar testnet</a> · demo only
-      </p>
+      <Section title="PIN">
+        <Card className="space-y-3">
+          <p className="text-sm text-secondary">Needed on screen for payments over {naira(BigInt(NG.pinThreshold) * 100n)}. Never say it out loud.</p>
+          <PinPad value={pin} onChange={setPin} />
+          {msg && <Notice tone="danger">{msg}</Notice>}
+          {saved && <Notice tone="success">PIN saved.</Notice>}
+          <Button className="w-full" loading={busy} disabled={pin.length < 4} onClick={async () => {
+            const r = await run('set_pin', { pin })
+            setPin('')
+            setSaved(Boolean(r.ok))
+          }}>Save PIN</Button>
+        </Card>
+      </Section>
+      <Button variant="destructive" className="w-full" onClick={onSignOut}><Icon name="signOut" /> {W.signOut.en}</Button>
+      <p className="text-center text-sm text-secondary">Demo · test money only</p>
     </div>
   )
 }
+

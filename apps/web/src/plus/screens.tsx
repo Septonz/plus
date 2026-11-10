@@ -28,7 +28,7 @@ function useToolRead<T extends ToolResult>(name: string, version: number) {
 
 function Loading() {
   const t = useT()
-  return <p className="py-10 text-center text-xl text-ink-soft">{t('working')}</p>
+  return <p className="py-10 text-center text-xl text-secondary">{t('working')}</p>
 }
 
 // ---------------------------------------------------------------------------
@@ -53,34 +53,34 @@ export function Home({ data, go }: { data: PlusData } & Nav) {
   return (
     <div className="space-y-5">
       <header className="flex items-baseline justify-between">
-        <h1 className="text-3xl font-extrabold">
+        <h1 className="text-3xl font-semibold">
           {lang === 'ta' ? `வணக்கம், ${me?.name === 'Selvi' ? 'செல்வி' : me?.name ?? ''}!` : `Hello, ${me?.name ?? ''}!`}
         </h1>
       </header>
 
-      <Card className="bg-brick! text-cream">
+      <Card className="bg-accent! text-on-accent">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <L k="toSpend" sub="text-cream/80" className="text-lg font-semibold" />
-            <p className="mt-1 text-4xl font-extrabold">{account ? money(account.balance_paise) : '—'}</p>
+            <L k="toSpend" sub="text-on-accent/80" className="text-lg font-semibold" />
+            <p className="mt-1 text-4xl font-semibold">{account ? money(account.balance_paise) : '—'}</p>
           </div>
           <div>
-            <L k="saved" sub="text-cream/80" className="text-lg font-semibold" />
-            <p className="mt-1 text-4xl font-extrabold text-turmeric">{account ? money(account.savings_paise) : '—'}</p>
+            <L k="saved" sub="text-on-accent/80" className="text-lg font-semibold" />
+            <p className="mt-1 text-4xl font-semibold text-warning">{account ? money(account.savings_paise) : '—'}</p>
           </div>
         </div>
-        {account && <p className="mt-3 text-base text-cream/80">{account.bank_name}</p>}
+        {account && <p className="mt-3 text-base text-on-accent/80">{account.bank_name}</p>}
       </Card>
 
       {cashIns.map((a) => (
-        <Card key={a.id} className="border-4 border-turmeric">
-          <p className="text-base font-bold uppercase tracking-wide text-saffron">{t('waitingForYou')}</p>
-          <p className="mt-2 text-2xl font-bold">
+        <Card key={a.id} className="border-4 border-warning">
+          <p className="text-base font-semibold uppercase tracking-wide text-warning">{t('waitingForYou')}</p>
+          <p className="mt-2 text-2xl font-semibold">
             {lang === 'ta'
               ? `${String(a.params.helper_name)} நீங்க ${money(String(a.params.amount))} கையில கொடுத்ததா சொல்றாங்க. சரியா?`
               : `${String(a.params.helper_name)} says you gave her ${money(String(a.params.amount))} in cash. Is that right?`}
           </p>
-          {lang === 'ta' && <p className="mt-1 text-lg text-ink-soft">{a.readback}</p>}
+          {lang === 'ta' && <p className="mt-1 text-lg text-secondary">{a.readback}</p>}
           <div className="mt-4 grid grid-cols-2 gap-3">
             <BigButton tone="white" onClick={() => answer(a.id, false)} disabled={busy === a.id}>
               <Icon name="x" /> <L k="no" />
@@ -97,11 +97,11 @@ export function Home({ data, go }: { data: PlusData } & Nav) {
       </div>
 
       <Card>
-        <L k="latestIn" className="text-lg font-bold text-ink-soft" />
+        <L k="latestIn" className="text-lg font-semibold text-secondary" />
         {latest ? (
           <div className="mt-2 flex flex-col items-start gap-2">
             <div>
-              <p className="text-3xl font-extrabold text-leaf">+{money(latest.amount)}</p>
+              <p className="text-3xl font-semibold text-success">+{money(latest.amount)}</p>
               <p className="text-lg">
                 {latest.source && SOURCE_KEY[latest.source] ? T[SOURCE_KEY[latest.source]][lang] : latest.source} · {whenText(latest.created_at, lang)}
               </p>
@@ -127,12 +127,12 @@ export function Home({ data, go }: { data: PlusData } & Nav) {
           <button
             key={s}
             onClick={() => go(s)}
-            className="flex min-h-24 flex-col items-start justify-between gap-2 rounded-3xl bg-white p-4 text-left shadow-[0_2px_0_0_var(--color-sand-deep)] active:bg-sand"
+            className="flex min-h-24 flex-col items-start justify-between gap-2 rounded-3xl bg-surface p-4 text-left shadow-[0_2px_0_0_var(--color-sand-deep)] active:bg-fill"
           >
-            <span className="grid size-11 place-items-center rounded-full bg-sand text-2xl text-brick">
+            <span className="grid size-11 place-items-center rounded-full bg-fill text-2xl text-accent-ink">
               <Icon name={icon} />
             </span>
-            <L k={k} className="text-xl font-bold" />
+            <L k={k} className="text-xl font-semibold" />
           </button>
         ))}
       </nav>
@@ -178,7 +178,7 @@ export function Pay({ data, go }: { data: PlusData } & Nav) {
     return (
       <div>
         <ScreenTitle k="pay" onBack={() => go('home')} />
-        <p className="mb-4 text-2xl font-bold">
+        <p className="mb-4 text-2xl font-semibold">
           <L k="choosePayee" />
         </p>
         <div className="space-y-3">
@@ -186,20 +186,20 @@ export function Pay({ data, go }: { data: PlusData } & Nav) {
             <button
               key={p.id}
               onClick={() => setPayee(p)}
-              className="flex w-full items-center gap-4 rounded-3xl bg-white p-5 text-left shadow-[0_2px_0_0_var(--color-sand-deep)] active:bg-sand"
+              className="flex w-full items-center gap-4 rounded-3xl bg-surface p-5 text-left shadow-[0_2px_0_0_var(--color-sand-deep)] active:bg-fill"
             >
-              <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-sand text-4xl text-brick">
+              <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-fill text-4xl text-accent-ink">
                 <Icon name={/flower/.test(p.name) ? 'flower' : /medical/.test(p.name) ? 'medical' : 'person'} />
               </span>
               <span className="flex flex-col">
-                <span className="text-2xl font-bold">{lang === 'ta' ? PAYEE_TA[p.name] ?? p.name : p.name}</span>
-                {lang === 'ta' && <span className="text-lg text-ink-soft">{p.name}</span>}
-                <span className="text-base text-ink-soft">{p.upi_handle}</span>
+                <span className="text-2xl font-semibold">{lang === 'ta' ? PAYEE_TA[p.name] ?? p.name : p.name}</span>
+                {lang === 'ta' && <span className="text-lg text-secondary">{p.name}</span>}
+                <span className="text-base text-secondary">{p.upi_handle}</span>
               </span>
             </button>
           ))}
         </div>
-        <p className="mt-6 text-center text-lg text-ink-soft">
+        <p className="mt-6 text-center text-lg text-secondary">
           {lang === 'ta' ? '“பூக்கடைக்கு 300 அனுப்பு” னு சொல்லலாம்' : 'Or just say “send 300 to the flower shop”'}
         </p>
         <div className="mt-3">
@@ -212,8 +212,8 @@ export function Pay({ data, go }: { data: PlusData } & Nav) {
   return (
     <div>
       <ScreenTitle k="howMuch" onBack={() => setPayee(null)} />
-      <p className="text-2xl font-bold">{lang === 'ta' ? `${PAYEE_TA[payee.name] ?? payee.name}க்கு` : `To ${payee.name}`}</p>
-      <p className="my-5 text-center text-6xl font-extrabold text-brick" aria-live="polite">
+      <p className="text-2xl font-semibold">{lang === 'ta' ? `${PAYEE_TA[payee.name] ?? payee.name}க்கு` : `To ${payee.name}`}</p>
+      <p className="my-5 text-center text-6xl font-semibold text-accent-ink" aria-live="polite">
         ₹{amount ? Number(amount).toLocaleString('en-IN') : '0'}
       </p>
       {error && (
@@ -223,7 +223,7 @@ export function Pay({ data, go }: { data: PlusData } & Nav) {
       )}
       <Keypad onKey={(k) => setAmount((a) => applyKey(a, k, 6))} />
       <BigButton className="mt-4 w-full" onClick={next} disabled={!amount || busy}>
-        {busy ? t('working') : <L k="next" sub="text-cream/80" />}
+        {busy ? t('working') : <L k="next" sub="text-on-accent/80" />}
       </BigButton>
     </div>
   )
@@ -270,17 +270,17 @@ export function Seettu({ data, go }: { data: PlusData } & Nav) {
       ) : (
         <div className="space-y-5">
           <Card>
-            <L k="thisMonth" className="text-lg font-bold text-ink-soft" />
-            <p className="mt-1 text-5xl font-extrabold text-brick">{g.amount_text}</p>
+            <L k="thisMonth" className="text-lg font-semibold text-secondary" />
+            <p className="mt-1 text-5xl font-semibold text-accent-ink">{g.amount_text}</p>
             {g.paid_this_period ? (
-              <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-leaf-soft px-4 py-2 text-lg font-bold text-leaf">
+              <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-success-soft px-4 py-2 text-lg font-semibold text-success">
                 <Icon name="check" /> {t('paidThisMonth')}
               </p>
             ) : (
               <>
                 <p className="mt-2 text-lg">{t('notPaidYet')}</p>
                 <BigButton className="mt-4 w-full" onClick={payNow} disabled={busy}>
-                  {busy ? t('working') : <L k="payNow" sub="text-cream/80" />}
+                  {busy ? t('working') : <L k="payNow" sub="text-on-accent/80" />}
                 </BigButton>
               </>
             )}
@@ -291,20 +291,20 @@ export function Seettu({ data, go }: { data: PlusData } & Nav) {
             )}
           </Card>
 
-          <h2 className="text-2xl font-extrabold">
+          <h2 className="text-2xl font-semibold">
             <L k="members" />
           </h2>
           <ul className="space-y-3">
             {g.members.map((m) => (
-              <li key={m.position} className={`rounded-3xl bg-white p-4 shadow-[0_2px_0_0_var(--color-sand-deep)] ${m.is_me ? 'border-4 border-turmeric' : ''}`}>
+              <li key={m.position} className={`rounded-3xl bg-surface p-4 shadow-[0_2px_0_0_var(--color-sand-deep)] ${m.is_me ? 'border-4 border-warning' : ''}`}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <span className="grid size-12 place-items-center rounded-full bg-sand text-xl font-extrabold text-brick">{m.position + 1}</span>
+                    <span className="grid size-12 place-items-center rounded-full bg-fill text-xl font-semibold text-accent-ink">{m.position + 1}</span>
                     <div>
-                      <p className="text-xl font-bold">
-                        {m.name} {m.is_me && <span className="text-lg text-ink-soft">({t('you')})</span>}
+                      <p className="text-xl font-semibold">
+                        {m.name} {m.is_me && <span className="text-lg text-secondary">({t('you')})</span>}
                       </p>
-                      <p className="text-base text-ink-soft">
+                      <p className="text-base text-secondary">
                         {m.contributions_on_stellar} {t('contributions')} · {m.total_text}
                       </p>
                     </div>
@@ -317,7 +317,7 @@ export function Seettu({ data, go }: { data: PlusData } & Nav) {
               </li>
             ))}
           </ul>
-          <p className="text-center text-base text-ink-soft">{lang === 'ta' ? T.privacyNote.ta : T.privacyNote.en}</p>
+          <p className="text-center text-base text-secondary">{lang === 'ta' ? T.privacyNote.ta : T.privacyNote.en}</p>
         </div>
       )}
     </div>
@@ -353,13 +353,13 @@ export function Advance({ data, go }: { data: PlusData } & Nav) {
         <Loading />
       ) : (
         <div className="space-y-5">
-          <Card className={a.eligible ? 'border-4 border-leaf' : ''}>
-            <p className={`text-2xl font-extrabold ${a.eligible ? 'text-leaf' : 'text-ink-soft'}`}>
+          <Card className={a.eligible ? 'border-4 border-success' : ''}>
+            <p className={`text-2xl font-semibold ${a.eligible ? 'text-success' : 'text-secondary'}`}>
               <L k={a.eligible ? 'eligible' : 'notEligible'} />
             </p>
             {a.eligible && (
               <p className="mt-2 text-xl">
-                {t('upTo')} <span className="text-4xl font-extrabold text-brick">{a.limit_text}</span>
+                {t('upTo')} <span className="text-4xl font-semibold text-accent-ink">{a.limit_text}</span>
               </p>
             )}
             {!a.eligible && !a.open && (
@@ -376,7 +376,7 @@ export function Advance({ data, go }: { data: PlusData } & Nav) {
                   <button
                     key={o.amount_minor}
                     onClick={() => setPick(i)}
-                    className={`min-h-14 rounded-2xl px-4 text-xl font-bold ${o === chosen ? 'bg-brick text-cream' : 'bg-sand text-ink'}`}
+                    className={`min-h-14 rounded-2xl px-4 text-xl font-semibold ${o === chosen ? 'bg-accent text-on-accent' : 'bg-fill text-label'}`}
                   >
                     {o.amount_text}
                   </button>
@@ -384,23 +384,23 @@ export function Advance({ data, go }: { data: PlusData } & Nav) {
               </div>
               <dl className="mt-5 grid grid-cols-2 gap-y-3 text-xl">
                 <dt><L k="youGet" /></dt>
-                <dd className="text-right text-2xl font-extrabold">{chosen.amount_text}</dd>
+                <dd className="text-right text-2xl font-semibold">{chosen.amount_text}</dd>
                 <dt><L k="cost" /> ({a.fee_bps / 100}%)</dt>
-                <dd className="text-right text-2xl font-extrabold text-chili">{chosen.cost_text}</dd>
+                <dd className="text-right text-2xl font-semibold text-danger">{chosen.cost_text}</dd>
                 <dt><L k="youRepay" /></dt>
-                <dd className="text-right text-2xl font-extrabold">{money(BigInt(chosen.amount_minor) + BigInt(chosen.cost_minor))}</dd>
+                <dd className="text-right text-2xl font-semibold">{money(BigInt(chosen.amount_minor) + BigInt(chosen.cost_minor))}</dd>
               </dl>
-              <p className="mt-4 text-lg text-ink-soft">
+              <p className="mt-4 text-lg text-secondary">
                 {lang === 'ta' ? 'ஒத்துக்கிறதுக்கு முன்னாடியே செலவு ரூபாய்ல தெரியும். வேற கட்டணம் எதுவும் இல்ல.' : 'You see the cost in rupees before you agree. No other charges.'}
               </p>
               <BigButton className="mt-4 w-full" disabled>
-                <L k="askAdvance" sub="text-cream/80" /> · {t('comingSoon')}
+                <L k="askAdvance" sub="text-on-accent/80" /> · {t('comingSoon')}
               </BigButton>
             </Card>
           )}
 
           <Card>
-            <p className="text-xl font-bold">{a.open ? <><L k="owed" />: {a.owed_text}</> : <L k="noAdvanceOpen" />}</p>
+            <p className="text-xl font-semibold">{a.open ? <><L k="owed" />: {a.owed_text}</> : <L k="noAdvanceOpen" />}</p>
           </Card>
         </div>
       )}
@@ -448,40 +448,40 @@ export function Record({ data, go }: { data: PlusData } & Nav) {
           <div className="grid grid-cols-2 gap-3">
             {(
               [
-                ['received', r.totals.received_text, 'text-leaf'],
-                ['saved', r.totals.saved_text, 'text-saffron'],
-                ['paidOut', r.totals.paid_text, 'text-brick'],
-                ['intoSeettu', r.totals.group_text, 'text-sky'],
+                ['received', r.totals.received_text, 'text-success'],
+                ['saved', r.totals.saved_text, 'text-warning'],
+                ['paidOut', r.totals.paid_text, 'text-accent-ink'],
+                ['intoSeettu', r.totals.group_text, 'text-info'],
               ] as const
             ).map(([k, v, c]) => (
               <Card key={k} className="p-4!">
-                <L k={k} className="text-lg font-bold text-ink-soft" />
-                <p className={`mt-1 text-3xl font-extrabold ${c}`}>{v}</p>
+                <L k={k} className="text-lg font-semibold text-secondary" />
+                <p className={`mt-1 text-3xl font-semibold ${c}`}>{v}</p>
               </Card>
             ))}
           </div>
 
-          <Card className="bg-leaf-soft!">
-            <p className="text-5xl font-extrabold text-leaf">{r.confirmed_on_stellar}</p>
-            <L k="confirmedOnStellar" className="text-xl font-bold" />
+          <Card className="bg-success-soft!">
+            <p className="text-5xl font-semibold text-success">{r.confirmed_on_stellar}</p>
+            <L k="confirmedOnStellar" className="text-xl font-semibold" />
             {r.waiting_for_stellar > 0 && <p className="mt-2 text-lg">⏳ +{r.waiting_for_stellar} · {t('waitingForStellar')}</p>}
             {r.record_url && (
-              <a href={r.record_url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-lg font-bold text-sky underline">
+              <a href={r.record_url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-lg font-semibold text-info underline">
                 <Icon name="link" /> {t('openStellar')}
               </a>
             )}
-            <p className="mt-2 text-base text-ink-soft">{t('privacyNote')}</p>
+            <p className="mt-2 text-base text-secondary">{t('privacyNote')}</p>
           </Card>
 
-          <h2 className="text-2xl font-extrabold">
+          <h2 className="text-2xl font-semibold">
             <L k="history" />
           </h2>
           <ul className="space-y-2">
             {r.recent.map((x) => (
-              <li key={x.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-[0_2px_0_0_var(--color-sand-deep)]">
+              <li key={x.id} className="flex items-center justify-between gap-3 rounded-2xl bg-surface p-4 shadow-[0_2px_0_0_var(--color-sand-deep)]">
                 <div>
-                  <p className="text-xl font-bold">{x.kind === 'incoming' ? '+' : ''}{x.amount_text.replace('-', '−')}</p>
-                  <p className="text-base text-ink-soft">
+                  <p className="text-xl font-semibold">{x.kind === 'incoming' ? '+' : ''}{x.amount_text.replace('-', '−')}</p>
+                  <p className="text-base text-secondary">
                     {label(x.kind)}
                     {x.source && SOURCE_KEY[x.source] ? ` · ${T[SOURCE_KEY[x.source]][lang]}` : ''} · {whenText(x.at, lang)}
                   </p>
@@ -492,10 +492,10 @@ export function Record({ data, go }: { data: PlusData } & Nav) {
             {r.history
               .filter((h) => !r.recent.some((x) => x.url === h.url))
               .map((h, i) => (
-                <li key={`h${i}`} className="flex items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-[0_2px_0_0_var(--color-sand-deep)]">
+                <li key={`h${i}`} className="flex items-center justify-between gap-3 rounded-2xl bg-surface p-4 shadow-[0_2px_0_0_var(--color-sand-deep)]">
                   <div>
-                    <p className="text-xl font-bold">{h.amount_text}</p>
-                    <p className="text-base text-ink-soft">
+                    <p className="text-xl font-semibold">{h.amount_text}</p>
+                    <p className="text-base text-secondary">
                       {label(h.kind)} · {new Date(h.at).toLocaleDateString(lang === 'ta' ? 'ta-IN' : 'en-IN', { day: 'numeric', month: 'short' })}
                     </p>
                   </div>
@@ -542,28 +542,28 @@ export function AddMoney({ data, go }: { data: PlusData } & Nav) {
   return (
     <div>
       <ScreenTitle k="addMoney" onBack={() => go('home')} />
-      <h2 className="mb-3 text-2xl font-extrabold">
+      <h2 className="mb-3 text-2xl font-semibold">
         <L k="waysIn" />
       </h2>
       <ul className="space-y-3">
         {ways.map(([icon, k, help]) => (
-          <li key={k} className="flex gap-4 rounded-3xl bg-white p-4 shadow-[0_2px_0_0_var(--color-sand-deep)]">
-            <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-sand text-3xl text-brick">
+          <li key={k} className="flex gap-4 rounded-3xl bg-surface p-4 shadow-[0_2px_0_0_var(--color-sand-deep)]">
+            <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-fill text-3xl text-accent-ink">
               <Icon name={icon} />
             </span>
             <div>
-              <L k={k} className="text-xl font-bold" />
-              <p className="mt-1 text-lg text-ink-soft">{help[lang]}</p>
+              <L k={k} className="text-xl font-semibold" />
+              <p className="mt-1 text-lg text-secondary">{help[lang]}</p>
             </div>
           </li>
         ))}
       </ul>
 
-      <Card className="mt-6 border-4 border-dashed border-sand-deep">
-        <p className="text-base font-bold uppercase tracking-wide text-saffron">{t('demo')}</p>
+      <Card className="mt-6 border-4 border-dashed border-fill-strong">
+        <p className="text-base font-semibold uppercase tracking-wide text-warning">{t('demo')}</p>
         <div className="mt-3 space-y-3">
           <BigButton className="w-full" onClick={() => simulate('state_transfer_arrives')} disabled={busy}>
-            <Icon name="gov" /> <L k="demoStateTransfer" sub="text-cream/80" />
+            <Icon name="gov" /> <L k="demoStateTransfer" sub="text-on-accent/80" />
           </BigButton>
           <div className="grid grid-cols-2 gap-3">
             {[500, 1500].map((a) => (
@@ -634,21 +634,21 @@ export function Settings({ data, go, onSignOut }: { data: PlusData; onSignOut: (
       {msg && <Notice tone="leaf">{msg}</Notice>}
 
       <Card>
-        <L k="autoSave" className="text-2xl font-extrabold" />
-        <p className="mt-1 text-lg text-ink-soft">{lang === 'ta' ? T.autoSaveHelp.ta : T.autoSaveHelp.en}</p>
+        <L k="autoSave" className="text-2xl font-semibold" />
+        <p className="mt-1 text-lg text-secondary">{lang === 'ta' ? T.autoSaveHelp.ta : T.autoSaveHelp.en}</p>
         <div className="mt-4 flex items-center justify-between gap-3">
-          <button aria-label="−" onClick={() => setPercent(Math.max(0, shown - 5))} className="size-16 rounded-2xl bg-sand text-4xl font-bold">−</button>
-          <span className="text-5xl font-extrabold text-brick">{shown}%</span>
-          <button aria-label="+" onClick={() => setPercent(Math.min(30, shown + 5))} className="size-16 rounded-2xl bg-sand text-4xl font-bold">+</button>
+          <button aria-label="−" onClick={() => setPercent(Math.max(0, shown - 5))} className="size-16 rounded-2xl bg-fill text-4xl font-semibold">−</button>
+          <span className="text-5xl font-semibold text-accent-ink">{shown}%</span>
+          <button aria-label="+" onClick={() => setPercent(Math.min(30, shown + 5))} className="size-16 rounded-2xl bg-fill text-4xl font-semibold">+</button>
         </div>
         <BigButton className="mt-4 w-full" onClick={saveAutoSave} disabled={shown === current}>
-          <L k="save" sub="text-cream/80" />
+          <L k="save" sub="text-on-accent/80" />
         </BigButton>
       </Card>
 
       <Card>
-        <L k="trustedContact" className="text-2xl font-extrabold" />
-        <p className="mt-1 text-lg text-ink-soft">{lang === 'ta' ? T.trustedHelp.ta : T.trustedHelp.en}</p>
+        <L k="trustedContact" className="text-2xl font-semibold" />
+        <p className="mt-1 text-lg text-secondary">{lang === 'ta' ? T.trustedHelp.ta : T.trustedHelp.en}</p>
         <input
           inputMode="tel"
           autoComplete="tel"
@@ -656,7 +656,7 @@ export function Settings({ data, go, onSignOut }: { data: PlusData; onSignOut: (
           value={phone ?? data.me?.trusted_contact_phone ?? ''}
           onChange={(e) => setPhone(e.target.value)}
           placeholder="98765 43210"
-          className="mt-3 h-16 w-full rounded-2xl border-2 border-sand-deep bg-cream px-4 text-2xl font-bold"
+          className="mt-3 h-16 w-full rounded-2xl border-2 border-fill-strong bg-canvas px-4 text-2xl font-semibold"
         />
         <BigButton tone="sand" className="mt-3 w-full" onClick={saveContact} disabled={phone === null}>
           <L k="save" />
@@ -664,7 +664,7 @@ export function Settings({ data, go, onSignOut }: { data: PlusData; onSignOut: (
       </Card>
 
       <Card>
-        <L k="language" className="text-2xl font-extrabold" />
+        <L k="language" className="text-2xl font-semibold" />
         <div className="mt-3 grid grid-cols-2 gap-3">
           <BigButton tone={lang === 'ta' ? 'brick' : 'white'} onClick={() => chooseLang('ta')}>தமிழ்</BigButton>
           <BigButton tone={lang === 'en' ? 'brick' : 'white'} onClick={() => chooseLang('en')}>English</BigButton>
@@ -672,14 +672,14 @@ export function Settings({ data, go, onSignOut }: { data: PlusData; onSignOut: (
       </Card>
 
       <Card>
-        <L k="pin" className="text-2xl font-extrabold" />
+        <L k="pin" className="text-2xl font-semibold" />
         {pinStep === 'idle' ? (
           <BigButton tone="sand" className="mt-3 w-full" onClick={() => setPinStep(hasPin ? 'current' : 'new')}>
             <Icon name="lock" /> <L k={hasPin ? 'changePin' : 'setPin'} />
           </BigButton>
         ) : (
           <div className="mt-3">
-            <p className="text-center text-xl font-bold">
+            <p className="text-center text-xl font-semibold">
               <L k={pinStep === 'current' ? 'currentPin' : 'newPin'} />
             </p>
             <PinDots length={(pinStep === 'current' ? curPin : newPin).length} />
@@ -690,7 +690,7 @@ export function Settings({ data, go, onSignOut }: { data: PlusData; onSignOut: (
               </BigButton>
               {pinStep === 'current' ? (
                 <BigButton onClick={() => setPinStep('new')} disabled={curPin.length < 4}>
-                  <L k="next" sub="text-cream/80" />
+                  <L k="next" sub="text-on-accent/80" />
                 </BigButton>
               ) : (
                 <BigButton tone="leaf" onClick={savePin} disabled={newPin.length < 4}>
@@ -698,7 +698,7 @@ export function Settings({ data, go, onSignOut }: { data: PlusData; onSignOut: (
                 </BigButton>
               )}
             </div>
-            <p className="mt-2 text-center text-base text-ink-soft">{t('pinHidden')}</p>
+            <p className="mt-2 text-center text-base text-secondary">{t('pinHidden')}</p>
           </div>
         )}
       </Card>

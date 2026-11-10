@@ -7,13 +7,13 @@ function App() {
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 flex flex-col items-center justify-center gap-8 p-6">
-      <h1 className="text-6xl font-bold tracking-tight">Plus</h1>
+      <h1 className="text-6xl font-semibold tracking-tight">Plus</h1>
 
       <div className="flex flex-wrap justify-center gap-3">
-        <a href="/app" className="rounded-full bg-[#7a2e14] px-6 py-3 text-lg font-bold text-white">Open the Plus app</a>
-        <a href="/helper" className="rounded-full border-2 border-stone-300 bg-white px-6 py-3 text-lg font-bold">Helper page</a>
-        <a href="/agent" className="rounded-full border-2 border-stone-300 bg-white px-6 py-3 text-lg font-bold">Agent page</a>
-        <a href="/demo" className="rounded-full border-2 border-stone-300 bg-white px-6 py-3 text-lg font-bold">Demo view (staff)</a>
+        <a href="/app" className="rounded-full bg-[#7a2e14] px-6 py-3 text-lg font-semibold text-white">Open the Plus app</a>
+        <a href="/helper" className="rounded-full border-2 border-stone-300 bg-surface px-6 py-3 text-lg font-semibold">Helper page</a>
+        <a href="/agent" className="rounded-full border-2 border-stone-300 bg-surface px-6 py-3 text-lg font-semibold">Agent page</a>
+        <a href="/demo" className="rounded-full border-2 border-stone-300 bg-surface px-6 py-3 text-lg font-semibold">Demo view (staff)</a>
       </div>
 
       <div role="radiogroup" aria-label="Market" className="inline-flex rounded-full bg-stone-200 p-1">
@@ -27,7 +27,7 @@ function App() {
               aria-checked={selected}
               onClick={() => setMarketId(id)}
               className={`rounded-full px-5 py-2 text-sm font-medium transition ${
-                selected ? 'bg-white shadow text-stone-900' : 'text-stone-600 hover:text-stone-900'
+                selected ? 'bg-surface shadow text-stone-900' : 'text-stone-600 hover:text-stone-900'
               }`}
             >
               {getMarket(id).country}

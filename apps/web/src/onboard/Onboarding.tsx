@@ -89,17 +89,17 @@ function StepTrack({ st, note }: { st: Status; note?: string }) {
                 aria-label={`${W[k].en}: ${s.done ? 'done' : current ? 'now' : 'to do'}`}
                 aria-current={current ? 'step' : undefined}
                 className={`grid size-10 shrink-0 place-items-center rounded-full text-xl transition ${
-                  s.done ? 'bg-leaf text-white' : current ? 'bg-brick text-cream ring-4 ring-saffron/50' : 'bg-sand text-ink-soft'
+                  s.done ? 'bg-success text-white' : current ? 'bg-accent text-on-accent ring-4 ring-warning/50' : 'bg-fill text-secondary'
                 }`}
               >
                 <Icon name={s.done ? 'check' : icon} />
               </span>
-              {n < st.steps.length - 1 && <span className={`mx-1 h-1 flex-1 rounded-full ${s.done ? 'bg-leaf' : 'bg-sand-deep'}`} />}
+              {n < st.steps.length - 1 && <span className={`mx-1 h-1 flex-1 rounded-full ${s.done ? 'bg-success' : 'bg-fill-strong'}`} />}
             </li>
           )
         })}
       </ol>
-      <p className="mt-2 text-lg font-bold text-ink-soft" aria-live="polite">
+      <p className="mt-2 text-lg font-semibold text-secondary" aria-live="polite">
         {st.current === 'done' ? label : `Step ${i + 1} of ${st.steps.length} · ${label}`}
       </p>
     </div>
@@ -111,9 +111,9 @@ function Panel({ art, k, title, why, children }: { art: ReactNode; k?: WKey; tit
   return (
     <section className="sheet-in space-y-4">
       {art}
-      <h2 className="text-3xl font-extrabold">{k ? <Y k={k} /> : title}</h2>
-      <p className="flex gap-2 text-lg text-ink-soft">
-        <Icon name="info" className="mt-1 text-xl text-sky" />
+      <h2 className="text-3xl font-semibold">{k ? <Y k={k} /> : title}</h2>
+      <p className="flex gap-2 text-lg text-secondary">
+        <Icon name="info" className="mt-1 text-xl text-info" />
         <span>{why}</span>
       </p>
       {children}
@@ -128,7 +128,7 @@ function Digits({ value, length, group = [] }: { value: string; length: number; 
       {cells.map((c, i) => (
         <span
           key={i}
-          className={`grid h-14 max-w-10 min-w-0 flex-1 place-items-center rounded-lg border-2 font-mono font-extrabold ${length > 8 ? 'text-2xl' : 'text-3xl'} ${c ? 'border-brick bg-white' : 'border-line bg-cream'} ${group.includes(i) ? 'ml-1.5' : ''}`}
+          className={`grid h-14 max-w-10 min-w-0 flex-1 place-items-center rounded-lg border-2 font-mono font-semibold ${length > 8 ? 'text-2xl' : 'text-3xl'} ${c ? 'border-accent bg-surface' : 'border-hairline bg-canvas'} ${group.includes(i) ? 'ml-1.5' : ''}`}
         >
           {c}
         </span>
@@ -206,7 +206,7 @@ export default function Onboarding({ mode, onExit }: { mode: 'app' | 'agent'; on
       <Shell mode={mode} onExit={onExit}>
         <section className="space-y-5">
           <ArtWelcome />
-          <h1 className="text-3xl font-extrabold">{mode === 'agent' ? 'Register a customer' : <Y k="openAccount" />}</h1>
+          <h1 className="text-3xl font-semibold">{mode === 'agent' ? 'Register a customer' : <Y k="openAccount" />}</h1>
           <ul className="space-y-3 text-lg">
             <Li icon="star4">It takes about two minutes{mode === 'app' ? ', by voice or by tapping' : ''}.</Li>
             <Li icon="phone">{mode === 'agent' ? 'She needs her phone with her: a code comes to it.' : 'Have your phone with you: a code comes to it.'}</Li>
@@ -215,7 +215,7 @@ export default function Onboarding({ mode, onExit }: { mode: 'app' | 'agent'; on
           </ul>
           {mode === 'app' && (
             <div>
-              <p className="text-lg font-bold">Country</p>
+              <p className="text-lg font-semibold">Country</p>
               <div className="mt-2 grid grid-cols-2 gap-3" role="radiogroup" aria-label="Country">
                 {(['ng', 'in'] as const).map((id) => (
                   <button
@@ -223,7 +223,7 @@ export default function Onboarding({ mode, onExit }: { mode: 'app' | 'agent'; on
                     role="radio"
                     aria-checked={market === id}
                     onClick={() => setMarket(id)}
-                    className={`min-h-14 rounded-control border-2 text-xl font-bold ${market === id ? 'border-brick bg-brick text-cream' : 'border-line bg-white'}`}
+                    className={`min-h-14 rounded-control border-2 text-xl font-semibold ${market === id ? 'border-accent bg-accent text-on-accent' : 'border-hairline bg-surface'}`}
                   >
                     {getMarket(id).country}
                   </button>
@@ -233,9 +233,9 @@ export default function Onboarding({ mode, onExit }: { mode: 'app' | 'agent'; on
           )}
           {msg && <Notice tone="chili">{msg}</Notice>}
           <BigButton className="w-full" loading={busy} onClick={() => void start()}>
-            {mode === 'agent' ? 'Start' : <Y k="openAccount" sub="text-cream/80" />}
+            {mode === 'agent' ? 'Start' : <Y k="openAccount" sub="text-on-accent/80" />}
           </BigButton>
-          <p className="text-center text-base text-ink-soft">Testnet demo: simulated money, test phone numbers.</p>
+          <p className="text-center text-base text-secondary">Testnet demo: simulated money, test phone numbers.</p>
         </section>
       </Shell>
     )
@@ -269,7 +269,7 @@ export default function Onboarding({ mode, onExit }: { mode: 'app' | 'agent'; on
         {agentDone ? (
           <section className="space-y-5 text-center">
             <SuccessTick />
-            <h2 className="text-3xl font-extrabold">{st.name}'s account is ready</h2>
+            <h2 className="text-3xl font-semibold">{st.name}'s account is ready</h2>
             <Notice tone="leaf">{agentDone}</Notice>
             <BigButton className="w-full" onClick={onExit}>Back to the agent page</BigButton>
           </section>
@@ -280,8 +280,8 @@ export default function Onboarding({ mode, onExit }: { mode: 'app' | 'agent'; on
             <div className="grid gap-3">
               {st.languages.map((l) => (
                 <button key={l.code} disabled={busy} onClick={() => void call('set_profile', { language: l.code })}
-                  className="flex min-h-16 items-center justify-between rounded-control border-2 border-line bg-white px-5 text-left text-2xl font-bold active:bg-sand">
-                  {l.label} <Icon name="pay" className="text-ink-soft" />
+                  className="flex min-h-16 items-center justify-between rounded-control border-2 border-hairline bg-surface px-5 text-left text-2xl font-semibold active:bg-fill">
+                  {l.label} <Icon name="pay" className="text-secondary" />
                 </button>
               ))}
             </div>
@@ -344,7 +344,7 @@ export default function Onboarding({ mode, onExit }: { mode: 'app' | 'agent'; on
 function Li({ icon, children }: { icon: string; children: ReactNode }) {
   return (
     <li className="flex gap-3">
-      <span className="grid size-10 shrink-0 place-items-center rounded-full bg-sand text-xl text-brick"><Icon name={icon} /></span>
+      <span className="grid size-10 shrink-0 place-items-center rounded-full bg-fill text-xl text-accent-ink"><Icon name={icon} /></span>
       <span className="pt-1.5">{children}</span>
     </li>
   )
@@ -354,9 +354,9 @@ function Shell({ mode, onExit, finished, children }: { mode: 'app' | 'agent'; on
   return (
     <div className={mode === 'app' ? 'mx-auto min-h-dvh max-w-md px-4 pb-16 pt-4' : ''}>
       <header className="flex items-center justify-between pb-4">
-        <p className="text-base font-bold uppercase tracking-wide text-saffron-deep">{mode === 'agent' ? 'Register a customer' : 'New account'}</p>
+        <p className="text-base font-semibold uppercase tracking-wide text-warning-strong">{mode === 'agent' ? 'Register a customer' : 'New account'}</p>
         {!finished && (
-          <button onClick={onExit} className="inline-flex min-h-12 items-center gap-1 rounded-full border-2 border-line bg-white px-4 text-base font-bold active:bg-sand">
+          <button onClick={onExit} className="inline-flex min-h-12 items-center gap-1 rounded-full border-2 border-hairline bg-surface px-4 text-base font-semibold active:bg-fill">
             <Icon name="x" /> {mode === 'agent' ? 'Stop' : 'Leave'}
           </button>
         )}
@@ -373,7 +373,7 @@ function NameStep({ st, busy, msg, onSave }: { st: Status; busy: boolean; msg: s
       <TextField label="Your name" value={name} onChange={setName} placeholder="Adaeze Okafor" autoComplete="name" maxLength={60} />
       {msg && <Notice tone="chili">{msg}</Notice>}
       <BigButton className="w-full" loading={busy} disabled={name.trim().length < 2} onClick={() => onSave(name)}>
-        <Y k="next" sub="text-cream/80" />
+        <Y k="next" sub="text-on-accent/80" />
       </BigButton>
     </Panel>
   )
@@ -411,8 +411,8 @@ function CodeStep({ st, sms, busy, msg, onVerify, onResend, onChange }: {
         <Icon name="check" /> Check code
       </BigButton>
       <div className="grid grid-cols-2 gap-3">
-        <button onClick={onResend} disabled={busy} className="min-h-12 rounded-control bg-sand text-lg font-bold active:bg-sand-deep">Send a new code</button>
-        <button onClick={onChange} disabled={busy} className="min-h-12 rounded-control bg-sand text-lg font-bold active:bg-sand-deep">Change number</button>
+        <button onClick={onResend} disabled={busy} className="min-h-12 rounded-control bg-fill text-lg font-semibold active:bg-fill-strong">Send a new code</button>
+        <button onClick={onChange} disabled={busy} className="min-h-12 rounded-control bg-fill text-lg font-semibold active:bg-fill-strong">Change number</button>
       </div>
     </Panel>
   )
@@ -447,9 +447,9 @@ function PinStep({ agent, busy, msg, onSave, clear }: { agent: boolean; busy: bo
         setFirst(null)
         setPin('')
       }}>
-        {again ? 'Save my PIN' : <Y k="next" sub="text-cream/80" />}
+        {again ? 'Save my PIN' : <Y k="next" sub="text-on-accent/80" />}
       </BigButton>
-      <p className="text-center text-base text-ink-soft">4 to 6 numbers. Not all the same, not 1234.</p>
+      <p className="text-center text-base text-secondary">4 to 6 numbers. Not all the same, not 1234.</p>
     </Panel>
   )
 }
@@ -498,10 +498,10 @@ function SelfieStep({ busy, msg, onPass }: { busy: boolean; msg: string | null; 
     <Panel art={cam === 'on' ? null : <ArtSelfie />} k="takePhoto"
       why="A quick photo checks that a real person is opening this account. The photo stays on this phone: Plus keeps only “photo check passed”.">
       {cam === 'on' && (
-        <div className="relative mx-auto aspect-square w-64 overflow-hidden rounded-full border-8 border-saffron bg-ink">
+        <div className="relative mx-auto aspect-square w-64 overflow-hidden rounded-full border-8 border-warning bg-scrim">
           <video ref={video} playsInline muted className="size-full -scale-x-100 object-cover" />
           {phase === 'checking' && (
-            <div className="absolute inset-0 grid place-items-center bg-ink/55 text-xl font-bold text-white">
+            <div className="absolute inset-0 grid place-items-center bg-scrim/55 text-xl font-semibold text-white">
               <span className="flex items-center gap-2"><Spinner /> Checking…</span>
             </div>
           )}
@@ -534,14 +534,14 @@ function NinStep({ st, doc, agent, busy, msg, onCheck, onSkip }: {
     <Panel art={<ArtId />} k="addNin" why={`Your ${doc.name} lets you send and keep more, and opens advances later. Type it here; never say it out loud. Plus keeps only the last 4 numbers and a scrambled check, never the whole number.`}>
       {agent && <Notice tone="sky">Turn the screen to her. She types her {doc.name} herself.</Notice>}
       <div className="grid grid-cols-2 gap-3 text-base">
-        <div className="rounded-control bg-sand p-3">
-          <p className="font-bold">Now</p>
+        <div className="rounded-control bg-fill p-3">
+          <p className="font-semibold">Now</p>
           <p>{money(t1.dailyLimit)} a day</p>
           <p>Hold {money(t1.balanceLimit)}</p>
           <p>No advances</p>
         </div>
-        <div className="rounded-control border-2 border-leaf bg-leaf-soft p-3 text-leaf-deep">
-          <p className="font-bold">With {doc.name}</p>
+        <div className="rounded-control border-2 border-success bg-success-soft p-3 text-success-strong">
+          <p className="font-semibold">With {doc.name}</p>
           <p>{money(t2.dailyLimit)} a day</p>
           <p>Hold {money(t2.balanceLimit)}</p>
           <p>Advances after {m.advance.eligibleAfterWeeks} weeks</p>
@@ -556,8 +556,8 @@ function NinStep({ st, doc, agent, busy, msg, onCheck, onSkip }: {
       }}>
         <Icon name="shield" /> Check my {doc.name}
       </BigButton>
-      <button onClick={onSkip} disabled={busy} className="min-h-12 w-full rounded-control text-lg font-bold text-brick underline">
-        <Y k="skip" /> <span className="block text-base font-normal text-ink-soft">You can add it later in Settings</span>
+      <button onClick={onSkip} disabled={busy} className="min-h-12 w-full rounded-control text-lg font-semibold text-accent-ink underline">
+        <Y k="skip" /> <span className="block text-base font-normal text-secondary">You can add it later in Settings</span>
       </button>
     </Panel>
   )
@@ -574,7 +574,7 @@ function TrustedStep({ busy, msg, hint, onSave, onSkip }: { busy: boolean; msg: 
       <BigButton className="w-full" loading={busy} disabled={!name.trim() || phone.replace(/\D/g, '').length < 10} onClick={() => onSave(name, phone)}>
         <Icon name="userPlus" /> Save
       </BigButton>
-      <button onClick={onSkip} disabled={busy} className="min-h-12 w-full rounded-control text-lg font-bold text-brick underline"><Y k="skip" /></button>
+      <button onClick={onSkip} disabled={busy} className="min-h-12 w-full rounded-control text-lg font-semibold text-accent-ink underline"><Y k="skip" /></button>
     </Panel>
   )
 }
@@ -587,10 +587,10 @@ function WalletOpening({ since }: { since: number }) {
   }, [])
   const secs = since ? Math.max(0, (now - since) / 1000) : null
   return (
-    <div className="flex flex-col items-center gap-3 rounded-card bg-white p-6 text-center shadow-card" role="status">
-      <Spinner className="text-5xl text-brick" />
-      <p className="text-xl font-extrabold">Opening your wallet on Stellar…</p>
-      <p className="text-lg text-ink-soft">A few seconds. {secs !== null && <span className="font-mono">{secs.toFixed(1)} s</span>}</p>
+    <div className="flex flex-col items-center gap-3 rounded-card bg-surface p-6 text-center shadow-card" role="status">
+      <Spinner className="text-5xl text-accent-ink" />
+      <p className="text-xl font-semibold">Opening your wallet on Stellar…</p>
+      <p className="text-lg text-secondary">A few seconds. {secs !== null && <span className="font-mono">{secs.toFixed(1)} s</span>}</p>
     </div>
   )
 }
@@ -602,27 +602,27 @@ function ReadyStep({ st, mode, busy, msg, onFinish }: { st: Status; mode: 'app' 
     <section className="space-y-5">
       <div className="space-y-3 text-center">
         <SuccessTick />
-        <h2 className="text-3xl font-extrabold"><Y k="ready" /></h2>
-        <p className="text-lg text-ink-soft">{st.name} · {local(st.phone)}</p>
+        <h2 className="text-3xl font-semibold"><Y k="ready" /></h2>
+        <p className="text-lg text-secondary">{st.name} · {local(st.phone)}</p>
       </div>
       <Card className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-lg font-bold">Level {st.limits.tier}</p>
-          <span className="rounded-full bg-leaf-soft px-3 py-1 text-base font-bold text-leaf-deep">{st.limits.tier >= 2 ? 'ID checked' : 'Photo checked'}</span>
+          <p className="text-lg font-semibold">Level {st.limits.tier}</p>
+          <span className="rounded-full bg-success-soft px-3 py-1 text-base font-semibold text-success-strong">{st.limits.tier >= 2 ? 'ID checked' : 'Photo checked'}</span>
         </div>
         <p className="text-lg">Send up to <b>{st.limits.daily_text}</b> a day · hold up to <b>{st.limits.balance_text}</b></p>
-        {st.limits.advances ? <p className="text-base text-ink-soft">Advances open after {getMarket(st.market).advance.eligibleAfterWeeks} weeks.</p> : <p className="text-base text-ink-soft">Add your {st.id_document?.name ?? 'ID'} later for higher limits and advances.</p>}
+        {st.limits.advances ? <p className="text-base text-secondary">Advances open after {getMarket(st.market).advance.eligibleAfterWeeks} weeks.</p> : <p className="text-base text-secondary">Add your {st.id_document?.name ?? 'ID'} later for higher limits and advances.</p>}
       </Card>
       {acct && (
         <Card className="space-y-2">
-          <p className="text-lg font-bold"><Icon name="bank" className="text-brick" /> Your account number</p>
-          <p className="font-mono text-3xl font-extrabold tracking-wider">{acct.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3')}</p>
-          <p className="text-base text-ink-soft">{w.bank_label}. Anyone can send you money by bank transfer to this number.</p>
+          <p className="text-lg font-semibold"><Icon name="bank" className="text-accent-ink" /> Your account number</p>
+          <p className="font-mono text-3xl font-semibold tracking-wider">{acct.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3')}</p>
+          <p className="text-base text-secondary">{w.bank_label}. Anyone can send you money by bank transfer to this number.</p>
           <CopyButton text={acct} label="Copy number" />
         </Card>
       )}
       {w.account_url && (
-        <a href={w.account_url} target="_blank" rel="noreferrer" className="flex min-h-14 items-center gap-2 rounded-control bg-leaf-soft px-4 text-lg font-bold text-leaf-deep">
+        <a href={w.account_url} target="_blank" rel="noreferrer" className="flex min-h-14 items-center gap-2 rounded-control bg-success-soft px-4 text-lg font-semibold text-success-strong">
           <Icon name="link" /> See your wallet on Stellar Expert
         </a>
       )}
@@ -657,20 +657,20 @@ export function SignIn({ onBack }: { onBack: () => void }) {
   return (
     <div className="mx-auto min-h-dvh max-w-md space-y-5 px-4 pb-16 pt-4">
       <header className="flex items-center gap-3">
-        <button onClick={onBack} aria-label="Back" className="grid size-12 shrink-0 place-items-center rounded-full bg-sand text-2xl active:bg-sand-deep"><Icon name="back" /></button>
-        <h1 className="text-3xl font-extrabold"><Y k="signIn" /></h1>
+        <button onClick={onBack} aria-label="Back" className="grid size-12 shrink-0 place-items-center rounded-full bg-fill text-2xl active:bg-fill-strong"><Icon name="back" /></button>
+        <h1 className="text-3xl font-semibold"><Y k="signIn" /></h1>
       </header>
       <TextField label="Your phone number" value={phone} onChange={setPhone} inputMode="tel" placeholder="0700 000 0201" autoComplete="tel" />
       <div>
-        <p className="text-xl font-bold"><Icon name="lock" /> Your PIN</p>
+        <p className="text-xl font-semibold"><Icon name="lock" /> Your PIN</p>
         <PinDots length={pin.length} />
         <Keypad onKey={(k) => setPin((p) => applyKey(p, k, 6, true))} />
       </div>
       {msg && <Notice tone="chili">{msg}</Notice>}
       <BigButton className="w-full" loading={busy} disabled={pin.length < 4 || phone.replace(/\D/g, '').length < 10} onClick={() => void go()}>
-        <Y k="signIn" sub="text-cream/80" />
+        <Y k="signIn" sub="text-on-accent/80" />
       </BigButton>
-      <p className="text-center text-base text-ink-soft">Too many wrong PINs locks sign-in for 15 minutes.</p>
+      <p className="text-center text-base text-secondary">Too many wrong PINs locks sign-in for 15 minutes.</p>
     </div>
   )
 }

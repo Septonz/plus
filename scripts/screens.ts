@@ -7,6 +7,7 @@
 //
 //   pnpm screens               all screens -> docs/screens/*.png (390 x 844, phone)
 //   pnpm screens funmi agent   only some groups: welcome signup newuser funmi agent india
+//   pnpm screens --dark …      the same in dark mode (the phone's setting), saved as *-dark.png
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,7 +24,8 @@ const W = 390;
 const H = 844;
 const SCALE = 1.5;
 const NEW_PHONE = "0700 000 0901";
-const want = process.argv.slice(2);
+const DARK = process.argv.includes("--dark");
+const want = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const on = (g: string) => want.length === 0 || want.includes(g);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -148,8 +150,9 @@ class Page {
     await sleep(300);
     const r = await this.send("Page.captureScreenshot", { format: "png", clip: { x: 0, y: 0, width: W, height: full, scale: 1 } });
     await this.send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: SCALE, mobile: true });
-    writeFileSync(join(OUT, `${name}.png`), Buffer.from(String(r.data), "base64"));
-    console.log(`  docs/screens/${name}.png`);
+    const file = `${name}${DARK ? "-dark" : ""}.png`;
+    writeFileSync(join(OUT, file), Buffer.from(String(r.data), "base64"));
+    console.log(`  docs/screens/${file}`);
   }
 }
 
@@ -172,6 +175,7 @@ async function openChrome(): Promise<{ page: Page; close: () => void }> {
   await page.send("Runtime.enable");
   await page.send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: SCALE, mobile: true });
   await page.send("Emulation.setTouchEmulationEnabled", { enabled: true });
+  await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: DARK ? "dark" : "light" }] });
   return { page, close: () => { ws.close(); proc.kill(); } };
 }
 
@@ -204,6 +208,18 @@ async function main() {
   mkdirSync(OUT, { recursive: true });
   const { page, close } = await openChrome();
   try {
+    if (want.includes("peek")) {
+      // Quick look while designing: Funmi's and Selvi's home only (not in the default run).
+      await signedIn(page, "/app", "plus-auth", "demo-funmi@example.com");
+      await page.waitText("Funmi");
+      await sleep(2500);
+      await page.shot("zz-peek-funmi");
+      await signedIn(page, "/app", "plus-auth", "demo-selvi@example.com");
+      await sleep(3000);
+      await page.shot("zz-peek-selvi");
+      return;
+    }
+
     if (on("welcome")) {
       console.log("Front door");
       await signedOut(page);
