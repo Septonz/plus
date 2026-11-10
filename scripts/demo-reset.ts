@@ -449,8 +449,7 @@ async function resetNigeria() {
   console.log(`  week 4 of 6; money in during 3 weeks; ${kn} weeks seeded; no verified asset yet`);
   await releaseAssets(kemi.id, "Kemi");
 
-  console.log("
-4d. Amaka (can witness Kemi's asset)");
+  console.log("\n4d. Amaka (can witness Kemi's asset)");
   const amaka = await ensureAmaka();
   must(await db.from("asset_witnesses").update({ status: "cancelled", answered_at: new Date().toISOString() })
     .eq("witness_user_id", amaka).eq("status", "requested"), "Amaka's waiting requests");

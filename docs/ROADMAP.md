@@ -44,16 +44,18 @@ Two demo users (naira, illustrative numbers), both with demo login buttons.
 
 ## Piece 5: Assets, from day one, for any user
 
-- [ ] Register by voice or tap: type (stock, tools, machine, motorcycle, livestock), description,
+- [x] Register by voice or tap: type (stock, tools, machine, motorcycle, livestock), description,
   estimated value.
-- [ ] **Verification levels:** Registered → Evidence verified (live photo, which voice can trigger
+- [x] **Verification levels:** Registered → Evidence verified (live photo, which voice can trigger
   with "take the photo", plus timestamp and approximate location; photo stored privately, only a
   hash in the DB) → Community verified (two eligible witnesses confirm; eligible = verified ID,
   account older than 6 weeks, good standing; Mama Bisi and Amaka can confirm from /agent) →
   Independently verified (agent inspection from /agent).
-- [ ] **Statuses:** Active, Under review, Lost, Stolen, Damaged, Released.
-- [ ] Customers see the level; an internal confidence score is kept for lenders. Funmi's stall
+- [x] **Statuses:** Active, Under review, Lost, Stolen, Damaged, Released.
+- [x] Customers see the level; an internal confidence score is kept for lenders. Funmi's stall
   stock is seeded as Independently verified.
+- Done 2026-11-10: `pnpm e2e:assets` (22 checks) passes on the dev project. Nigeria UI only for now;
+  Amaka witnesses in her own app (demo login), Mama Bisi under Assets on /agent.
 
 ## Piece 6: Demo reset and README
 

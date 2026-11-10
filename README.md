@@ -119,6 +119,10 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   transactions. Kemi (new to Plus, "week 4 of 6") is a real sign-up on a test number whose start
   date the reset moves back 23 days. The old 1.5% advance is retired from the app; its contract
   functions stay.
+- Assets (Nigeria): off-chain. A live photo goes to a private Storage bucket; Postgres keeps only
+  its sha-256, the time and a place rounded to about 1 km. Witnesses (two eligible Plus users or an
+  agent) and the inspection are recorded in Postgres; the confidence score is for lenders and is
+  never selectable by the app. Amaka's 20 weeks with Plus and verified ID are set by the reset.
 - Ajo rounds are 1 day (real ajo: weekly or monthly); Funmi's 8 weeks of history were run with
   1-minute rounds.
 - `pnpm demo:reset` tops up or sweeps balances through the test issuer between rehearsals (these
@@ -146,7 +150,7 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
 
 - `pnpm demo:reset ng`: Funmi back to the starting state: ₦26,400, no loan open (an open one is
   settled by the reset, which doesn't count toward her ladder) and a ₦30,000 offer, her stall stock
-  independently verified, no advance (the partner settles one if open); Kemi in week 4 of 6; an ajo round she hasn't paid (a new round with the same members if she has), no
+  independently verified, no advance (the partner settles one if open); Kemi in week 4 of 6 with her demo assets released; Amaka able to witness (Kemi's saved payee); an ajo round she hasn't paid (a new round with the same members if she has), no
   pending actions or unused cash-out codes, Mama Bisi's float ₦200,000. `pnpm demo:reset in`:
   Selvi at ₹2,350 to spend and ₹1,415 saved, no advance, seettu unpaid this round. Never deletes
   anything; it only adds transactions. Prints the state the app shows.
@@ -163,7 +167,7 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   and the Stellar Expert links.
 - **Public demo logins.** The front door's demo buttons share one password
   (`VITE_DEMO_LOGIN_PASSWORD`, in the public bundle on purpose) that only opens the named demo
-  people: Funmi, Kemi, Selvi, Mama Bisi and Meena. Staff (/demo), partner and admin logins keep
+  people: Funmi, Kemi, Amaka, Selvi, Mama Bisi and Meena. Staff (/demo), partner and admin logins keep
   their own passwords. `pnpm demo:logins` sets it (and flags those rows). The backend checks the
   Supabase secret `DEMO_LOGINS_ENABLED`; after the showcase, switch them off in one command:
   `npx supabase secrets set DEMO_LOGINS_ENABLED=false --project-ref qoqmnjzfjhpemwleipth`.
@@ -328,6 +332,7 @@ This is a Testnet prototype. Where it cuts corners, it does so in ways that do n
 - `pnpm test:functions`: Deno tests for `supabase/functions/_shared` (PINs, caller ids). SQL tests for the money functions are in `supabase/tests/` (run in a rolled-back transaction).
 - `pnpm e2e` (by hand, not CI): runs the India flow against the dev project by voice session and app: state transfer, auto-save, what arrived, pay the flower wholesaler ₹300, seettu, helper cash-in confirmed, my record. Then waits for the chain outbox and checks each contract event on Stellar, printing confirm → on-chain times.
 - `pnpm e2e:ng` (by hand, not CI): the Nigeria demo through the real functions: Mama Bisi records ₦500 and Funmi says Yes, pay Iya Tunde, ajo, advance (and auto-repay from a cash-in), cash-out code redeemed by the agent, my record. Prints Yes → tick seconds and a Stellar Expert link per step. `pnpm e2e:ng --read` only reads (balances, ajo, advance, record, agent float). Step 8 (also alone with `pnpm e2e:ng --new-user`): a new person on test number +234 700 000 0301 from sign-up to first payment: a wrong NIN refused, the wallet opened, a bank transfer in, ₦500 to Funmi by phone, ₦300 by code to someone not on Plus that Mama Bisi pays out, the tier limit refusing ₦250,000, and signing in again with phone + PIN.
+- `pnpm e2e:assets` (by hand, not CI; run `pnpm demo:reset ng` first): a test person on +234 700 000 0303 registers a sewing machine, takes the live photo, asks Amaka and Mama Bisi, both confirm, Mama Bisi inspects it; checks that only the hash and a rounded place are stored, the photo is private, the confidence score never reaches her, and stolen/found statuses. 22 checks.
 
 ### Secrets (Supabase secrets, never committed)
 
