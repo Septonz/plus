@@ -2,17 +2,21 @@
 // (typed here, never spoken). After Yes, confirm_action answers "sending" at once; the sheet then
 // waits for the transaction row to turn completed (chain-worker saw it in a closed ledger) and
 // shows the tick, the seconds it took and the Stellar Expert link. A cash-out shows its code once.
+// Paying a phone number that is not on Plus shows the text message they get (simulated on the
+// demo); paying a new phone number offers "Save this person" afterwards.
 import { useEffect, useRef, useState } from 'react'
 import { getMarket } from '@plus/markets'
 import { tool, type ToolResult } from '../plus/api'
 import type { PendingAction, Tx } from '../plus/data'
-import { applyKey, BigButton, Icon, Keypad, Notice, PinDots } from '../plus/ui'
-import { naira, W, Y } from './words'
+import { applyKey, BigButton, Icon, Keypad, Notice, PinDots, SmsBubble, Spinner, SuccessTick } from '../plus/ui'
+import { forScreen, naira, W, Y } from './words'
 
 const EXPLORER = 'https://stellar.expert/explorer/testnet'
 
+const localNg = (p: string) => (p.startsWith('+234') ? `0${p.slice(4, 7)} ${p.slice(7, 10)} ${p.slice(10)}` : p)
+
 export function ngNeedsPin(a: PendingAction): boolean {
-  if (!['pay', 'group_contribution', 'cash_out'].includes(a.kind)) return false
+  if (!['pay', 'pay_code', 'group_contribution', 'cash_out'].includes(a.kind)) return false
   return BigInt(String(a.params.amount ?? 0)) > BigInt(getMarket('ng').pinThreshold) * 100n
 }
 
@@ -21,6 +25,8 @@ function title(a: PendingAction): string {
   switch (a.kind) {
     case 'pay':
       return `to ${String(p.payee_name ?? '')}`
+    case 'pay_code':
+      return `to ${String(p.payee_name ?? '')} by code`
     case 'group_contribution':
       return `for ${String(p.group_name ?? 'your ajo')}`
     case 'advance':
@@ -73,7 +79,7 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
       return
     }
     setPhase(r.status === 'failed' || r.status === 'expired' || r.status === 'rejected' ? 'failed' : 'ask')
-    setMessage(r.text || "It didn't go through. Try again.")
+    setMessage(r.text ? forScreen(r.text) : "It didn't go through. Try again.")
   }
 
   async function no() {
@@ -84,11 +90,14 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
   }
 
   const code = typeof result?.cash_out_code === 'string' ? result.cash_out_code : null
+  const sms = (result?.pay_code_sms ?? null) as { to: string; code: string; text: string } | null
+  const phone = typeof action.params.phone === 'string' ? action.params.phone : null
+  const canSave = Boolean(phone) && !action.params.payee_id && (action.kind === 'pay' || action.kind === 'pay_code')
   const amount = action.params.amount !== undefined ? naira(String(action.params.amount)) : null
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/60 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="ng-confirm-title">
-      <div className="sheet-in max-h-[100dvh] w-full max-w-md overflow-y-auto rounded-t-[2rem] bg-cream px-5 pb-8 pt-6 sm:rounded-[2rem]">
+      <div className="sheet-in max-h-[100dvh] w-full max-w-md overflow-y-auto rounded-t-sheet bg-cream px-5 pb-8 pt-6 sm:rounded-sheet">
         <h2 id="ng-confirm-title" className="mb-4 text-center text-2xl font-extrabold">
           {phase === 'done' ? <Y k="done" /> : phase === 'sending' ? <Y k="sending" /> : action.kind === 'confirm_cash_in' ? <Y k="isThatRight" /> : <Y k="checkThis" />}
         </h2>
@@ -107,22 +116,31 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
           {action.kind === 'cash_out' && phase === 'ask' && (
             <p className="mt-2 text-lg text-ink-soft">You get a code. Show it to the agent and collect your cash.</p>
           )}
+          {phone && phase === 'ask' && <p className="mt-1 text-lg text-ink-soft">{localNg(phone)}</p>}
+          {action.kind === 'pay_code' && phase === 'ask' && (
+            <p className="mx-auto mt-3 max-w-sm rounded-control bg-sky-soft px-4 py-3 text-lg text-sky">
+              They are not on Plus yet. They get a text with a code and collect the cash at any Plus agent. Unused after 7 days, it comes back to you.
+            </p>
+          )}
+          {action.kind === 'pay' && Boolean(action.params.to_user_id) && phase === 'ask' && (
+            <p className="mt-2 text-lg font-semibold text-leaf-deep">On Plus: straight to their wallet.</p>
+          )}
         </div>
 
         {phase === 'sending' && (
-          <div className="mt-6 space-y-4 text-center">
-            <p className="mx-auto grid size-20 animate-pulse place-items-center rounded-full bg-sand text-4xl">⏳</p>
+          <div className="mt-6 space-y-4 text-center" role="status">
+            <p className="mx-auto grid size-20 place-items-center rounded-full bg-sand text-4xl text-brick"><Spinner /></p>
             {code && <CodeBox code={code} />}
+            {sms && <div className="text-left"><SmsBubble to={localNg(sms.to)} text={sms.text} /></div>}
             <p className="text-lg text-ink-soft">{result?.text}</p>
           </div>
         )}
 
         {phase === 'done' && (
           <div className="mt-6 space-y-4 text-center">
-            <p className="mx-auto grid size-20 place-items-center rounded-full bg-leaf text-5xl text-white">
-              <Icon name="check" />
-            </p>
+            <SuccessTick />
             {code && <CodeBox code={code} />}
+            {sms && <div className="text-left"><SmsBubble to={localNg(sms.to)} text={sms.text} /></div>}
             <p className="text-lg font-semibold text-leaf">
               {W.verified.en}
               {seconds !== null && ` in ${seconds.toFixed(1)} s`}
@@ -132,6 +150,7 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
                 <Icon name="link" /> See it on Stellar Expert
               </a>
             )}
+            {canSave && <SaveThisPerson name={String(action.params.payee_name ?? '')} phone={phone!} />}
             <BigButton tone="leaf" className="w-full" onClick={onClose}>
               <Y k="close" sub="text-white/85" />
             </BigButton>
@@ -179,9 +198,29 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
   )
 }
 
+/** After paying a new phone number: keep them as a payee for next time. */
+function SaveThisPerson({ name, phone }: { name: string; phone: string }) {
+  const [state, setState] = useState<'ask' | 'saving' | 'saved' | 'failed'>('ask')
+  const [text, setText] = useState('')
+  if (state === 'saved') return <Notice tone="leaf">{text || `Saved ${name}. Next time, pick them from Saved people.`}</Notice>
+  return (
+    <div className="space-y-2">
+      {state === 'failed' && <Notice tone="chili">{text}</Notice>}
+      <BigButton tone="white" className="w-full" loading={state === 'saving'} onClick={async () => {
+        setState('saving')
+        const r = await tool('save_payee', { name, phone }).catch(() => ({ text: 'No connection. Try again.', ok: false }) as ToolResult)
+        setText(r.text)
+        setState(r.ok ? 'saved' : 'failed')
+      }}>
+        <Icon name="userPlus" /> <Y k="saveThisPerson" />
+      </BigButton>
+    </div>
+  )
+}
+
 export function CodeBox({ code }: { code: string }) {
   return (
-    <div className="rounded-3xl border-4 border-dashed border-brick bg-white px-4 py-5">
+    <div className="rounded-card border-4 border-dashed border-brick bg-white px-4 py-5">
       <p className="text-lg font-bold">
         <Y k="showCode" />
       </p>
