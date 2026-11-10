@@ -62,6 +62,38 @@ export const W = {
   // Settings
   signOut: { en: 'Sign out', yo: 'Jáde' },
 
+  // Sign-up (onboarding) and sign-in
+  openAccount: { en: 'Open a Plus account', yo: 'Ṣí àkáǹtì Plus' }, // check
+  haveAccount: { en: 'I have an account', yo: 'Mo ti ní àkáǹtì' }, // check
+  stepName: { en: 'Name', yo: 'Orúkọ' },
+  stepLanguage: { en: 'Language', yo: 'Èdè' },
+  stepPhone: { en: 'Phone', yo: 'Fóònù' },
+  stepPin: { en: 'PIN', yo: 'PIN' },
+  stepVerify: { en: 'Check it is you', yo: 'Ìdánilójú' }, // check
+  stepWallet: { en: 'Wallet ready', yo: 'Àpò owó ti ṣetán' }, // check
+  whatName: { en: 'What should Plus call you?', yo: 'Kí ni orúkọ rẹ?' },
+  whichLanguage: { en: 'Which language do you like?', yo: 'Èdè wo lo fẹ́ràn?' },
+  yourPhone: { en: 'Your phone number', yo: 'Nọ́mbà fóònù rẹ' },
+  typeCode: { en: 'Type the code we sent', yo: 'Tẹ kóòdù tí a fi ránṣẹ́' }, // check
+  choosePin: { en: 'Choose a PIN', yo: 'Yan PIN kan' },
+  pinAgain: { en: 'Type the same PIN again', yo: 'Tẹ PIN náà lẹ́ẹ̀kan sí i' }, // check
+  takePhoto: { en: 'A quick photo', yo: 'Fọ́tò kékeré kan' }, // check
+  addNin: { en: 'Add your NIN', yo: 'Fi NIN rẹ kún un' }, // check
+  trusted: { en: 'Someone you trust', yo: 'Ẹni tí o fọkàn tán' },
+  openWallet: { en: 'Open my wallet', yo: 'Ṣí àpò owó mi' },
+  ready: { en: 'Your account is ready', yo: 'Àkáǹtì rẹ ti ṣetán' },
+  goToWallet: { en: 'Go to my wallet', yo: 'Lọ sí àpò owó mi' },
+  skip: { en: 'Skip for now', yo: 'Fi sílẹ̀ ná' },
+  signIn: { en: 'Sign in', yo: 'Wọlé' },
+
+  // Money in and pay by phone
+  addMoney: { en: 'Add money', yo: 'Fi owó sí' },
+  bankTransfer: { en: 'Bank transfer', yo: 'Owó láti báǹkì' }, // check
+  agentCash: { en: 'Cash with an agent', yo: 'Owó lọ́wọ́ aṣojú' }, // check
+  savedPeople: { en: 'Saved people', yo: 'Àwọn tí o fi pamọ́' }, // check
+  newNumber: { en: 'By phone number', yo: 'Nọ́mbà fóònù' },
+  saveThisPerson: { en: 'Save this person', yo: 'Fi ẹni yìí pamọ́' }, // check
+
   // The mic
   speak: { en: 'Talk to Plus', yo: 'Sọ̀rọ̀' },
   micListening: { en: 'I dey listen…', yo: '' },

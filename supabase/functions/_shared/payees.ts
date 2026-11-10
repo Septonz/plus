@@ -11,6 +11,8 @@ export interface Payee {
   upi_handle?: string | null;
   /** Nigeria: the payee's Stellar wallet (G...). */
   stellar_address?: string | null;
+  /** A payee saved by phone (a Plus user or not). */
+  phone?: string | null;
 }
 
 export type PayeeMatch =

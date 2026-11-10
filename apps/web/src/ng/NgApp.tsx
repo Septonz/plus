@@ -6,7 +6,7 @@ import { getMarket, type Screen } from '@plus/markets'
 import { supabase } from '../lib/supabase'
 import { tool, type ToolResult } from '../plus/api'
 import type { PendingAction, PlusData } from '../plus/data'
-import { Icon } from '../plus/ui'
+import { ENGLISH, Icon, LangContext } from '../plus/ui'
 import { VoiceButton } from '../plus/voice'
 import { NgConfirmSheet } from './confirm'
 import { AddCash, Advance, Ajo, CashOut, Home, Pay, Record, Settings } from './screens'
@@ -76,7 +76,7 @@ export default function NgApp({ data }: { data: PlusData }) {
   const props = { data, wallet, go, version: data.version }
 
   return (
-    <>
+    <LangContext.Provider value={ENGLISH}>
       <div className="mx-auto max-w-md px-4 pb-44 pt-5">
         {screen === 'home' && <Home {...props} onAnswer={(a) => setChosen(a)} />}
         {screen === 'add_cash' && <AddCash {...props} onAnswer={(a) => setChosen(a)} />}
@@ -103,7 +103,7 @@ export default function NgApp({ data }: { data: PlusData }) {
                 <button
                   onClick={() => go(s)}
                   aria-current={screen === s ? 'page' : undefined}
-                  className={`flex min-h-20 w-full flex-col items-center justify-center gap-1 px-1 text-base font-bold ${screen === s ? 'text-brick' : 'text-ink-soft'}`}
+                  className={`flex min-h-20 w-full flex-col items-center justify-start gap-1 px-1 pt-3 text-base font-bold leading-tight ${screen === s ? 'text-brick' : 'text-ink-soft'}`}
                 >
                   <Icon name={icon} className="text-3xl" />
                   <Y k={k} className="text-center text-sm" sub="hidden" />
@@ -127,6 +127,6 @@ export default function NgApp({ data }: { data: PlusData }) {
           }}
         />
       )}
-    </>
+    </LangContext.Provider>
   )
 }

@@ -1,0 +1,32 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "create_wallet",
+    "description": "Open her account once the steps before it are done (her PIN and the photo are on her screen). In Nigeria this opens her wallet on Stellar; her screen shows the tick in a few seconds. Always ask her first: \"Shall I open your wallet now?\"",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/create_wallet",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          }
+        },
+        "required": []
+      }
+    }
+  }
+}

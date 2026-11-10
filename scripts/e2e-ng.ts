@@ -8,18 +8,24 @@
 //   5. Mama Bisi records ₦3,000 cash; Funmi's Yes sends it and repays 10% (₦300) of her advance.
 //   6. Funmi cashes out ₦2,000: a claimable balance plus a code; Mama Bisi redeems the code.
 //   7. Every transaction is checked on Horizon and listed with its Stellar Expert link.
+//   8. A new person, from sign-up to first payment: the real sign-up on a test number (re-runnable:
+//      the earlier test person is archived), a wrong NIN refused, the wallet opened on Stellar, a
+//      bank transfer in, her first payment (to Funmi, a Plus user, by phone), a payment by code to
+//      someone not on Plus that Mama Bisi pays out, and signing in again with phone + PIN.
 //
 // Timing: "Yes -> tick" is from sending confirm_action until the transactions row is completed
 // (the app's tick: chain-worker saw it in a closed ledger and refreshed the balance cache).
 //
 //   pnpm e2e:ng            the whole demo
 //   pnpm e2e:ng --read     read-only tools and timings (balance, ajo, advance, record); moves nothing
+//   pnpm e2e:ng --new-user only step 8 (sign-up to first payment)
 //
 // Needs: pnpm seed && pnpm seed:db; Supabase secrets STELLAR_SECRET_FUNMI, STELLAR_SECRET_AGENT_NG,
 // CASHOUT_CODE_SECRET; Funmi's ajo round not yet paid; no advance open (for steps 3 and 4).
 // Prints no secrets (the cash-out code is a one-time testnet code and is shown masked).
 import { createClient } from "@supabase/supabase-js";
 import { adminClient, loadLocalEnv } from "./lib/supabase-admin.ts";
+import { plusFetch, signIn, signUp, testNin, testPin } from "./lib/onboard.ts";
 
 loadLocalEnv();
 const { db: admin, url } = adminClient();
@@ -27,6 +33,9 @@ const HORIZON = "https://horizon-testnet.stellar.org";
 const EXPERT = "https://stellar.expert/explorer/testnet";
 const FUNMI_PHONE = "+2340000000501";
 const readOnly = process.argv.includes("--read");
+const newUserOnly = process.argv.includes("--new-user");
+const NEW_USER_PHONE = "+2347000000301"; // a test number: each run archives the previous e2e person
+const OUTSIDER_PHONE = "+2348035550101"; // not on Plus: paid by code
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // deno-lint-ignore no-explicit-any
 type Json = Record<string, any>;
@@ -98,6 +107,10 @@ function must(r: Json, what: string) {
 async function main() {
   const funmi = caller("agent-tools", await login("demo-funmi@example.com"));
   const bisi = caller("agent-api", await login("demo-mamabisi@example.com"));
+  if (newUserOnly) {
+    await newUser(bisi);
+    return report();
+  }
 
   console.log("Read paths (app -> agent-tools; balances from the cache, contract views by simulation)");
   const sched = await job("scheduler");
@@ -172,11 +185,78 @@ async function main() {
   const again = await bisi("redeem_code", { phone: FUNMI_PHONE, code });
   console.log(`  same code again -> ${again.error ?? "ok"}`);
 
+  await newUser(bisi);
+  await report();
+}
+
+async function newUser(bisi: ReturnType<typeof caller>) {
+  console.log("\n8. A new person: sign-up to first payment");
+  const pin = testPin();
+  const t0 = Date.now();
+  const u = await signUp(url, process.env.VITE_SUPABASE_ANON_KEY!, {
+    name: "Adaeze Okafor",
+    language: "en",
+    phone: NEW_USER_PHONE,
+    pin,
+    nin: testNin(),
+    tryWrongNin: true,
+    trusted: { name: "Chidi", phone: "0803 555 0199" },
+  }, console.log);
+  const signupMs = u.steps.reduce((s, x) => s + x.ms, 0);
+  console.log(`  sign-up: ${u.steps.length} steps, ${(signupMs / 1000).toFixed(1)} s of server time; tier ${u.tier}; account ${u.virtualAccount}`);
+  rows.push({ step: "new wallet (sponsored account + NGNT/USDC trustlines)", ms: u.walletMs, hash: u.walletTx!.split("/tx/")[1] });
+  const adaeze = caller("agent-tools", u.accessToken);
+
+  console.log("  bank transfer in (Partner bank, simulated): ₦5,000");
+  let t = Date.now();
+  const b = must(await adaeze("simulate_bank_transfer", { amount: "5000", sender: "Chidi Okeke" }), "simulate_bank_transfer");
+  done("bank transfer in ₦5,000 (anchor_ng -> her wallet)", await tick(b.transaction_id, t));
+  console.log(`  she hears: ${(await adaeze("what_arrived")).text}`);
+
+  console.log("  her first payment: ₦500 to Funmi by phone (a Plus user)");
+  const p = must(await adaeze("prepare_pay", { phone: FUNMI_PHONE, amount: "500" }), "prepare_pay to Funmi");
+  console.log(`  read-back: ${p.text}`);
+  t = Date.now();
+  const c = must(await adaeze("confirm_action", { action_id: p.action_id }), "confirm pay Funmi");
+  const paid = await tick(c.transaction_id, t);
+  done("first payment ₦500 to Funmi (wallet to wallet)", paid);
+  const { data: theirs } = await admin.from("transactions").select("status, chain_tx_hash").eq("ref", `received:${p.action_id}`).single();
+  console.log(`  Funmi's side: ${theirs?.status}, same transaction: ${theirs?.chain_tx_hash === paid.hash}`);
+  must(await adaeze("save_payee", { name: "Funmi (tomatoes)", phone: FUNMI_PHONE }), "save_payee");
+  console.log("  saved Funmi as a payee");
+
+  console.log("  ₦300 by phone to someone not on Plus: a code they collect at Mama Bisi");
+  const q = must(await adaeze("prepare_pay", { phone: OUTSIDER_PHONE, name: "Mama Ngozi", amount: "300" }), "prepare_pay by code");
+  console.log(`  read-back: ${q.text}`);
+  t = Date.now();
+  const cq = must(await adaeze("confirm_action", { action_id: q.action_id }), "confirm pay by code");
+  const sms = cq.pay_code_sms as { to: string; code: string; text: string };
+  console.log(`  simulated SMS to ${sms.to}: ${sms.text.replace(sms.code, `${sms.code.slice(0, 2)}****`)}`);
+  done("pay by code ₦300 (claimable balance for agents)", await tick(cq.transaction_id, t));
+  must(await bisi("check_code", { phone: OUTSIDER_PHONE, code: sms.code }), "agent check_code");
+  t = Date.now();
+  must(await bisi("redeem_code", { phone: OUTSIDER_PHONE, code: sms.code }), "agent redeem_code");
+  const { data: co } = await admin.from("cash_out_codes").select("claim_outbox_id").eq("action_id", q.action_id).single();
+  done("Mama Bisi pays Mama Ngozi out (claims the balance)", await outboxDone(co!.claim_outbox_id, t));
+
+  console.log("  limits: a tier-2 day is ₦200,000; she cannot send ₦250,000");
+  const over = await adaeze("prepare_pay", { phone: FUNMI_PHONE, amount: "250000" });
+  console.log(`  -> ${over.error}: ${over.text}`);
+
+  console.log("  sign in again with phone + PIN");
+  t = Date.now();
+  await signIn(url, process.env.VITE_SUPABASE_ANON_KEY!, NEW_USER_PHONE, pin);
+  const wrong = await plusFetch(url)("agent-tools/sign_in", { market: "ng", phone: NEW_USER_PHONE, pin: pin === "2580" ? "1357" : "2580" });
+  console.log(`  ✓ signed in (${Date.now() - t} ms); a wrong PIN -> ${wrong.error}`);
+  console.log(`  sign-up to first payment: ${((Date.now() - t0) / 1000).toFixed(1)} s in all  ${EXPERT}/account/${u.wallet}`);
+}
+
+async function report() {
   console.log("\n7. Verify on Stellar (Horizon)");
   for (const r of rows) console.log(`  ${(await onHorizon(r.hash)) ? "✓" : "✗"} ${r.step}  ${EXPERT}/tx/${r.hash}`);
   const ms = rows.map((r) => r.ms).sort((x, y) => x - y);
   console.log(`\nYes -> tick: median ${(ms[Math.floor(ms.length / 2)] / 1000).toFixed(1)} s, max ${(ms.at(-1)! / 1000).toFixed(1)} s over ${ms.length} transactions`);
-  console.log(`Funmi's wallet: ${(await funmi("get_balance")).text}  ${EXPERT}/account/${(await admin.from("users").select("stellar_pub").eq("wa_phone", FUNMI_PHONE).single()).data!.stellar_pub}`);
+  console.log(`Funmi's wallet: ${EXPERT}/account/${(await admin.from("users").select("stellar_pub").eq("wa_phone", FUNMI_PHONE).single()).data!.stellar_pub}`);
 }
 
 main().catch((err) => {

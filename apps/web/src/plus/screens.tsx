@@ -99,7 +99,7 @@ export function Home({ data, go }: { data: PlusData } & Nav) {
       <Card>
         <L k="latestIn" className="text-lg font-bold text-ink-soft" />
         {latest ? (
-          <div className="mt-2 flex items-center justify-between gap-3">
+          <div className="mt-2 flex flex-col items-start gap-2">
             <div>
               <p className="text-3xl font-extrabold text-leaf">+{money(latest.amount)}</p>
               <p className="text-lg">

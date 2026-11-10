@@ -1,0 +1,38 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "send_phone_code",
+    "description": "Send a 6-digit code to her phone to check it is hers. On this demo the text message shows on her screen, not on her phone. If the number already has an account, tell her to sign in with \"I have an account\".",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/send_phone_code",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Her phone number as she said it (\"0803 123 4567\")."
+          }
+        },
+        "required": [
+          "phone"
+        ]
+      }
+    }
+  }
+}

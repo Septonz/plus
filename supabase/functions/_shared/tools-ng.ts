@@ -10,6 +10,8 @@ import { formatMoney, formatSpokenMoney, getMarket } from "./markets.ts";
 import type { ChainAdvance, ContractReader } from "./ng-types.ts";
 import { matchPayee, parseMajorAmount, type Payee } from "./payees.ts";
 import type { PinOutcome } from "./pin.ts";
+import { normalizePhone } from "./onboarding.ts";
+import { advanceAllowed, receiveAllowed, spendAllowed, tierSummary } from "./tiers.ts";
 import { type Action, ACTION_TTL_SECS, type CashIn, type Channel, dayStart, type ToolResult, type User } from "./tools.ts";
 
 const M = "ng" as const;
@@ -24,6 +26,16 @@ export interface NgTx {
   status: "pending" | "completed" | "failed";
   created_at: string;
   chain_tx_hash: string | null;
+  counterparty?: string | null;
+}
+
+/** Another Plus user, found by phone (for paying them). */
+export interface PlusPeer {
+  id: string;
+  name: string | null;
+  market_id: "in" | "ng";
+  kyc_tier: number;
+  stellar_pub: string | null;
 }
 
 export interface NgGroup {
@@ -40,6 +52,7 @@ export interface CashOut {
   status: "issued" | "redeemed" | "returned";
   expires_at: string;
   created_at: string;
+  recipient_name?: string | null;
 }
 
 export interface NgStore {
@@ -70,6 +83,14 @@ export interface NgStore {
   cashOuts(userId: string): Promise<CashOut[]>;
   /** Replace the code of her own issued cash-out (resets wrong attempts). */
   setCashOutCode(userId: string, cashOutId: string, codeHash: string): Promise<boolean>;
+  /** The active Plus user with this phone number, if any. */
+  plusUserByPhone(phone: string): Promise<PlusPeer | null>;
+  /** Kobo on its way into her wallet (pending incoming rows), for the balance limit. */
+  pendingIncoming(userId: string): Promise<bigint>;
+  /** Save (or rename) a payee by phone; a Plus user's wallet is saved with it. */
+  savePayee(userId: string, p: { name: string; phone: string; stellar_address: string | null }): Promise<Payee>;
+  /** ng_bank_transfer_in: the partner anchor sends NGNT to her wallet (+ advance repayment). Idempotent on ref. */
+  bankTransferIn(userId: string, amount: bigint, repay: bigint, ref: string, sender: string): Promise<{ transaction_id: string; repay: bigint }>;
   chain: ContractReader;
 }
 
@@ -98,7 +119,7 @@ const PIN_ON_SCREEN = "Ask her to check her screen and type her PIN there. Never
 
 /** Money leaving her wallet above the market's PIN threshold needs the PIN, typed in the app. */
 export function ngNeedsPin(a: Pick<Action, "kind" | "params">): boolean {
-  if (!["pay", "group_contribution", "cash_out"].includes(a.kind)) return false;
+  if (!["pay", "pay_code", "group_contribution", "cash_out"].includes(a.kind)) return false;
   return BigInt(String(a.params.amount ?? 0)) > BigInt(getMarket(M).pinThreshold) * 100n;
 }
 
@@ -169,6 +190,7 @@ async function cachedBalances(store: NgStore, user: User) {
 export const ngGetUser: NgTool = async ({ user, store }) => {
   const [cash, pending, hasPin] = await Promise.all([store.awaitingCashIns(user.id), store.pendingActions(user.id), store.hasPin(user.id)]);
   const parts = [`This is ${user.name ?? "this caller"}. Nigeria. Speak warm, short Nigerian Pidgin English unless she speaks Yoruba. Amounts in naira.`];
+  if (user.kyc_tier < 1) parts.push("Her sign-up is not finished: no money can move yet.");
   for (const c of cash) parts.push(`First, waiting for her answer: ${c.helper_name} says she gave ${say(c.amount)} cash. Ask: is that right?`);
   return {
     text: parts.join(" "),
@@ -180,6 +202,9 @@ export const ngGetUser: NgTool = async ({ user, store }) => {
     currency: "NGN",
     has_pin: hasPin,
     group_savings_name: getMarket(M).groupSavings.localName,
+    limits: tierSummary(user),
+    virtual_account: user.virtual_account ?? null,
+    bank_label: getMarket(M).virtualAccount?.bankLabel ?? null,
     cash_ins_waiting: cash.map((c) => ({ ...c, amount_text: show(c.amount) })),
     pending_actions: pending.map(actionFields),
   };
@@ -216,7 +241,12 @@ export const ngWhatArrived: NgTool = async ({ user, store, now = new Date(), exp
     parts.push(`${c.helper_name} says she gave ${say(c.amount)} cash ${whenSpoken(c.created_at, now)}. It enters her wallet only after she says it is right. Ask her: is that right?`);
   }
   const from = (t: NgTx) =>
-    t.kind === "advance" ? "her advance" : t.source === "cash" ? "cash with the agent" : t.source === "ajo_payout" ? "her ajo payout" : "a deposit";
+    t.kind === "advance" ? "her advance"
+    : t.source === "cash" ? `cash with ${t.counterparty ?? "the agent"}`
+    : t.source === "ajo_payout" ? "her ajo payout"
+    : t.source === "bank" ? `a bank transfer${t.counterparty ? ` from ${t.counterparty}` : ""}`
+    : t.source === "plus_user" ? `${t.counterparty ?? "another Plus user"} on Plus`
+    : "a deposit";
   if (incoming.length === 0) parts.push("Nothing else has come in for two weeks.");
   else {
     parts.push("Came in: " + incoming.map((t) => `${say(t.amount)} from ${from(t)}, ${whenSpoken(t.created_at, now)}${t.status === "pending" ? " (still on its way)" : ""}`).join("; ") + ".");
@@ -230,6 +260,7 @@ export const ngWhatArrived: NgTool = async ({ user, store, now = new Date(), exp
       amount_text: show(t.amount),
       source: t.source,
       kind: t.kind,
+      from: from(t),
       status: t.status,
       at: t.created_at,
       on_stellar: t.chain_tx_hash !== null,
@@ -279,7 +310,8 @@ export const ngMyRecord: NgTool = async ({ user, store, explorer }) => {
     recent: txs.slice(0, 40).map((t) => ({
       id: t.id,
       kind: t.kind,
-      label: KIND_WORDS[t.kind] ?? t.kind,
+      label: t.kind === "pay" && t.source === "code" ? "paid by code" : t.kind === "incoming" && t.source === "bank" ? "bank transfer" : KIND_WORDS[t.kind] ?? t.kind,
+      counterparty: t.counterparty ?? null,
       source: t.source,
       amount_minor: String(t.amount),
       amount_text: show(BigInt(t.amount) < 0n ? -BigInt(t.amount) : BigInt(t.amount)),
@@ -349,7 +381,8 @@ export const ngAdvanceStatus: NgTool = async ({ user, store }) => {
   const maxMinor = BigInt(rules.max) * 100n;
   const minMinor = BigInt(rules.min) * 100n;
   const limit = limitRaw > maxMinor ? maxMinor : limitRaw;
-  const eligible = limit >= minMinor && !open;
+  const blocked = advanceAllowed(user);
+  const eligible = limit >= minMinor && !open && !blocked;
   const options = [];
   for (let a = minMinor; a <= limit; a += 500000n) options.push({ amount_minor: String(a), amount_text: show(a), fee_text: show(advanceFee(a)) });
   if (limit >= minMinor && options.at(-1)?.amount_minor !== String(limit)) {
@@ -360,6 +393,7 @@ export const ngAdvanceStatus: NgTool = async ({ user, store }) => {
     ? `She has an advance: ${say(open.owed_minor)} left to repay. ${repayPct}% of each cash-in pays it back by itself.`
     : eligible
     ? `She can take an advance of up to ${say(limit)}. The fee is ${rules.feeBps / 100}%, one time: ${say(advanceFee(limit))} on ${say(limit)}. No interest, no late fees.`
+    : blocked ? blocked.text
     : "She can't take an advance yet.";
   return {
     text,
@@ -369,6 +403,7 @@ export const ngAdvanceStatus: NgTool = async ({ user, store }) => {
     limit_text: show(limit),
     fee_bps: rules.feeBps,
     repay_pct: repayPct,
+    blocked: blocked?.error ?? null,
     owed_minor: String(open?.owed_minor ?? 0n),
     owed_text: show(open?.owed_minor ?? 0n),
     principal_text: open ? show(open.principal_minor) : null,
@@ -392,53 +427,183 @@ export const ngCashOuts: NgTool = async ({ user, store, now = new Date() }) => {
 // ---------------------------------------------------------------------------
 
 async function spendCheck(store: NgStore, user: User, amount: bigint, now: Date): Promise<ToolResult | null> {
+  if (user.kyc_tier < 1) return refuse("Her account is not open yet. Finish signing up first.", "signup_not_finished");
   const [available, paidToday] = await Promise.all([store.available(user.id), store.paidSince(user.id, dayStart(M, now))]);
+  // The tier limit first: more money in the wallet would not fix that one.
+  const limit = spendAllowed(user, amount, paidToday);
+  if (limit) return limit;
   if (available < amount) {
     return refuse(`Not enough money: she has ${say(available > 0n ? available : 0n)} to spend.`, "insufficient_funds", { available_text: show(available) });
   }
-  const cap = BigInt(getMarket(M).payDailyLimit) * 100n;
-  if (paidToday + amount > cap) {
-    const left = cap > paidToday ? cap - paidToday : 0n;
-    return refuse(`That is over today's limit. She can send ${say(left)} more today.`, "daily_limit", { left_today_text: show(left) });
-  }
   return null;
+}
+
+/** Room in a wallet for incoming money: its balance limit minus what it holds and what is on its way. */
+async function receiveCheck(store: NgStore, who: { id: string; market_id: "in" | "ng"; kyc_tier: number }, amount: bigint, whose = "her"): Promise<ToolResult | null> {
+  const [b, incoming] = await Promise.all([store.balances(who.id), store.pendingIncoming(who.id)]);
+  return receiveAllowed(who, b.NGNT + incoming, amount, whose);
 }
 
 function confirmText(a: Action): string {
   return ngNeedsPin(a) ? PIN_ON_SCREEN : CHECK_SCREEN;
 }
 
+/**
+ * Pay someone: a saved payee by name, or anyone by phone number.
+ *   A Plus user (her wallet)   -> an NGNT payment wallet to wallet; it shows in what arrived for them.
+ *   Not on Plus                -> a code they collect as cash at any Plus agent (claimable balance on
+ *                                 Stellar; the SMS with the code is simulated on her screen).
+ *   A saved wallet (Iya Tunde) -> a payment to that wallet.
+ */
 export const ngPreparePay: NgTool = async ({ user, store, args, now = new Date() }) => {
   const amount = parseMajorAmount(args.amount);
   if (amount === null) return refuse("How much should she pay? Ask for the amount in naira.", "invalid_amount");
-  const spoken = typeof args.payee === "string" ? args.payee : "";
-  const payees = (await store.payees(user.id)).filter((p) => p.stellar_address);
-  if (payees.length === 0) return refuse("She has no saved payees yet.", "no_payees");
-  const match = matchPayee(spoken, payees);
-  if (match.kind !== "match") {
-    const names = match.options.map((p) => p.name);
-    return refuse(
-      match.kind === "ambiguous" ? `Which one: ${names.join(" or ")}? Ask her; don't guess.` : `"${spoken}" is not one of her saved payees: ${names.join(", ")}. Ask which one she means.`,
-      match.kind === "ambiguous" ? "ambiguous_payee" : "unknown_payee",
-      { options: match.options.map((p) => ({ id: p.id, name: p.name })) },
-    );
+  const spoken = typeof args.payee === "string" ? args.payee.trim() : "";
+  const given = typeof args.phone === "string" && args.phone.trim() ? args.phone : /^[+\d][\d\s()-]{6,}$/.test(spoken) ? spoken : "";
+  let phone: string | null = null;
+  let name = typeof args.name === "string" && args.name.trim() ? args.name.trim().slice(0, 60) : null;
+  let wallet: string | null = null;
+  let payeeId: string | null = null;
+
+  if (given) {
+    phone = normalizePhone(M, given);
+    if (!phone) return refuse("That phone number doesn't look right. Ask her to say it again, digit by digit.", "invalid_phone");
+  } else {
+    const payees = await store.payees(user.id);
+    if (payees.length === 0) return refuse("She has no saved payees yet. Ask for the person's phone number.", "no_payees");
+    const match = matchPayee(spoken, payees);
+    if (match.kind !== "match") {
+      const names = match.options.map((p) => p.name);
+      return refuse(
+        match.kind === "ambiguous"
+          ? `Which one: ${names.join(" or ")}? Ask her; don't guess.`
+          : `"${spoken}" is not one of her saved payees: ${names.join(", ")}. Ask which one she means, or for their phone number.`,
+        match.kind === "ambiguous" ? "ambiguous_payee" : "unknown_payee",
+        { options: match.options.map((p) => ({ id: p.id, name: p.name })) },
+      );
+    }
+    payeeId = match.payee.id;
+    name = match.payee.name;
+    phone = match.payee.phone ?? null;
+    wallet = phone ? null : match.payee.stellar_address ?? null;
+    if (!phone && !wallet) return refuse(`${match.payee.name} has no phone or wallet saved.`, "payee_incomplete");
   }
-  const payee = match.payee;
+
+  const peer = phone ? await store.plusUserByPhone(phone) : null;
+  if (peer && peer.id === user.id) return refuse("That is her own number.", "own_number");
   const blocked = await spendCheck(store, user, amount, now);
   if (blocked) return blocked;
+
+  // Another Plus user in Nigeria with a wallet: wallet to wallet, inside their balance limit.
+  if (peer && peer.market_id === "ng" && peer.stellar_pub) {
+    const full = await receiveCheck(store, peer, amount, `${peer.name ?? "their"}'s`);
+    if (full) return refuse(`${peer.name ?? "That person"}'s wallet can't take that much now. ${full.text}`, "recipient_full", { room_text: full.room_text });
+    const who = name ?? peer.name ?? phone!;
+    const a = await store.createAction({
+      user_id: user.id,
+      kind: "pay",
+      params: { amount: String(amount), to: peer.stellar_pub, to_user_id: peer.id, payee_name: who, phone, payee_id: payeeId },
+      readback: `${show(amount)} to ${who} (on Plus)`,
+      ttl_secs: ACTION_TTL_SECS,
+    });
+    return {
+      text: `Read back: ${say(amount)} to ${who}. ${who} is on Plus, so it goes straight to their wallet. ${confirmText(a)}`,
+      ok: true,
+      ...actionFields(a),
+      payee: { name: who, phone, on_plus: true },
+      amount_text: show(amount),
+    };
+  }
+
+  // Not on Plus: a code they collect at any Plus agent.
+  if (phone) {
+    const agents = await store.agentWallets();
+    if (agents.length === 0) return refuse("No cash agent is registered yet, so a code can't be collected.", "no_agents");
+    const who = name ?? phone;
+    const days = getMarket(M).cashOutCode?.returnAfterDays ?? 7;
+    const a = await store.createAction({
+      user_id: user.id,
+      kind: "pay_code",
+      params: { amount: String(amount), phone, payee_name: who, claimants: agents.slice(0, 9), payee_id: payeeId },
+      readback: `${show(amount)} to ${who} (${phone}). Not on Plus: they get a code by SMS and collect cash at any Plus agent. Unused after ${days} days, it comes back to you.`,
+      ttl_secs: ACTION_TTL_SECS,
+    });
+    return {
+      text: `Read back: ${say(amount)} to ${who}. They are not on Plus yet, so they get a code by text message and collect the cash at any Plus agent. ${confirmText(a)}`,
+      ok: true,
+      ...actionFields(a),
+      payee: { name: who, phone, on_plus: false },
+      amount_text: show(amount),
+    };
+  }
+
+  // A saved wallet (no phone): a plain payment.
   const a = await store.createAction({
     user_id: user.id,
     kind: "pay",
-    params: { amount: String(amount), payee_id: payee.id, payee_name: payee.name, to: payee.stellar_address },
-    readback: `${show(amount)} to ${payee.name}`,
+    params: { amount: String(amount), payee_id: payeeId, payee_name: name, to: wallet },
+    readback: `${show(amount)} to ${name}`,
     ttl_secs: ACTION_TTL_SECS,
   });
   return {
-    text: `Read back: ${say(amount)} to ${payee.name}. ${confirmText(a)}`,
+    text: `Read back: ${say(amount)} to ${name}. ${confirmText(a)}`,
     ok: true,
     ...actionFields(a),
-    payee: { id: payee.id, name: payee.name },
+    payee: { id: payeeId, name },
     amount_text: show(amount),
+  };
+};
+
+/** After a payment: keep this person for next time (by phone; a Plus user's wallet goes with it). */
+export const ngSavePayee: NgTool = async ({ user, store, args }) => {
+  const phone = normalizePhone(M, args.phone);
+  const name = typeof args.name === "string" ? args.name.trim().replace(/\s+/g, " ").slice(0, 60) : "";
+  if (!phone) return refuse("Which phone number? Ask again.", "invalid_phone");
+  if (name.length < 2) return refuse("What name should we save them under?", "invalid_name");
+  const peer = await store.plusUserByPhone(phone);
+  if (peer?.id === user.id) return refuse("That is her own number.", "own_number");
+  const p = await store.savePayee(user.id, { name, phone, stellar_address: peer?.market_id === "ng" ? peer.stellar_pub : null });
+  return { text: `Saved ${p.name}. Next time she can just say "pay ${p.name}".`, ok: true, payee: { id: p.id, name: p.name, phone } };
+};
+
+/** Her account number at the partner bank (simulated), for bank transfers into her wallet. */
+export const ngBankDetails: NgTool = async ({ user }) => {
+  const bank = getMarket(M).virtualAccount;
+  if (!bank || !user.virtual_account) return refuse("Her bank account number comes with her wallet; her wallet is not open yet.", "no_account_number");
+  const spaced = user.virtual_account.replace(/(\d{3})(\d{3})(\d{4})/, "$1 $2 $3");
+  return {
+    text: `Anyone can send her money by bank transfer: ${bank.bankLabel}, account number ${user.virtual_account.split("").join(" ")}, name ${user.name}. It lands in her Plus wallet on Stellar.`,
+    ok: true,
+    bank_label: bank.bankLabel,
+    account_number: user.virtual_account,
+    account_number_text: spaced,
+    account_name: user.name,
+  };
+};
+
+/**
+ * Demo (app only): a transfer arrives at her virtual account. The partner's anchor account sends the
+ * same NGNT to her wallet on Stellar; 10% repays an open advance right after it lands.
+ */
+export const ngSimulateBankTransfer: NgTool = async ({ user, store, args, channel }) => {
+  if (channel !== "app") return refuse("Only the demo button on her screen can do that.", "app_only");
+  if (!user.stellar_pub || !user.virtual_account) return refuse("Her wallet is not open yet.", "no_wallet");
+  const amount = parseMajorAmount(args.amount);
+  if (amount === null) return refuse("Enter an amount in naira.", "invalid_amount");
+  const full = await receiveCheck(store, user, amount);
+  if (full) return full;
+  const ref = typeof args.ref === "string" && /^[A-Za-z0-9_-]{8,80}$/.test(args.ref) ? args.ref : crypto.randomUUID();
+  const sender = typeof args.sender === "string" && args.sender.trim() ? args.sender.trim().slice(0, 60) : "A bank customer";
+  const repay = cashInRepayment(amount, await store.chain.advanceOf(user.stellar_pub));
+  const r = await store.bankTransferIn(user.id, amount, repay, ref, sender);
+  return {
+    text: `${say(amount)} arrived by bank transfer from ${sender}. It is on its way into her wallet on Stellar.` +
+      (r.repay > 0n ? ` ${say(r.repay)} of it pays back her advance.` : ""),
+    ok: true,
+    sending: true,
+    transaction_id: r.transaction_id,
+    amount_text: show(amount),
+    repay_text: r.repay > 0n ? show(r.repay) : null,
   };
 };
 
@@ -476,6 +641,8 @@ export const ngPrepareAdvance: NgTool = async ({ user, store, args, ngntSac }) =
     store.chain.advanceOf(user.stellar_pub),
     store.chain.poolBalance(ngntSac),
   ]);
+  const gate = advanceAllowed(user);
+  if (gate) return gate;
   if (open) return refuse(`She already has an advance open: ${say(open.owed_minor)} left to repay. One at a time.`, "advance_open", { owed_text: show(open.owed_minor) });
   const maxMinor = BigInt(rules.max) * 100n;
   const limit = limitRaw > maxMinor ? maxMinor : limitRaw;
@@ -537,6 +704,8 @@ function doneText(a: Action): string {
   switch (a.kind) {
     case "pay":
       return `Okay: ${amt} to ${String(r.payee_name ?? a.params.payee_name)}.${tail}`;
+    case "pay_code":
+      return `Okay: ${amt} for ${String(r.payee_name ?? a.params.payee_name)}. They get a text message with a code and collect the cash at any Plus agent.${tail}`;
     case "group_contribution":
       return `Okay: ${amt} for her ajo.${tail}`;
     case "advance":
@@ -589,7 +758,7 @@ export const ngConfirmAction: NgTool = async ({ user, store, args, channel, code
         return refuse(`Wrong PIN. ${check.attemptsLeft} ${check.attemptsLeft === 1 ? "try" : "tries"} left.`, "pin_wrong", { attempts_left: check.attemptsLeft });
       }
     }
-    if (a.kind === "cash_out") {
+    if (a.kind === "cash_out" || a.kind === "pay_code") {
       code = newCashOutCode();
       extra.code_hash = await cashOutCodeHash(codeSecret, user.id, code);
     }
@@ -610,7 +779,15 @@ export const ngConfirmAction: NgTool = async ({ user, store, args, channel, code
     result: done.result,
     transaction_id: done.result?.transaction_id ?? null,
     // The code is shown once, on the screen only (never handed to the voice agent).
-    cash_out_code: ok && claimed && code && channel === "app" ? code : undefined,
+    cash_out_code: ok && claimed && code && channel === "app" && done.kind === "cash_out" ? code : undefined,
+    // Paying someone not on Plus: the SMS they would get, simulated on her screen (never to voice).
+    pay_code_sms: ok && claimed && code && channel === "app" && done.kind === "pay_code"
+      ? {
+        to: String(done.params.phone),
+        code,
+        text: `Plus: ${user.name ?? "Someone"} sent you ${show(String(done.params.amount))}. Collect it as cash at any Plus agent with code ${code} and this phone number. It works for ${getMarket(M).cashOutCode?.returnAfterDays ?? 7} days.`,
+      }
+      : undefined,
     cash_out_id: done.result?.cash_out_id ?? undefined,
   };
 };
@@ -645,6 +822,8 @@ export const NG_VOICE_TOOLS: Record<string, NgTool> = {
   prepare_group_contribution: ngPrepareAjo, // same tool under the shared name
   prepare_advance: ngPrepareAdvance,
   prepare_cashout: ngPrepareCashout,
+  save_payee: ngSavePayee,
+  bank_details: ngBankDetails,
   confirm_action: ngConfirmAction,
   reject_action: ngRejectAction,
   my_record: ngMyRecord,
@@ -656,4 +835,5 @@ export const NG_VOICE_TOOLS: Record<string, NgTool> = {
 export const NG_APP_TOOLS: Record<string, NgTool> = {
   ...NG_VOICE_TOOLS,
   new_cashout_code: ngNewCashOutCode,
+  simulate_bank_transfer: ngSimulateBankTransfer,
 };

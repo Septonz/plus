@@ -2,12 +2,14 @@
 //   Record cash from a customer: phone + amount. Nothing moves until the customer says Yes in
 //   her Plus app; then NGNT goes from Mama Bisi's float to her wallet on Stellar.
 //   Redeem a cash-out code: phone + 6-digit code -> "give her ₦X" -> Done -> Mama Bisi claims the
-//   cash-out on Stellar.
-import { useCallback, useEffect, useState } from 'react'
+//   cash-out on Stellar. Codes sent to someone not on Plus (pay by phone) work the same way.
+//   Register a customer: the same sign-up as the app, run on Mama Bisi's screen with the customer
+//   answering (she types her own PIN and NIN). A kiosk would be this screen on a shared tablet.
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { DEMO_MAMA_BISI_EMAIL, supabase } from '../lib/supabase'
 import { call, newKey } from '../plus/api'
 import { DemoChoice, useSession } from '../plus/auth'
-import { applyKey, BigButton, Card, Icon, Keypad, Notice } from '../plus/ui'
+import { applyKey, BigButton, Card, EmptyState, Icon, Keypad, LoadingList, Notice, Spinner } from '../plus/ui'
 import { naira, when } from '../ng/words'
 
 type Item = { id: string; name: string; amount_text: string; status: string; at: string; url: string | null }
@@ -25,6 +27,8 @@ type Me = {
   error?: string
   text?: string
 }
+const Onboarding = lazy(() => import('../onboard/Onboarding.tsx'))
+
 type Answer = Partial<Me> & { ok?: boolean; error?: string; text?: string; amount_text?: string; attempts_left?: number }
 
 const STATUS: Record<string, [string, string]> = {
@@ -50,14 +54,14 @@ export default function AgentPage() {
 function Phone({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <label className="block">
-      <span className="text-xl font-bold">Customer's phone</span>
+      <span className="text-xl font-bold">Their phone</span>
       <input
         inputMode="tel"
         autoComplete="off"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="0803 123 4567"
-        className="mt-2 block min-h-16 w-full rounded-2xl border-2 border-sand-deep bg-white px-4 text-2xl font-bold"
+        className="mt-2 block min-h-16 w-full rounded-control border-2 border-line bg-white px-4 text-2xl font-bold focus:border-brick"
       />
     </label>
   )
@@ -65,7 +69,7 @@ function Phone({ value, onChange }: { value: string; onChange: (v: string) => vo
 
 function Signed() {
   const [me, setMe] = useState<Me | null>(null)
-  const [tab, setTab] = useState<'cash' | 'code'>('cash')
+  const [tab, setTab] = useState<'cash' | 'code' | 'register'>(() => (new URLSearchParams(window.location.search).get('tab') === 'register' ? 'register' : 'cash'))
   const [phone, setPhone] = useState('+2340000000501') // Funmi (demo number)
   const [amount, setAmount] = useState('')
   const [code, setCode] = useState('')
@@ -120,7 +124,14 @@ function Signed() {
     } else setMsg({ tone: 'chili', text: r.text ?? r.error ?? 'Error' })
   }
 
-  if (!me) return <p className="py-20 text-center text-2xl">…</p>
+  if (!me) {
+    return (
+      <div className="mx-auto max-w-md space-y-4 px-4 pt-6">
+        <p className="flex items-center gap-2 text-xl font-bold text-ink-soft" role="status"><Spinner /> Loading your float…</p>
+        <LoadingList rows={3} />
+      </div>
+    )
+  }
   if (me.error) {
     return (
       <div className="mx-auto max-w-md p-6">
@@ -137,10 +148,10 @@ function Signed() {
           <p className="text-base font-bold uppercase tracking-wide text-saffron">Plus cash agent</p>
           <h1 className="text-3xl font-extrabold">{me.agent.name}</h1>
         </div>
-        <button onClick={() => void supabase?.auth.signOut()} className="min-h-11 rounded-full border-2 border-sand-deep bg-white px-4 text-base font-bold">Sign out</button>
+        <button onClick={() => void supabase?.auth.signOut()} className="min-h-12 shrink-0 rounded-full border-2 border-line bg-white px-4 text-base font-bold active:bg-sand">Sign out</button>
       </header>
 
-      <Card className="bg-brick! text-cream">
+      <Card className="bg-brick! text-cream shadow-lift!">
         <p className="text-lg font-semibold">Float on Stellar</p>
         <p className="mt-1 text-4xl font-extrabold text-turmeric">{me.float_text}</p>
         <p className="mt-1 text-base text-cream/80">
@@ -149,15 +160,22 @@ function Signed() {
         {me.wallet_url && <a href={me.wallet_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-base font-bold text-cream underline">See float on Stellar Expert</a>}
       </Card>
 
-      <div className="grid grid-cols-2 gap-3" role="tablist">
-        {([['cash', 'add', 'Record cash'], ['code', 'hand', 'Redeem code']] as const).map(([t, icon, label]) => (
+      <div className="grid grid-cols-3 gap-2" role="tablist">
+        {([['cash', 'add', 'Record cash'], ['code', 'hand', 'Redeem code'], ['register', 'userPlus', 'Register']] as const).map(([t, icon, label]) => (
           <button key={t} role="tab" aria-selected={tab === t} onClick={() => { setTab(t); setMsg(null) }}
-            className={`flex min-h-20 flex-col items-center justify-center gap-1 rounded-2xl text-xl font-extrabold ${tab === t ? 'bg-brick text-cream' : 'bg-white shadow-[0_2px_0_0_var(--color-sand-deep)]'}`}>
+            className={`flex min-h-24 flex-col items-center justify-center gap-1 rounded-control px-1 text-center text-lg font-extrabold leading-tight ${tab === t ? 'bg-brick text-cream' : 'bg-white shadow-card active:bg-sand'}`}>
             <Icon name={icon} className="text-3xl" /> {label}
           </button>
         ))}
       </div>
 
+      {tab === 'register' ? (
+        <Card>
+          <Suspense fallback={<p className="flex items-center gap-2 py-6 text-xl font-bold" role="status"><Spinner /> Loading…</p>}>
+            <Onboarding mode="agent" onExit={() => setTab('cash')} />
+          </Suspense>
+        </Card>
+      ) : (<>
       <Card>
         <Phone value={phone} onChange={setPhone} />
         {tab === 'cash' ? (
@@ -174,6 +192,7 @@ function Signed() {
           <>
             <p className="mt-4 text-xl font-bold">Her 6-digit code</p>
             <p className="my-3 text-center font-mono text-5xl font-extrabold tracking-[0.2em]" aria-live="polite">{code.padEnd(6, '·')}</p>
+            <p className="-mt-1 mb-3 text-center text-base text-ink-soft">Her own cash-out code, or a code someone sent to this phone.</p>
             <Keypad onKey={(k) => { setCode((c) => applyKey(c, k, 6, true)); setChecked(null) }} />
             {checked ? (
               <BigButton tone="leaf" className="mt-4 w-full" onClick={redeem} disabled={busy}>
@@ -188,21 +207,28 @@ function Signed() {
       </Card>
 
       <h2 className="text-2xl font-extrabold">{tab === 'cash' ? 'Recent cash-ins' : 'Codes you redeemed'}</h2>
+      {(tab === 'cash' ? me.recent : me.redeemed).length === 0 ? (
+        <EmptyState icon={tab === 'cash' ? 'add' : 'hand'} title={tab === 'cash' ? 'No cash-ins yet' : 'No codes redeemed yet'}>
+          {tab === 'cash' ? 'Cash you record shows here with its tick on Stellar.' : 'Codes you pay out show here.'}
+        </EmptyState>
+      ) : (
       <ul className="space-y-2">
         {(tab === 'cash' ? me.recent : me.redeemed).map((r) => {
           const [label, cls] = STATUS[r.status] ?? [r.status, 'bg-sand']
-          const badge = <span className={`rounded-full px-3 py-1 text-base font-bold ${cls}`}>{label}</span>
+          const badge = <span className={`inline-block whitespace-nowrap rounded-full px-3 py-1 text-base font-bold ${cls}`}>{label}</span>
           return (
-            <li key={r.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-[0_2px_0_0_var(--color-sand-deep)]">
-              <div>
+            <li key={r.id} className="flex items-center justify-between gap-3 rounded-control bg-white p-4 shadow-card">
+              <div className="min-w-0">
                 <p className="text-xl font-bold">{r.name} · {r.amount_text}</p>
                 <p className="text-base text-ink-soft">{when(r.at)}</p>
               </div>
-              {r.url ? <a href={r.url} target="_blank" rel="noreferrer">{badge}</a> : badge}
+              {r.url ? <a href={r.url} target="_blank" rel="noreferrer" className="shrink-0">{badge}</a> : badge}
             </li>
           )
         })}
       </ul>
+      )}
+      </>)}
     </div>
   )
 }

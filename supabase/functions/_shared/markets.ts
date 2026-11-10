@@ -41,10 +41,33 @@ export interface Market {
   /** Most a user may pay out per day (major units), across payments and group contributions. */
   payDailyLimit: number;
   idCheck: "partner_kyc_mock" | "nin_mock";
+  /** Tiered KYC (modelled on Nigeria's tiers; the partner sets the exact limits). Tier 0 = sign-up not finished: no money moves. */
+  kyc: Kyc;
+  /** Sign-up: phone codes, and the test-number range whose sign-ups can be re-run (the old test person is archived, never deleted). */
+  onboarding: { phoneCodeDigits: number; phoneCodeTtlSecs: number; maxCodeAttempts: number; maxCodesPerSession: number; demoPhonePrefix: string; phonePattern: string; phoneHint: string };
+  /** Bank transfer in: each wallet gets a virtual account number at the partner bank (simulated). */
+  virtualAccount: { bankLabel: string; digits: number } | null;
   /** Voice-agent tools. */
   services: string[];
   /** Services used by helpers (group leaders, correspondents, agents), never by the voice agent. */
   helperServices: string[];
+}
+
+export interface Tier {
+  /** What she must give for this tier. */
+  needs: ("name" | "phone" | "selfie" | "id_document")[];
+  /** Most she may send out per day (major units). */
+  dailyLimit: number;
+  /** Most her wallet may hold (major units). Money that would take her over it is refused. */
+  balanceLimit: number;
+  /** Advances unlock at this tier, after advance.eligibleAfterWeeks as a member. */
+  advances: boolean;
+}
+
+export interface Kyc {
+  tiers: { 1: Tier; 2: Tier };
+  /** The ID number checked for tier 2, typed on screen only (never spoken). Only a hash and the last 4 digits are kept. null: done by the partner bank, not in the app. */
+  idDocument: { name: string; digits: number; wrongTestNumber: string } | null;
 }
 
 export type Screen = "home" | "pay" | "group" | "advance" | "record" | "add_money" | "add_cash" | "cash_out" | "settings";
@@ -52,7 +75,13 @@ export type Screen = "home" | "pay" | "group" | "advance" | "record" | "add_mone
 export const SERVICES: readonly string[] = [
   "get_user",
   "start_onboarding",
-  "verify_id",
+  "onboarding_status",
+  "set_profile",
+  "send_phone_code",
+  "verify_phone_code",
+  "verify_identity",
+  "create_wallet",
+  "set_trusted_contact",
   "set_pin",
   "get_balance",
   "what_arrived",
@@ -95,6 +124,16 @@ export const MARKETS: Record<MarketId, Market> = {
     pinThreshold: 2000,
     payDailyLimit: 10000,
     idCheck: "partner_kyc_mock",
+    kyc: {
+      tiers: {
+        1: { needs: ["name", "phone", "selfie"], dailyLimit: 5000, balanceLimit: 10000, advances: false },
+        // Full KYC is done by the partner bank (Indian users never give an ID number to Plus; no Aadhaar).
+        2: { needs: ["name", "phone", "selfie", "id_document"], dailyLimit: 10000, balanceLimit: 200000, advances: true },
+      },
+      idDocument: null,
+    },
+    onboarding: { phoneCodeDigits: 6, phoneCodeTtlSecs: 600, maxCodeAttempts: 5, maxCodesPerSession: 5, demoPhonePrefix: "+9170000", phonePattern: "^\\+91[0-9]{10}$", phoneHint: "+91 70000 00101" },
+    virtualAccount: null,
     services: [...SERVICES],
     helperServices: [...HELPER_SERVICES],
   },
@@ -110,7 +149,7 @@ export const MARKETS: Record<MarketId, Market> = {
     cashIn: ["agent_float", "bank_transfer"],
     cashOut: ["claimable_code"],
     helperFloatLimit: 500000,
-    incomingSources: ["deposit", "cash"],
+    incomingSources: ["bank", "cash", "plus_user"],
     inboundCorridors: [],
     autoSave: { enabled: true, defaultBps: 1000 },
     groupSavings: { mode: "pooled", localName: "ajo" },
@@ -122,12 +161,35 @@ export const MARKETS: Record<MarketId, Market> = {
     pinThreshold: 20000,
     payDailyLimit: 200000,
     idCheck: "nin_mock",
+    kyc: {
+      tiers: {
+        // Like CBN tier 1: name, phone and a photo; low limits; no advances.
+        1: { needs: ["name", "phone", "selfie"], dailyLimit: 50000, balanceLimit: 300000, advances: false },
+        // Like CBN tier 2: NIN checked; higher limits; advances after eligibleAfterWeeks.
+        2: { needs: ["name", "phone", "selfie", "id_document"], dailyLimit: 200000, balanceLimit: 500000, advances: true },
+      },
+      // Mock registry: any 11 digits pass except this test number, which is always "not found".
+      idDocument: { name: "NIN", digits: 11, wrongTestNumber: "00000000000" },
+    },
+    onboarding: { phoneCodeDigits: 6, phoneCodeTtlSecs: 600, maxCodeAttempts: 5, maxCodesPerSession: 5, demoPhonePrefix: "+2347000000", phonePattern: "^\\+234[0-9]{10}$", phoneHint: "0700 000 0101" },
+    virtualAccount: { bankLabel: "Partner bank (simulated)", digits: 10 },
     services: [...SERVICES],
     helperServices: [...HELPER_SERVICES],
   },
 };
 
 export const MARKET_IDS: readonly MarketId[] = ["in", "ng"];
+
+/** The limits for a KYC tier; tier 0 (sign-up not finished) may not move money. */
+export function tierOf(id: MarketId, tier: number): Tier | null {
+  const t = getMarket(id).kyc.tiers;
+  return tier >= 2 ? t[2] : tier === 1 ? t[1] : null;
+}
+
+/** A test number: its code shows on screen and signing up again archives the old test person. */
+export function isDemoPhone(id: MarketId, phone: string): boolean {
+  return phone.startsWith(getMarket(id).onboarding.demoPhonePrefix);
+}
 
 export function getMarket(id: MarketId): Market {
   const market = MARKETS[id];

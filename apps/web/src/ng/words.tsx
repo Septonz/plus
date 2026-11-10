@@ -44,3 +44,16 @@ export function when(iso: string): string {
   if (days === 1) return `yesterday ${time}`
   return `${days} days ago`
 }
+
+/**
+ * The tools' refusal texts are written for the voice agent ("She has 4,200 naira", "Ask her to...").
+ * On her own screen they read as "you".
+ */
+export function forScreen(text: string): string {
+  return text
+    .replace(/\bAsk her to\b/g, 'Please')
+    .replace(/\bShe has\b/g, 'You have').replace(/\bshe has\b/g, 'you have')
+    .replace(/\bShe is\b/g, 'You are').replace(/\bshe is\b/g, 'you are')
+    .replace(/\bShe\b/g, 'You').replace(/\bshe\b/g, 'you')
+    .replace(/\bHer\b/g, 'Your').replace(/\bher\b/g, 'your')
+}

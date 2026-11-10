@@ -1,0 +1,43 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "save_payee",
+    "description": "Save someone she paid by phone so she can pay them by name next time.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/save_payee",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "name": {
+            "type": "string",
+            "description": "What she calls them (\"Mama Ngozi\")."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Their phone number."
+          }
+        },
+        "required": [
+          "name",
+          "phone"
+        ]
+      }
+    }
+  }
+}

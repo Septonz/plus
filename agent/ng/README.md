@@ -7,14 +7,16 @@ sends Nigeria users to the Nigeria tools by their `market_id`, so the URLs are t
 
 - System prompt: [`prompt.md`](prompt.md) (Pidgin by default, Yoruba if she speaks it, naira,
   read back then "check your screen and tap Yes", never a PIN out loud, patient with pauses).
-- Tools: [`tools/`](tools), 13 webhook tool bodies (`POST /v1/convai/tools`).
+- Tools: [`tools/`](tools), 22 webhook tool bodies (`POST /v1/convai/tools`).
 
 | Tool | What it does | Body (besides identity) |
 | ---- | ------------ | ----------------------- |
 | `get_user` | Who she is; cash-ins waiting for her Yes first | none |
 | `get_balance` | Wallet balance in naira, free to spend | none |
 | `what_arrived` | Money in, cash-ins first | none |
-| `prepare_pay` | Prepares a payment to a saved payee (Pidgin/English matching) | `payee`, `amount` (naira) |
+| `prepare_pay` | Prepares a payment to a saved payee, or to anyone by phone (Plus user: wallet to wallet; not on Plus: a cash code by text) | `payee` or `phone` (+ `name`), `amount` (naira) |
+| `save_payee` | Saves someone she paid by phone | `name`, `phone` |
+| `bank_details` | Her account number for bank transfers in (Partner bank, simulated) | none |
 | `group_status` | Ajo: who paid, whose turn, read from the contract | none |
 | `prepare_ajo_contribution` | Prepares her ajo part for this round | none |
 | `advance_status` | Limit, fee in naira, or what's left to repay | none |
@@ -24,6 +26,21 @@ sends Nigeria users to the Nigeria tools by their `market_id`, so the URLs are t
 | `confirm_action` | Confirms by voice below the PIN threshold (₦20,000); "sending", then the tick | `action_id` |
 | `reject_action` | Cancels, or says No to a cash-in | `action_id` |
 | `my_record` | Money in and out, cash-ins, entries on Stellar, link | none |
+
+Sign-up (the app passes `onboarding_token` to `voice-session`, which gives the agent a
+`plus_session` for that sign-up only). The PIN, the photo and the NIN are screen-only: the tools
+refuse them from voice.
+
+| Tool | What it does | Body (besides identity) |
+| ---- | ------------ | ----------------------- |
+| `start_onboarding` | Where her sign-up is: the six steps, what's done, what to ask next | none |
+| `onboarding_status` | Same, after she does something on her screen | none |
+| `set_profile` | Her name and language | `name`, `language` |
+| `send_phone_code` | Sends a 6-digit code (shown on screen in the demo) | `phone` |
+| `verify_phone_code` | Checks the code (10 minutes, 5 tries) | `code` |
+| `verify_identity` | Says what to do on the screen next (photo, then NIN); never takes a NIN | none |
+| `set_trusted_contact` | Someone who can help her back in | `name`, `phone` |
+| `create_wallet` | Opens her wallet on Stellar after she says yes | none |
 
 ## Exact steps in ElevenLabs
 
