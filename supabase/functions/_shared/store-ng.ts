@@ -103,6 +103,20 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
         "transactions",
       ) as NgTx[];
     },
+    async contributionTxs(onchainId) {
+      // sync-events stores contract events with decoded topics: ["contributed", <group id>, "<G...>"].
+      const rows = must(
+        await db.from("chain_events").select("tx_hash, topics").eq("type", "contributed").eq("topics->>1", String(onchainId))
+          .order("ledger", { ascending: false }).limit(200),
+        "contributionTxs",
+      ) as { tx_hash: string; topics: unknown[] }[];
+      const latest = new Map<string, string>();
+      for (const r of rows) {
+        const who = String(r.topics[2] ?? "");
+        if (who && !latest.has(who)) latest.set(who, r.tx_hash);
+      }
+      return latest;
+    },
     async myGroup(userId) {
       // Her newest pooled group with an on-chain id (the Bodija Market Ajo for Funmi).
       const links = must(

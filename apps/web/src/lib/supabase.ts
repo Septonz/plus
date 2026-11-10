@@ -6,8 +6,17 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 // Null until VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set in the repo-root .env.local.
 // The helper page keeps its own session, so Selvi's app and Meena's page can be open side by side.
 // The agent page (/agent) has its own too, so Funmi's app and Mama Bisi's page can run together.
+// The staff demo view (/demo) has its own, and the phones it shows (/app?as=funmi, /app?as=selvi)
+// each keep theirs, so switching Nigeria / India on the projector is instant and logs nobody out.
 const path = typeof window !== 'undefined' ? window.location.pathname : ''
-const storageKey = path.startsWith('/helper') ? 'plus-helper-auth' : path.startsWith('/agent') ? 'plus-agent-auth' : 'plus-auth'
+const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
+/** Set on /app?as=funmi or /app?as=selvi: sign in as that demo person automatically. */
+export const DEMO_AS: 'funmi' | 'selvi' | null = path.startsWith('/app') && (params.get('as') === 'funmi' || params.get('as') === 'selvi') ? (params.get('as') as 'funmi' | 'selvi') : null
+const storageKey = path.startsWith('/helper') ? 'plus-helper-auth'
+  : path.startsWith('/agent') ? 'plus-agent-auth'
+  : path.startsWith('/demo') ? 'plus-demo-auth'
+  : DEMO_AS ? `plus-auth-${DEMO_AS}`
+  : 'plus-auth'
 export const supabase: SupabaseClient | null =
   url && anonKey ? createClient(url, anonKey, { auth: { persistSession: true, storageKey } }) : null
 

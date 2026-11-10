@@ -71,6 +71,8 @@ export interface Group {
   amount: number | string;
   period_secs: number;
   next_due: string | null;
+  /** Set when a round was started by hand (pnpm demo:reset): earlier contributions don't count for it. */
+  round_started_at?: string | null;
 }
 
 export interface Member {
@@ -303,7 +305,7 @@ export const myRecord: Tool = async ({ user, store, explorer, contractId }) => {
     if (t.kind === "incoming") received += a;
     else if (t.kind === "saved") saved += -a;
     else if (t.kind === "group_contribution") group += -a;
-    else if (a < 0n) paid += -a;
+    else if (t.kind !== "adjustment" && a < 0n) paid += -a; // demo resets are not spending
   }
   const recordEvents = events.filter((e) => e.type === "attested" || e.type === "contribution_recorded");
   const link = (hash: string) => (explorer ? `${explorer}/tx/${hash}` : null);
@@ -348,13 +350,20 @@ export const myRecord: Tool = async ({ user, store, explorer, contractId }) => {
   };
 };
 
+/** Start of the current round: one period back, or the hand-started round if that is later. */
+export function roundStart(group: Pick<Group, "period_secs" | "round_started_at">, now: Date): string {
+  const byPeriod = now.getTime() - group.period_secs * 1000;
+  const started = group.round_started_at ? new Date(group.round_started_at).getTime() : 0;
+  return new Date(Math.max(byPeriod, started)).toISOString();
+}
+
 export const groupStatus: Tool = async ({ user, store, now = new Date(), explorer }) => {
   const m = user.market_id;
   const mine = await store.myGroup(user.id);
   const local = getMarket(m).groupSavings.localName;
   if (!mine) return { text: `She is not in a ${local} yet.`, in_group: false };
   const { group, members } = mine;
-  const periodStart = new Date(now.getTime() - group.period_secs * 1000).toISOString();
+  const periodStart = roundStart(group, now);
   const [paid, records] = await Promise.all([
     store.lastContribution(user.id, group.id, periodStart),
     group.onchain_id !== null ? store.groupRecords(group.onchain_id) : Promise.resolve([] as ChainEvent[]),
@@ -520,7 +529,7 @@ export const prepareGroupContribution: Tool = async ({ user, store, now = new Da
   const local = getMarket(m).groupSavings.localName;
   if (!mine) return refuse(`She is not in a ${local}.`, "no_group");
   const { group } = mine;
-  const periodStart = new Date(now.getTime() - group.period_secs * 1000).toISOString();
+  const periodStart = roundStart(group, now);
   if (await store.lastContribution(user.id, group.id, periodStart)) {
     return refuse(`This month's ${local} is already paid.`, "already_paid");
   }

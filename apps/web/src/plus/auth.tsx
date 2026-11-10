@@ -20,6 +20,24 @@ export function useSession() {
   return { session, ready }
 }
 
+/** /app?as=funmi (the phone on the staff /demo view): sign in as that demo person by itself. */
+export function AutoSignIn({ email, name }: { email: string; name: string }) {
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!supabase || !DEMO_PASSWORD) {
+      setError('Demo logins are not set up (pnpm seed:db).')
+      return
+    }
+    void supabase.auth.signInWithPassword({ email, password: DEMO_PASSWORD }).then(({ error }) => error && setError(error.message))
+  }, [email])
+  return (
+    <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-cream p-6 text-ink">
+      <img src="/icons/icon-192.png" alt="" className="size-24 rounded-[2rem] shadow-lg" />
+      {error ? <Notice tone="chili">{error}</Notice> : <p className="text-2xl font-bold">Opening {name}'s Plus…</p>}
+    </main>
+  )
+}
+
 /** Several demo people on one page (the /app login): plain labels, first one is the main demo. */
 export function DemoChoice({ people }: { people: { email: string; label: string; note: string }[] }) {
   const [busy, setBusy] = useState(false)

@@ -15,7 +15,7 @@ import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { hasValidAgentSecret } from "../_shared/auth.ts";
 import { callerFromBody } from "../_shared/caller.ts";
-import { bearer, json, kickChainWorker, preflight, readJson } from "../_shared/http.ts";
+import { bearer, json, kickChainWorker, preflight, readJson, health } from "../_shared/http.ts";
 import { hasSessionToken, verifySession } from "../_shared/session.ts";
 import { supabaseStore } from "../_shared/store.ts";
 import { supabaseNgStore } from "../_shared/store-ng.ts";
@@ -119,6 +119,8 @@ function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
 // ---------------------------------------------------------------------------
 
 Deno.serve(async (req) => {
+  const up = health(req, "agent-tools");
+  if (up) return up;
   const pre = preflight(req);
   if (pre) return pre;
   const started = performance.now();

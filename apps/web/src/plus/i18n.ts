@@ -10,6 +10,7 @@ export const T = {
   micConnecting: { ta: 'இணைக்குது…', en: 'Connecting…' },
   micStop: { ta: 'நிறுத்த தொடுங்க', en: 'Tap to stop' },
   micError: { ta: 'குரல் இப்போ வேலை செய்யல', en: 'Voice is not working right now' },
+  micSoon: { ta: 'குரல் சீக்கிரம் வரும்', en: 'Voice coming soon' },
 
   home: { ta: 'முகப்பு', en: 'Home' },
   pay: { ta: 'பணம் அனுப்பு', en: 'Pay' },

@@ -8,10 +8,13 @@
 //      repays the recipient's open advance first, then sends the rest).
 //   4. Cash-outs nobody redeemed: after 7 days she claims the claimable balance back.
 // Then it kicks chain-worker.
+//
+// POST .../scheduler/warm (cron every 5 minutes): pings every demo function's /health so none of
+// them is cold during a demo. Does nothing unless the Supabase secret DEMO_WARM is "true".
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { mayRunJob } from "../_shared/cron.ts";
-import { json, kickChainWorker } from "../_shared/http.ts";
+import { DEMO_FUNCTIONS, health, json, kickChainWorker } from "../_shared/http.ts";
 import { contractReader, refreshBalances } from "../_shared/ng-chain.ts";
 import { payoutSplit } from "../_shared/tools-ng.ts";
 
@@ -143,8 +146,28 @@ async function step<T>(name: string, fn: () => Promise<T>): Promise<T | { error:
   }
 }
 
+/** Ping each demo function's /health in parallel; returns each one's time and whether it was cold. */
+async function warm() {
+  if (Deno.env.get("DEMO_WARM") !== "true") return { ok: true, skipped: "DEMO_WARM is not true" };
+  const base = `${Deno.env.get("SUPABASE_URL")}/functions/v1`;
+  const results = await Promise.all(DEMO_FUNCTIONS.filter((f) => f !== "scheduler").map(async (fn) => {
+    const t = performance.now();
+    try {
+      const r = await fetch(`${base}/${fn}/health`, { signal: AbortSignal.timeout(10_000) });
+      const body = await r.json().catch(() => ({})) as { cold?: boolean };
+      return { fn, status: r.status, cold: body.cold ?? null, ms: Math.round(performance.now() - t) };
+    } catch (e) {
+      return { fn, status: 0, error: e instanceof Error ? e.message : String(e), ms: Math.round(performance.now() - t) };
+    }
+  }));
+  return { ok: true, warmed: results };
+}
+
 Deno.serve(async (req) => {
+  const up = health(req, "scheduler");
+  if (up) return up;
   if (!(await mayRunJob(req, db))) return json({ error: "unauthorized" }, 401);
+  if (new URL(req.url).pathname.endsWith("/warm")) return json(await warm());
   const now = new Date();
   const t0 = performance.now();
   const expired = await step("expire", expireActions);
