@@ -10,7 +10,8 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { cashInAllowance, cashInReadback } from "../_shared/helper.ts";
-import { bearer, json, preflight, readJson, health } from "../_shared/http.ts";
+import { bearer, json, preflight, readJson, health, withCors } from "../_shared/http.ts";
+import { demoOff, demoRateLimited, MONEY_TOOLS } from "../_shared/demo.ts";
 import { formatMoney, type MarketId } from "../_shared/markets.ts";
 import { parseMajorAmount } from "../_shared/payees.ts";
 import { dayStart } from "../_shared/tools.ts";
@@ -72,7 +73,7 @@ const ERRORS: Record<string, [number, string]> = {
   invalid_amount: [400, "Enter an amount."],
 };
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   const up = health(req, "helper-api");
   if (up) return up;
   const pre = preflight(req);
@@ -85,10 +86,16 @@ Deno.serve(async (req) => {
   if (!token) return json({ error: "unauthorized" }, 401);
   const { data: auth, error: authErr } = await db.auth.getUser(token);
   if (authErr || !auth.user) return json({ error: "unauthorized" }, 401);
-  const { data: helper } = await db.from("helpers").select("id, name, role, market_id, daily_limit, active")
+  const { data: helper } = await db.from("helpers").select("id, name, role, market_id, daily_limit, active, demo_login")
     .eq("auth_user_id", auth.user.id).maybeSingle();
   if (!helper || !helper.active) return json({ error: "not_a_helper" }, 403);
   const h = helper as Helper;
+  const off = demoOff(helper);
+  if (off) return off;
+  if (MONEY_TOOLS.has(endpoint)) {
+    const limited = await demoRateLimited(db, helper as { id: string; demo_login: boolean }, endpoint);
+    if (limited) return limited;
+  }
 
   try {
     if (endpoint === "me") return json(await me(h));
@@ -133,4 +140,4 @@ Deno.serve(async (req) => {
     console.error(`helper-api ${endpoint} failed`, err instanceof Error ? err.message : err);
     return json({ error: "internal" }, 500);
   }
-});
+}));
