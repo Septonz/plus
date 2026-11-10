@@ -12,6 +12,81 @@ Selvi sells flowers in Madurai and gets a ₹1,000 monthly state transfer into h
 
 Funmi sells tomatoes at Bodija market in Ibadan and has no bank account. Her Plus wallet on Stellar is her account: she hands cash to Mama Bisi, a Plus cash agent at the market, says Yes in her app, and naira (test NGNT) lands in her wallet. She talks to Plus in Pidgin or Yoruba, pays her supplier, pays her ajo (held by the contract, paid out on time), takes a small advance with one fee said out loud (no interest, no late fees, 10% of each cash-in repays it), and cashes out with a 6-digit code. The demo ends with a switch to India: the same agent for people who do have bank accounts.
 
+## The Nigeria demo
+
+### Funmi's 60-second script
+
+Before every rehearsal: `pnpm demo:reset ng` (and `pnpm demo:reset in`), then `pnpm warm`. Open
+**http://localhost:5173/demo** (staff login) on the projector and **/agent** (Mama Bisi) on a phone.
+
+| Time | On screen | Say |
+| ---- | --------- | --- |
+| 0:00 | /demo, Nigeria. Funmi's phone: ₦26,400 | "Funmi sells tomatoes at Bodija market in Ibadan. She has no bank account. This wallet on Stellar is her account." |
+| 0:08 | Mama Bisi records ₦500 on /agent. Funmi's phone: "Mama Bisi says you gave her ₦500. Is that right?" | "She hands cash to Mama Bisi, a Plus agent. Nothing moves until Funmi herself says yes." |
+| 0:15 | Funmi taps **Yes / Bẹ́ẹ̀ ni**. "Sending on Stellar…", then the tick. The feed shows *Mama Bisi → Funmi* with its seconds | "About five seconds, and anyone can check it: here it is on Stellar Expert." |
+| 0:25 | **Ajo** tab: 4 of 5 ticks, each linking to its transaction. Funmi taps **Pay my part** | "Her ajo's pot is held by a contract nobody can edit or run off with. It pays Amaka tomorrow, on time." |
+| 0:35 | **Advance**: up to ₦20,000, **one fee ₦300**, no interest, no late fees, 10% of each cash-in | "The full cost in naira, before she agrees. If she falls behind, her limit just pauses. Nobody is called." |
+| 0:45 | **Cash out** ₦2,000: a 6-digit code; Mama Bisi redeems it on /agent; the feed shows the claim | "Cash out works the same way: the money waits on Stellar for the agent holding her code." |
+| 0:55 | Switch to **India**: Selvi's phone | "Same agent, same record, for people who do have a bank account." |
+
+### Why the blockchain is essential in Nigeria
+
+- **The wallet is her account.** Funmi has no bank. A Stellar wallet is a real account she can
+  hold, receive into and pay from, with no bank in between; Plus pays her network fees and
+  reserves, so she never needs crypto of her own.
+- **The ajo pot nobody can edit.** Contributions go into the Plus contract, which pays each round
+  to whoever's turn it is, when it's due. No organizer can change the order, skip someone or
+  disappear with the pot, and every member's tick links to the transaction.
+- **A credit record she owns.** Every cash-in, ajo payment and advance repayment is on Stellar
+  under her wallet address (never her name). She can show it to any lender; nobody can quietly
+  rewrite it.
+- **Fees small enough for small money.** Measured on testnet: a payment cost 0.00002 XLM in
+  network fees and an ajo contract call about 0.001 XLM, a tiny fraction of a naira at recent XLM
+  prices, so a ₦500 cash-in or a ₦1,000 ajo payment is worth sending. Plus pays them for her.
+
+### What is simulated
+
+- Testnet only: no real money moves. **NGNT** is a test naira asset issued by Plus; in production
+  it would be naira from a licensed e-money or stablecoin partner.
+- Mama Bisi, Funmi, Iya Tunde, Amaka and the ajo members are fictional; their phone numbers are
+  fake. The cash Mama Bisi "receives" is pretend.
+- NIN checks (`nin_mock`), and in India the partner bank, UPI and KYC (`payout-sim`,
+  `partner_kyc_mock`).
+- Custodial keys sit in Supabase secrets; in production they would be in a KMS/HSM or held by the
+  user (passkeys).
+- Demo logins use a password; production login is phone OTP plus PIN.
+- Ajo rounds are 1 day (real ajo: weekly or monthly); Funmi's 8 weeks of history were run with
+  1-minute rounds.
+- `pnpm demo:reset` tops up or sweeps balances through the test issuer between rehearsals (these
+  show in her record as "demo reset (testnet)").
+- Voice for Nigeria shows "Voice coming soon" until `ELEVENLABS_AGENT_ID_NG` is set
+  (`agent/ng/README.md`).
+
+### Measured (testnet, 2026-11-10)
+
+| What | Time |
+| ---- | ---- |
+| Her Yes → tick (confirmed on-chain), `pnpm e2e:ng`, 8 transactions | median 4.8 s, max 7.6 s (a busier testnet hour: median 6.5 s) |
+| Contract call, Yes → confirmed, before / after the speed work | median 10.6 s → 4.6 s |
+| First confirm of the day: cold function / after `pnpm warm` | 7.5 s → 0.8 s |
+| Edge Function `/health`: cold / warm | 0.5–1.2 s / 0.06–0.1 s |
+| Balance read from Horizon (Edge Function) | about 0.15 s |
+
+### Demo tools
+
+- `pnpm demo:reset ng`: Funmi back to the starting state: ₦26,400, no advance (the partner settles
+  one if open), an ajo round she hasn't paid (a new round with the same members if she has), no
+  pending actions or unused cash-out codes, Mama Bisi's float ₦200,000. `pnpm demo:reset in`:
+  Selvi at ₹2,350 to spend and ₹1,415 saved, no advance, seettu unpaid this round. Never deletes
+  anything; it only adds transactions. Prints the state the app shows.
+- `pnpm warm`: wakes every Edge Function (`GET /functions/v1/<fn>/health`). To keep them warm for
+  a whole session, set the Supabase secret `DEMO_WARM=true`: the `plus-warm` cron then pings them
+  every 5 minutes (remove it afterwards to stop).
+- **/demo** (staff login from `pnpm staff:create`): the projector view. Left, the app in a phone
+  frame signed in as Funmi (`/app?as=funmi`); right, every Stellar transaction behind it (Funmi,
+  Mama Bisi, the ajo pot, the advance pool) with the seconds from her Yes and a Stellar Expert
+  link; top, the Nigeria / India switch.
+
 ## Market packs
 
 Plus is one shared core plus a **market pack** per country (`packages/markets`). A pack sets the currency, languages, custody model, payment rail, cash-out method, group-savings style, advance limits and ID check.
@@ -151,5 +226,6 @@ This is a Testnet prototype. Where it cuts corners, it does so in ways that do n
 
 ### Secrets (Supabase secrets, never committed)
 
-`PLUS_CONTRACT_ID`, `NGNT_SAC_ID`, `USDC_SAC_ID`, `PARTNER_SECRET` (pays fees, sponsors reserves), the `STELLAR_SECRET_*` custodial keys named by `users.secret_name` (Nigeria: `STELLAR_SECRET_FUNMI`, `STELLAR_SECRET_AGENT_NG`), `CASHOUT_CODE_SECRET` (cash-out code hashes), `AGENT_SHARED_SECRET`, `USER_REF_SECRET`, `PIN_PEPPER`, `VOICE_SESSION_SECRET`, `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`, `ELEVENLABS_AGENT_ID_NG`. Names are in `.env.example`; values live only in Supabase secrets and Vault.
+`PLUS_CONTRACT_ID`, `NGNT_SAC_ID`, `USDC_SAC_ID`, `PARTNER_SECRET` (pays fees, sponsors reserves), the `STELLAR_SECRET_*` custodial keys named by `users.secret_name` (Nigeria: `STELLAR_SECRET_FUNMI`, `STELLAR_SECRET_AGENT_NG`), `CASHOUT_CODE_SECRET` (cash-out code hashes), `AGENT_SHARED_SECRET`, `USER_REF_SECRET`, `PIN_PEPPER`, `VOICE_SESSION_SECRET`, `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`, `ELEVENLABS_AGENT_ID_NG`, and optionally `DEMO_WARM` (`true` keeps the functions warm). Names are in `.env.example`; values live only in Supabase secrets and Vault.
+- `pnpm demo:reset ng|in` and `pnpm warm`: see "The Nigeria demo" above.
 - `pnpm bindings`: regenerates `packages/plus-client` from the deployed contract and re-applies the `@plus/client` name and the TypeScript 7 `rootDir` fix.
