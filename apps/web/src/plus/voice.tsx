@@ -3,6 +3,9 @@
 // starts the conversation with plus_session as a dynamic variable. Every tool call the agent
 // makes carries plus_session back to agent-tools, so the agent can only act for her.
 // The PIN never goes through here: it is typed on the confirm screen.
+// During sign-up there is no login yet: the screen passes { onboarding_token } as `body`, and
+// voice-session gives the agent a plus_session for that sign-up only (it can fill in her name,
+// language and phone; never the PIN, the NIN or the photo).
 // Before showing the mic it asks voice-session/status whether her market's agent is set up (for
 // Nigeria: ELEVENLABS_AGENT_ID_NG). If not, it shows "Voice coming soon" instead of failing; as soon
 // as the secret is set, the same button works, with no code change.
@@ -15,17 +18,22 @@ type Session = { signed_url?: string; plus_session?: string; error?: string }
 
 export type MicWords = { mic: string; micListening: string; micSpeaking: string; micConnecting: string; micStop: string; micError: string; micSoon: string }
 
-// One status check per page load, shared by every mic button on the page.
-let statusOnce: Promise<boolean | null> | null = null
-function voiceConfigured(): Promise<boolean | null> {
-  statusOnce ??= call<{ configured?: boolean }>('voice-session/status')
-    .then((r) => (typeof r.configured === 'boolean' ? r.configured : null))
-    .catch(() => null) // unknown: let her try; a failure then shows micError
-  return statusOnce
+// One status check per page load (per login or sign-up), shared by every mic button on the page.
+const statusOnce = new Map<string, Promise<boolean | null>>()
+function voiceConfigured(body?: Record<string, unknown>): Promise<boolean | null> {
+  const key = JSON.stringify(body ?? {})
+  let p = statusOnce.get(key)
+  if (!p) {
+    p = call<{ configured?: boolean }>('voice-session/status', body)
+      .then((r) => (typeof r.configured === 'boolean' ? r.configured : null))
+      .catch(() => null) // unknown: let her try; a failure then shows micError
+    statusOnce.set(key, p)
+  }
+  return p
 }
 
 /** `words` overrides the labels (Nigeria passes English/Pidgin; India uses the Tamil labels). */
-export function VoiceButton({ size = 'hero', words }: { size?: 'hero' | 'dock'; words?: MicWords }) {
+export function VoiceButton({ size = 'hero', words, body }: { size?: 'hero' | 'dock' | 'inline'; words?: MicWords; body?: Record<string, unknown> }) {
   const tt = useT()
   const t = (k: keyof MicWords) => words?.[k] ?? tt(k)
   const [error, setError] = useState<string | null>(null)
@@ -33,11 +41,11 @@ export function VoiceButton({ size = 'hero', words }: { size?: 'hero' | 'dock'; 
   const [configured, setConfigured] = useState<boolean | null>(null)
   useEffect(() => {
     let live = true
-    void voiceConfigured().then((c) => live && setConfigured(c))
+    void voiceConfigured(body).then((c) => live && setConfigured(c))
     return () => {
       live = false
     }
-  }, [])
+  }, [body])
   const conversation = useConversation({
     onError: (message: unknown) => {
       console.error('voice error', message)
@@ -58,7 +66,7 @@ export function VoiceButton({ size = 'hero', words }: { size?: 'hero' | 'dock'; 
       // Ask for the microphone first so the permission prompt has a clear cause.
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       stream.getTracks().forEach((tr) => tr.stop())
-      const s = await call<Session>('voice-session')
+      const s = await call<Session>('voice-session', body)
       if (s.error === 'voice_not_configured') {
         setConfigured(false)
         return
@@ -78,6 +86,29 @@ export function VoiceButton({ size = 'hero', words }: { size?: 'hero' | 'dock'; 
   }
 
   const hero = size === 'hero'
+  if (size === 'inline') {
+    // A row (sign-up): the mic beside a short line, so the steps keep the screen.
+    const label = configured === false ? t('micSoon') : busy ? t('micConnecting') : live ? (conversation.isSpeaking ? t('micSpeaking') : t('micListening')) : t('mic')
+    return (
+      <div className="flex items-center gap-3">
+        <button
+          onClick={toggle}
+          disabled={configured === false}
+          aria-label={live ? `${label}. ${t('micStop')}` : label}
+          aria-pressed={live}
+          className={`grid size-14 shrink-0 place-items-center rounded-full text-3xl shadow-lift transition active:scale-95 disabled:bg-sand disabled:text-ink-soft disabled:shadow-none ${live ? 'mic-live bg-saffron text-ink' : 'bg-brick text-cream'}`}
+        >
+          <Icon name={live ? 'stop' : 'mic'} />
+        </button>
+        <span className="min-w-0 text-lg font-bold leading-tight">
+          <span className={configured === false ? 'text-ink-soft' : live ? 'text-saffron-deep' : 'text-brick'}>{label}</span>
+          {error && <span className="block text-base font-semibold text-chili">{error}</span>}
+        </span>
+      </div>
+    )
+  }
+  // Not set up: Home says "Voice coming soon"; the small docked mic on other screens stays out of the way.
+  if (configured === false && size === 'dock') return null
   if (configured === false) {
     return (
       <div className="flex flex-col items-center gap-2" role="status">

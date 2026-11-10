@@ -1,9 +1,11 @@
 // Shared UI: bilingual labels, big buttons, icons, keypad and PIN pad.
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 import { T, type Key, type Lang } from './i18n'
 
-export const LangContext = createContext<{ lang: Lang; setLang: (l: Lang) => void }>({ lang: 'ta', setLang: () => {} })
+export const LangContext = createContext<{ lang: Lang; setLang: (l: Lang) => void }>({ lang: 'en', setLang: () => {} })
 export const useLang = () => useContext(LangContext)
+/** Nigeria screens, the agent page and the sign-up are English first (Yoruba under it from ng/words). */
+export const ENGLISH = { lang: 'en' as Lang, setLang: () => {} }
 
 /** Tamil big, English underneath (Tamil mode); English only (English mode). */
 export function L({ k, className = '', sub = 'text-ink-soft' }: { k: Key; className?: string; sub?: string }) {
@@ -24,7 +26,7 @@ export function useT() {
 }
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <section className={`rounded-3xl bg-white p-5 shadow-[0_2px_0_0_var(--color-sand-deep)] ${className}`}>{children}</section>
+  return <section className={`rounded-card bg-white p-5 shadow-card ${className}`}>{children}</section>
 }
 
 export function BigButton({
@@ -34,6 +36,7 @@ export function BigButton({
   disabled,
   className = '',
   type = 'button',
+  loading = false,
 }: {
   children: ReactNode
   onClick?: () => void
@@ -41,21 +44,25 @@ export function BigButton({
   disabled?: boolean
   className?: string
   type?: 'button' | 'submit'
+  /** Shows a spinner and blocks taps (the action is on its way). */
+  loading?: boolean
 }) {
   const tones = {
     brick: 'bg-brick text-cream active:bg-brick-deep',
     leaf: 'bg-leaf text-white active:brightness-90',
     chili: 'bg-chili text-white active:brightness-90',
     sand: 'bg-sand text-ink active:bg-sand-deep',
-    white: 'bg-white text-ink border-2 border-sand-deep active:bg-sand',
+    white: 'bg-white text-ink border-2 border-line active:bg-sand',
   }
   return (
     <button
       type={type}
       onClick={onClick}
-      disabled={disabled}
-      className={`min-h-16 rounded-2xl px-5 py-3 text-xl font-bold transition disabled:opacity-40 ${tones[tone]} ${className}`}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      className={`inline-flex min-h-16 items-center justify-center gap-2 rounded-control px-5 py-3 text-xl font-bold transition active:scale-[0.99] disabled:opacity-45 ${tones[tone]} ${className}`}
     >
+      {loading ? <Spinner /> : null}
       {children}
     </button>
   )
@@ -66,7 +73,7 @@ export function ScreenTitle({ k, onBack }: { k: Key; onBack?: () => void }) {
   return (
     <header className="flex items-center gap-3 pb-4">
       {onBack && (
-        <button onClick={onBack} aria-label={t('back')} className="grid size-12 place-items-center rounded-full bg-sand text-2xl font-bold">
+        <button onClick={onBack} aria-label={t('back')} className="grid size-12 shrink-0 place-items-center rounded-full bg-sand text-2xl font-bold active:bg-sand-deep">
           <Icon name="back" />
         </button>
       )}
@@ -77,9 +84,169 @@ export function ScreenTitle({ k, onBack }: { k: Key; onBack?: () => void }) {
   )
 }
 
-export function Notice({ tone = 'sand', children }: { tone?: 'sand' | 'leaf' | 'chili'; children: ReactNode }) {
-  const tones = { sand: 'bg-sand text-ink', leaf: 'bg-leaf-soft text-leaf', chili: 'bg-chili-soft text-chili' }
-  return <p className={`rounded-2xl px-4 py-3 text-lg font-semibold ${tones[tone]}`}>{children}</p>
+export function Notice({ tone = 'sand', children }: { tone?: 'sand' | 'leaf' | 'chili' | 'sky'; children: ReactNode }) {
+  const tones = { sand: 'bg-sand text-ink', leaf: 'bg-leaf-soft text-leaf-deep', chili: 'bg-chili-soft text-chili', sky: 'bg-sky-soft text-sky' }
+  const icon = { sand: 'info', leaf: 'check', chili: 'alert', sky: 'info' }[tone]
+  return (
+    <p role={tone === 'chili' ? 'alert' : undefined} className={`flex gap-3 rounded-control px-4 py-3 text-lg font-semibold ${tones[tone]}`}>
+      <Icon name={icon} className="mt-0.5 text-2xl" />
+      <span className="min-w-0 flex-1">{children}</span>
+    </p>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// States: loading, empty, error, success
+// ---------------------------------------------------------------------------
+
+export function Spinner({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={`spin inline-block size-[1.1em] shrink-0 ${className}`} fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round">
+      <path d="M12 3a9 9 0 1 0 9 9" />
+    </svg>
+  )
+}
+
+/** A grey shape where content is about to appear. */
+export function Skeleton({ className = '' }: { className?: string }) {
+  return <span aria-hidden="true" className={`skeleton block rounded-control ${className}`} />
+}
+
+/** Cards of placeholder rows, announced once to screen readers. */
+export function LoadingList({ rows = 3, label = 'Loading' }: { rows?: number; label?: string }) {
+  return (
+    <div className="space-y-3" role="status" aria-label={label}>
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex items-center gap-3 rounded-card bg-white p-4 shadow-card">
+          <Skeleton className="size-12 rounded-full!" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-5 w-2/3" />
+            <Skeleton className="h-4 w-1/3" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function EmptyState({ icon = 'record', title, children, action }: { icon?: string; title: ReactNode; children?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-card border-2 border-dashed border-line px-5 py-8 text-center">
+      <span className="grid size-16 place-items-center rounded-full bg-sand text-3xl text-brick">
+        <Icon name={icon} />
+      </span>
+      <p className="text-xl font-extrabold">{title}</p>
+      {children && <p className="text-lg text-ink-soft">{children}</p>}
+      {action}
+    </div>
+  )
+}
+
+export function ErrorState({ text, onRetry }: { text: string; onRetry?: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-card bg-chili-soft px-5 py-6 text-center text-chili" role="alert">
+      <Icon name="alert" className="text-4xl" />
+      <p className="text-lg font-semibold">{text}</p>
+      {onRetry && (
+        <button onClick={onRetry} className="inline-flex min-h-12 items-center gap-2 rounded-full bg-white px-5 text-lg font-bold text-chili">
+          <Icon name="refresh" /> Try again
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** The success tick: the circle pops in and the check draws itself. */
+export function SuccessTick({ size = 'lg' }: { size?: 'md' | 'lg' }) {
+  const box = size === 'lg' ? 'size-24' : 'size-16'
+  return (
+    <span className={`relative mx-auto grid ${box} place-items-center`} aria-hidden="true">
+      <span className="tick-ring absolute inset-0 rounded-full bg-leaf/40" />
+      <svg viewBox="0 0 48 48" className={`tick-pop relative ${box}`}>
+        <circle cx="24" cy="24" r="23" fill="var(--color-leaf)" />
+        <path className="tick-draw" d="M14 24.5l7 7L34.5 18" fill="none" stroke="white" strokeWidth={4.5} strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Inputs
+// ---------------------------------------------------------------------------
+
+export function TextField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  hint,
+  inputMode,
+  autoComplete = 'off',
+  autoFocus,
+  maxLength,
+}: {
+  label: ReactNode
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+  hint?: ReactNode
+  inputMode?: 'text' | 'tel' | 'numeric'
+  autoComplete?: string
+  autoFocus?: boolean
+  maxLength?: number
+}) {
+  return (
+    <label className="block">
+      <span className="text-xl font-bold">{label}</span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        inputMode={inputMode}
+        autoComplete={autoComplete}
+        autoFocus={autoFocus}
+        maxLength={maxLength}
+        className="mt-2 block min-h-16 w-full rounded-control border-2 border-line bg-white px-4 text-2xl font-bold text-ink focus:border-brick"
+      />
+      {hint && <span className="mt-1 block text-base text-ink-soft">{hint}</span>}
+    </label>
+  )
+}
+
+/** Copies text and says so for two seconds. */
+export function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setCopied(false)
+    }
+  }
+  return (
+    <button
+      onClick={() => void copy()}
+      aria-live="polite"
+      className={`inline-flex min-h-12 items-center gap-2 rounded-full px-5 text-lg font-bold ${copied ? 'bg-leaf text-white' : 'bg-brick text-cream active:bg-brick-deep'}`}
+    >
+      <Icon name={copied ? 'check' : 'copy'} /> {copied ? 'Copied' : label}
+    </button>
+  )
+}
+
+/** A text message drawn on screen (the demo shows SMS here instead of sending it). */
+export function SmsBubble({ to, text, note = 'Text message (simulated on this demo)' }: { to: string; text: string; note?: string }) {
+  return (
+    <figure className="sheet-in rounded-card border-2 border-sky/20 bg-sky-soft p-4">
+      <figcaption className="flex items-center gap-2 text-base font-bold text-sky">
+        <Icon name="sms" className="text-xl" /> {note}
+      </figcaption>
+      <p className="mt-1 text-base text-ink-soft">To {to}</p>
+      <blockquote className="mt-2 rounded-2xl rounded-tl-sm bg-white px-4 py-3 text-lg font-semibold text-ink shadow-card">{text}</blockquote>
+    </figure>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -111,6 +278,18 @@ const PATHS: Record<string, string> = {
   lock: 'M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4',
   link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
   backspace: 'M21 5H9l-6 7 6 7h12zM12 9l6 6m0-6-6 6',
+  copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
+  phone: 'M7 2h10v20H7zM11 18h2',
+  camera: 'M4 8h3l2-3h6l2 3h3v12H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
+  id: 'M3 5h18v14H3zM8 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm-3 4c.5-1.6 1.6-2.5 3-2.5s2.5.9 3 2.5M14 9h4m-4 3h4m-4 3h3',
+  shield: 'M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6zM8.5 12l2.5 2.5 4.5-5',
+  sms: 'M4 5h16v11H9l-5 4zM8 9h8m-8 3h5',
+  wallet: 'M3 7h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 7l3-3h11v3M16 13.5h.01',
+  refresh: 'M20 11a8 8 0 0 0-14.8-4M4 4v4h4M4 13a8 8 0 0 0 14.8 4M20 20v-4h-4',
+  userPlus: 'M10 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 9c0-4 3-6 7-6 1.4 0 2.6.2 3.6.7M18 14v6m-3-3h6',
+  alert: 'M12 3l10 18H2zM12 10v4m0 3v.01',
+  info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-11v6m0-9v.01',
+  star4: 'M12 3l2 7 7 2-7 2-2 7-2-7-7-2 7-2z',
 }
 
 export function Icon({ name, className = '' }: { name: keyof typeof PATHS | string; className?: string }) {
@@ -125,7 +304,7 @@ export function Icon({ name, className = '' }: { name: keyof typeof PATHS | stri
 export function StellarMark({ url, pending = false }: { url?: string | null; pending?: boolean }) {
   const t = useT()
   if (pending) {
-    return <span className="inline-flex items-center gap-1 rounded-full bg-sand px-3 py-1 text-base font-semibold text-ink-soft">⏳ {t('waitingForStellar')}</span>
+    return <span className="inline-flex items-center gap-2 rounded-full bg-sand px-3 py-1 text-base font-semibold text-ink-soft"><Spinner /> {t('waitingForStellar')}</span>
   }
   const body = (
     <span className="inline-flex items-center gap-1 rounded-full bg-leaf-soft px-3 py-1 text-base font-semibold text-leaf">
@@ -156,7 +335,7 @@ export function Keypad({ onKey }: { onKey: (k: string) => void }) {
           key={k}
           onClick={() => onKey(k)}
           aria-label={k === '⌫' ? 'backspace' : k === 'C' ? t('clear') : k}
-          className="h-16 rounded-2xl bg-white text-3xl font-bold text-ink shadow-[0_2px_0_0_var(--color-sand-deep)] active:bg-sand"
+          className="grid h-16 place-items-center rounded-control bg-white text-3xl font-bold text-ink shadow-card active:bg-sand"
         >
           {k === '⌫' ? <Icon name="backspace" /> : k === 'C' ? <span className="text-xl">{t('clear')}</span> : k}
         </button>

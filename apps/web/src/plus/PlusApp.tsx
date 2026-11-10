@@ -3,18 +3,26 @@
 import { ConversationProvider } from '@elevenlabs/react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DEMO_AS, DEMO_FUNMI_EMAIL, DEMO_SELVI_EMAIL, supabase } from '../lib/supabase'
-import { AutoSignIn, DemoChoice, useSession } from './auth'
+import { AutoSignIn, useSession } from './auth'
 import { ConfirmSheet } from './confirm'
 import { tool } from './api'
 import { usePlusData, type PendingAction } from './data'
 import type { Lang } from './i18n'
 import { AddMoney, Advance, Home, Pay, Record, Seettu, Settings, type Screen } from './screens'
-import { Icon, L, LangContext, Notice, useLang as useLangContext } from './ui'
+import { Icon, L, LangContext, Notice, Spinner, useLang as useLangContext } from './ui'
 import { VoiceButton } from './voice'
 
 const LANG_KEY = 'plus-lang'
 // Nigeria (the launch market) has its own screens, chosen from the user's market pack.
 const NgApp = lazy(() => import('../ng/NgApp.tsx'))
+// The front door when nobody is signed in: open an account, sign in with phone + PIN, or a demo person.
+const Welcome = lazy(() => import('../onboard/Welcome.tsx'))
+
+const Loading = () => (
+  <div className="grid min-h-dvh place-items-center text-4xl text-brick" role="status" aria-label="Loading">
+    <Spinner />
+  </div>
+)
 
 function readLang(): Lang {
   try {
@@ -49,12 +57,9 @@ export default function PlusApp() {
         ) : DEMO_AS ? (
           <AutoSignIn email={DEMO_AS === 'funmi' ? DEMO_FUNMI_EMAIL : DEMO_SELVI_EMAIL} name={DEMO_AS === 'funmi' ? 'Funmi' : 'Selvi'} />
         ) : (
-          <DemoChoice
-            people={[
-              { email: DEMO_FUNMI_EMAIL, label: 'Continue as Funmi', note: 'Nigeria · tomato seller, Ibadan · wallet on Stellar' },
-              { email: DEMO_SELVI_EMAIL, label: 'Continue as Selvi', note: 'India · flower seller, Madurai · bank account' },
-            ]}
-          />
+          <Suspense fallback={<Loading />}>
+            <Welcome />
+          </Suspense>
         )}
       </div>
     </LangContext.Provider>
@@ -86,11 +91,18 @@ function Signed({ authUserId }: { authUserId: string }) {
     await supabase?.auth.signOut()
   }
 
-  if (data.loading) return <p className="py-20 text-center text-2xl">…</p>
-  if (data.error === 'no_plus_account') return <div className="p-6"><Notice tone="chili">This login is not linked to a Plus account. Run pnpm seed:db.</Notice></div>
+  if (data.loading) return <Loading />
+  if (data.error === 'no_plus_account') {
+    return (
+      <div className="mx-auto max-w-md space-y-4 p-6">
+        <Notice tone="chili">This login is not linked to a Plus account.</Notice>
+        <button onClick={() => void signOut()} className="min-h-12 w-full rounded-control border-2 border-line bg-white text-lg font-bold">Sign out</button>
+      </div>
+    )
+  }
   if (data.me?.market_id === 'ng') {
     return (
-      <Suspense fallback={<p className="py-20 text-center text-2xl">…</p>}>
+      <Suspense fallback={<Loading />}>
         <NgApp data={data} />
       </Suspense>
     )
@@ -101,8 +113,7 @@ function Signed({ authUserId }: { authUserId: string }) {
     ['pay', 'pay', 'pay'],
     ['seettu', 'group', 'seettu'],
     ['record', 'record', 'record'],
-    ['settings', 'settings', 'settings'],
-  ]
+  ] // Settings has its tile on Home: four items keep the Tamil labels readable at 16px
 
   return (
     <>
@@ -114,7 +125,7 @@ function Signed({ authUserId }: { authUserId: string }) {
               setLang(next)
               void tool('update_settings', { language: next }).catch(() => null)
             }}
-            className="min-h-11 rounded-full border-2 border-sand-deep bg-white px-4 text-base font-bold"
+            className="min-h-12 rounded-full border-2 border-line bg-white px-4 text-base font-bold active:bg-sand"
             aria-label="Language / மொழி"
           >
             {lang === 'ta' ? 'English' : 'தமிழ்'}
@@ -138,13 +149,13 @@ function Signed({ authUserId }: { authUserId: string }) {
       )}
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-sand-deep bg-white pb-[env(safe-area-inset-bottom)]">
-        <ul className="mx-auto grid max-w-md grid-cols-5">
+        <ul className="mx-auto grid max-w-md grid-cols-4">
           {nav.map(([s, icon, k]) => (
             <li key={s}>
               <button
                 onClick={() => go(s)}
                 aria-current={screen === s ? 'page' : undefined}
-                className={`flex min-h-20 w-full flex-col items-center justify-center gap-1 px-1 text-base font-bold ${screen === s ? 'text-brick' : 'text-ink-soft'}`}
+                className={`flex min-h-20 w-full flex-col items-center justify-start gap-1 px-1 pt-3 text-base font-bold ${screen === s ? 'text-brick' : 'text-ink-soft'}`}
               >
                 <Icon name={icon} className="text-2xl" />
                 <span className="text-center leading-tight">{lang === 'ta' ? <L k={k} sub="hidden" /> : <L k={k} />}</span>
