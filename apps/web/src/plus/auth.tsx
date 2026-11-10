@@ -20,6 +20,40 @@ export function useSession() {
   return { session, ready }
 }
 
+/** Several demo people on one page (the /app login): plain labels, first one is the main demo. */
+export function DemoChoice({ people }: { people: { email: string; label: string; note: string }[] }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function signIn(email: string) {
+    if (!supabase) return setError('Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the repo-root .env.local.')
+    if (!DEMO_PASSWORD) return setError('Run `pnpm seed:db` to create the demo logins (it writes VITE_DEMO_LOGIN_PASSWORD).')
+    setBusy(true)
+    setError(null)
+    const { error } = await supabase.auth.signInWithPassword({ email, password: DEMO_PASSWORD })
+    setBusy(false)
+    if (error) setError(error.message)
+  }
+  return (
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 bg-cream px-6 py-10 text-ink">
+      <div className="text-center">
+        <img src="/icons/icon-192.png" alt="" className="mx-auto size-28 rounded-[2rem] shadow-lg" />
+        <h1 className="mt-5 text-5xl font-extrabold text-brick">Plus</h1>
+        <p className="mt-3 text-2xl font-bold">Your money, by voice</p>
+      </div>
+      {people.map((p, i) => (
+        <BigButton key={p.email} tone={i === 0 ? 'brick' : 'white'} className="min-h-20 w-full text-2xl" onClick={() => void signIn(p.email)} disabled={busy}>
+          <span className="flex flex-col leading-tight">
+            <span>{p.label}</span>
+            <span className={`text-base font-normal ${i === 0 ? 'text-cream/80' : 'text-ink-soft'}`}>{p.note}</span>
+          </span>
+        </BigButton>
+      ))}
+      {error && <Notice tone="chili">{error}</Notice>}
+      <p className="text-center text-base text-ink-soft">Demo only. In production: phone OTP plus PIN.</p>
+    </main>
+  )
+}
+
 export function DemoLogin({ email, label }: { email: string; label: Key }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)

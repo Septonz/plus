@@ -10,8 +10,12 @@ import { Icon, useT } from './ui'
 
 type Session = { signed_url?: string; plus_session?: string; error?: string }
 
-export function VoiceButton({ size = 'hero' }: { size?: 'hero' | 'dock' }) {
-  const t = useT()
+export type MicWords = { mic: string; micListening: string; micSpeaking: string; micConnecting: string; micStop: string; micError: string }
+
+/** `words` overrides the labels (Nigeria passes English/Pidgin; India uses the Tamil labels). */
+export function VoiceButton({ size = 'hero', words }: { size?: 'hero' | 'dock'; words?: MicWords }) {
+  const tt = useT()
+  const t = (k: keyof MicWords) => words?.[k] ?? tt(k)
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const conversation = useConversation({

@@ -258,8 +258,7 @@ export const ngMyRecord: NgTool = async ({ user, store, explorer }) => {
   }
   const onChain = txs.filter((t) => t.chain_tx_hash);
   const waiting = txs.filter((t) => t.status === "pending").length;
-  const weeks = new Set(txs.filter((t) => t.kind === "incoming" && t.source === "cash" && t.status === "completed")
-    .map((t) => Math.floor(new Date(t.created_at).getTime() / (7 * 86_400_000)))).size;
+  const cashIns = txs.filter((t) => t.kind === "incoming" && t.source === "cash" && t.status === "completed").length;
   const link = (h: string) => (explorer ? `${explorer}/tx/${h}` : null);
   return {
     text: `Her record on Stellar: ${say(received)} came in, ${say(paid)} paid, ${say(ajo)} into her ajo, ${say(cashedOut)} cashed out. ` +
@@ -271,7 +270,7 @@ export const ngMyRecord: NgTool = async ({ user, store, explorer }) => {
       ajo_text: show(ajo),
       cashed_out_text: show(cashedOut),
     },
-    weeks_with_cash_in: weeks,
+    cash_ins: cashIns,
     confirmed_on_stellar: onChain.length,
     waiting_for_stellar: waiting,
     recent: txs.slice(0, 40).map((t) => ({

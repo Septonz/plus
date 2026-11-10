@@ -1,9 +1,9 @@
 // The Plus app (/app): Selvi's home. A big mic on every screen, a bottom bar, and the confirm
 // screen that opens by itself when a pending action she started arrives through Realtime.
 import { ConversationProvider } from '@elevenlabs/react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { DEMO_SELVI_EMAIL, supabase } from '../lib/supabase'
-import { DemoLogin, useSession } from './auth'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { DEMO_FUNMI_EMAIL, DEMO_SELVI_EMAIL, supabase } from '../lib/supabase'
+import { DemoChoice, useSession } from './auth'
 import { ConfirmSheet } from './confirm'
 import { tool } from './api'
 import { usePlusData, type PendingAction } from './data'
@@ -13,6 +13,8 @@ import { Icon, L, LangContext, Notice, useLang as useLangContext } from './ui'
 import { VoiceButton } from './voice'
 
 const LANG_KEY = 'plus-lang'
+// Nigeria (the launch market) has its own screens, chosen from the user's market pack.
+const NgApp = lazy(() => import('../ng/NgApp.tsx'))
 
 function readLang(): Lang {
   try {
@@ -45,7 +47,12 @@ export default function PlusApp() {
             <Signed authUserId={session.user.id} />
           </ConversationProvider>
         ) : (
-          <DemoLogin email={DEMO_SELVI_EMAIL} label="continueAsSelvi" />
+          <DemoChoice
+            people={[
+              { email: DEMO_FUNMI_EMAIL, label: 'Continue as Funmi', note: 'Nigeria · tomato seller, Ibadan · wallet on Stellar' },
+              { email: DEMO_SELVI_EMAIL, label: 'Continue as Selvi', note: 'India · flower seller, Madurai · bank account' },
+            ]}
+          />
         )}
       </div>
     </LangContext.Provider>
@@ -79,6 +86,13 @@ function Signed({ authUserId }: { authUserId: string }) {
 
   if (data.loading) return <p className="py-20 text-center text-2xl">…</p>
   if (data.error === 'no_plus_account') return <div className="p-6"><Notice tone="chili">This login is not linked to a Plus account. Run pnpm seed:db.</Notice></div>
+  if (data.me?.market_id === 'ng') {
+    return (
+      <Suspense fallback={<p className="py-20 text-center text-2xl">…</p>}>
+        <NgApp data={data} />
+      </Suspense>
+    )
+  }
 
   const nav: [Screen, string, 'home' | 'pay' | 'seettu' | 'record' | 'settings'][] = [
     ['home', 'home', 'home'],

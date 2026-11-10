@@ -21,6 +21,7 @@ export type Tx = {
   amount: number
   created_at: string
   chain_tx_hash: string | null
+  status?: 'pending' | 'completed' | 'failed'
 }
 export type PendingAction = {
   id: string
@@ -88,7 +89,7 @@ export function usePlusData(authUserId: string | null): PlusData {
       supabase.from('sim_bank_accounts').select('balance_paise, savings_paise, bank_name').eq('user_id', uid).maybeSingle(),
       supabase
         .from('transactions')
-        .select('id, kind, source, amount, created_at, chain_tx_hash')
+        .select('id, kind, source, amount, created_at, chain_tx_hash, status')
         .eq('user_id', uid)
         .order('created_at', { ascending: false })
         .limit(40),
@@ -128,7 +129,8 @@ export function usePlusData(authUserId: string | null): PlusData {
       }, 150)
     }
     const channel = client.channel(`plus-${userId}`)
-    for (const table of ['pending_actions', 'transactions', 'cash_events']) {
+    // wallet_balances and cash_out_codes: Nigeria (her wallet on Stellar); nothing arrives for India.
+    for (const table of ['pending_actions', 'transactions', 'cash_events', 'wallet_balances', 'cash_out_codes']) {
       channel.on('postgres_changes', { event: '*', schema: 'public', table, filter: `user_id=eq.${userId}` }, onChange)
     }
     channel.subscribe()
