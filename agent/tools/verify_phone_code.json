@@ -1,0 +1,38 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "verify_phone_code",
+    "description": "Check the 6-digit code she received. She can say it or type it on her screen. Codes expire after 10 minutes; after 5 wrong tries she needs a new code.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/verify_phone_code",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "code": {
+            "type": "string",
+            "description": "The 6 numbers she read out."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      }
+    }
+  }
+}

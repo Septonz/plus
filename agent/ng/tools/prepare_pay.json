@@ -2,7 +2,7 @@
   "tool_config": {
     "type": "webhook",
     "name": "prepare_pay",
-    "description": "Prepare a payment to one of her saved payees. Pass the payee exactly as she said it (for example \"Iya Tunde\", \"the tomato woman\"). If the result has options, ask her which one. Never ask for bank details. Nothing moves until she taps Yes or types her PIN on her screen.",
+    "description": "Prepare a payment: to one of her saved people by name, or to anyone by phone number. If they are on Plus it goes to their wallet; if not, they get a code by text to collect cash at any Plus agent. If the result has options, ask her which one. Nothing moves until she taps Yes (or types her PIN) on her screen.",
     "response_timeout_secs": 10,
     "api_schema": {
       "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/prepare_pay",
@@ -26,7 +26,15 @@
           },
           "payee": {
             "type": "string",
-            "description": "Who she wants to pay, in her own words."
+            "description": "Who she wants to pay, in her own words (a saved name)."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Their phone number, when she pays someone by number."
+          },
+          "name": {
+            "type": "string",
+            "description": "Their name, when she pays a new phone number."
           },
           "amount": {
             "type": "number",
@@ -34,7 +42,6 @@
           }
         },
         "required": [
-          "payee",
           "amount"
         ]
       }

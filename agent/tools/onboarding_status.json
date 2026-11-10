@@ -1,0 +1,32 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "onboarding_status",
+    "description": "Where her sign-up is now: the steps done, the next step, her limits, and whether her wallet is open. Call it after she does something on her screen (PIN, photo, NIN) to see what changed.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/onboarding_status",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          }
+        },
+        "required": []
+      }
+    }
+  }
+}
