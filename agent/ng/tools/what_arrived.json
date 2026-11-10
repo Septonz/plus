@@ -1,0 +1,32 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "what_arrived",
+    "description": "What money came in recently: cash-ins waiting for her answer first, then payments and ajo payouts. Read the text as given.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/what_arrived",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          }
+        },
+        "required": []
+      }
+    }
+  }
+}
