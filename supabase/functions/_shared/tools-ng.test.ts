@@ -17,6 +17,7 @@ import {
   ngPreparePay,
   newCashOutCode,
   payoutSplit,
+  ngGroupStatus,
 } from "./tools-ng.ts";
 
 const FUNMI = "GA6K725VCN45F4LWZYEL3H7J5CIGGL2IUXDWZH5X75GYWQQJNPAYGW6M";
@@ -81,6 +82,7 @@ function fakeStore(w: World): NgStore {
         onchain_id: 3,
         members: ["Amaka", "Funmi", "Tunde", "Halima", "Kemi"].map((name, position) => ({ name, position, user_id: name === "Funmi" ? "u1" : null })),
       }),
+    contributionTxs: () => Promise.resolve(new Map()),
     agentWallets: () => Promise.resolve([AGENT]),
     cashOuts: () => Promise.resolve([]),
     setCashOutCode: () => Promise.resolve(true),
@@ -307,4 +309,19 @@ Deno.test("agent finds customers by Nigerian phone number", () => {
   assertEquals(normalizeNgPhone("+234 803 123 4567"), "+2348031234567");
   assertEquals(normalizeNgPhone("2348031234567"), "+2348031234567");
   assertEquals(normalizeNgPhone("+91 98765 43210"), null);
+});
+
+Deno.test("ajo ticks link to each member's own contribution on Stellar", async () => {
+  const { ctx } = setup();
+  const hash = "ab".repeat(32);
+  const r = await ngGroupStatus({
+    ...ctx(),
+    explorer: "https://stellar.expert/explorer/testnet",
+    store: { ...ctx().store, contributionTxs: () => Promise.resolve(new Map([["A", hash]])) },
+  });
+  const m = r.members as { paid_this_round: boolean; url: string | null }[];
+  assertEquals(m[0].url, `https://stellar.expert/explorer/testnet/tx/${hash}`); // paid, event indexed
+  assertEquals(m[1].url, null); // Funmi has not paid this round
+  assertEquals(m[2].paid_this_round, true);
+  assertEquals(m[2].url, null); // paid on the contract, event not indexed yet: no link rather than a wrong one
 });

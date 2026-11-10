@@ -63,6 +63,8 @@ export interface NgStore {
   awaitingCashIns(userId: string): Promise<CashIn[]>;
   transactions(userId: string, limit: number): Promise<NgTx[]>;
   myGroup(userId: string): Promise<NgGroup | null>;
+  /** Latest contribution transaction per member address in an on-chain group (contract events). */
+  contributionTxs(onchainId: number): Promise<Map<string, string>>;
   /** Stellar wallets of the active registered cash agents (they may claim cash-outs). */
   agentWallets(): Promise<string[]>;
   cashOuts(userId: string): Promise<CashOut[]>;
@@ -294,12 +296,12 @@ export const ngMyRecord: NgTool = async ({ user, store, explorer }) => {
 export const ngGroupStatus: NgTool = async ({ user, store, now = new Date(), explorer, contractId }) => {
   const mine = await store.myGroup(user.id);
   if (!mine) return { text: "She is not in an ajo yet.", in_group: false };
-  const [g, txs] = await Promise.all([store.chain.group(mine.onchain_id), store.transactions(user.id, 100)]);
+  const [g, txs, paidTx] = await Promise.all([store.chain.group(mine.onchain_id), store.transactions(user.id, 100), store.contributionTxs(mine.onchain_id)]);
   if (!g) return refuse("I can't read the ajo from Stellar just now.", "chain_unavailable");
   const names = new Map(mine.members.map((m) => [m.position, m]));
   const myIndex = mine.members.find((m) => m.user_id === user.id)?.position ?? -1;
   const onTheWay = txs.some((t) => t.kind === "group_contribution" && t.source === mine.id && t.status === "pending");
-  const mineLast = txs.find((t) => t.kind === "group_contribution" && t.chain_tx_hash);
+  const mineLast = txs.find((t) => t.kind === "group_contribution" && t.source === mine.id && t.chain_tx_hash);
   const members = g.members.map((_, i) => ({
     name: names.get(i)?.name ?? "Member",
     position: i,
@@ -307,7 +309,10 @@ export const ngGroupStatus: NgTool = async ({ user, store, now = new Date(), exp
     paid_this_round: g.contributed[i] ?? false,
     verified_on_stellar: g.contributed[i] ?? false, // read from the contract itself
     is_turn: i === g.turn,
-    url: i === myIndex && mineLast?.chain_tx_hash && explorer ? `${explorer}/tx/${mineLast.chain_tx_hash}` : null,
+    // Each tick links to that member's own contribution on Stellar (contract event), hers to her transaction.
+    url: !explorer || !g.contributed[i] ? null
+      : i === myIndex && mineLast?.chain_tx_hash ? `${explorer}/tx/${mineLast.chain_tx_hash}`
+      : paidTx.get(g.members[i]) ? `${explorer}/tx/${paidTx.get(g.members[i])}` : null,
   }));
   const paidCount = g.contributed.filter(Boolean).length;
   const turnName = members[g.turn]?.is_me ? "her" : members[g.turn]?.name ?? "the next member";

@@ -3,14 +3,26 @@
 // starts the conversation with plus_session as a dynamic variable. Every tool call the agent
 // makes carries plus_session back to agent-tools, so the agent can only act for her.
 // The PIN never goes through here: it is typed on the confirm screen.
+// Before showing the mic it asks voice-session/status whether her market's agent is set up (for
+// Nigeria: ELEVENLABS_AGENT_ID_NG). If not, it shows "Voice coming soon" instead of failing; as soon
+// as the secret is set, the same button works, with no code change.
 import { useConversation } from '@elevenlabs/react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { call } from './api'
 import { Icon, useT } from './ui'
 
 type Session = { signed_url?: string; plus_session?: string; error?: string }
 
-export type MicWords = { mic: string; micListening: string; micSpeaking: string; micConnecting: string; micStop: string; micError: string }
+export type MicWords = { mic: string; micListening: string; micSpeaking: string; micConnecting: string; micStop: string; micError: string; micSoon: string }
+
+// One status check per page load, shared by every mic button on the page.
+let statusOnce: Promise<boolean | null> | null = null
+function voiceConfigured(): Promise<boolean | null> {
+  statusOnce ??= call<{ configured?: boolean }>('voice-session/status')
+    .then((r) => (typeof r.configured === 'boolean' ? r.configured : null))
+    .catch(() => null) // unknown: let her try; a failure then shows micError
+  return statusOnce
+}
 
 /** `words` overrides the labels (Nigeria passes English/Pidgin; India uses the Tamil labels). */
 export function VoiceButton({ size = 'hero', words }: { size?: 'hero' | 'dock'; words?: MicWords }) {
@@ -18,6 +30,14 @@ export function VoiceButton({ size = 'hero', words }: { size?: 'hero' | 'dock'; 
   const t = (k: keyof MicWords) => words?.[k] ?? tt(k)
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
+  const [configured, setConfigured] = useState<boolean | null>(null)
+  useEffect(() => {
+    let live = true
+    void voiceConfigured().then((c) => live && setConfigured(c))
+    return () => {
+      live = false
+    }
+  }, [])
   const conversation = useConversation({
     onError: (message: unknown) => {
       console.error('voice error', message)
@@ -39,6 +59,10 @@ export function VoiceButton({ size = 'hero', words }: { size?: 'hero' | 'dock'; 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       stream.getTracks().forEach((tr) => tr.stop())
       const s = await call<Session>('voice-session')
+      if (s.error === 'voice_not_configured') {
+        setConfigured(false)
+        return
+      }
       if (!s.signed_url || !s.plus_session) throw new Error(s.error ?? 'voice_unavailable')
       conversation.startSession({
         signedUrl: s.signed_url,
@@ -53,8 +77,19 @@ export function VoiceButton({ size = 'hero', words }: { size?: 'hero' | 'dock'; 
     }
   }
 
-  const label = busy ? t('micConnecting') : live ? (conversation.isSpeaking ? t('micSpeaking') : t('micListening')) : t('mic')
   const hero = size === 'hero'
+  if (configured === false) {
+    return (
+      <div className="flex flex-col items-center gap-2" role="status">
+        <span aria-hidden className={`grid place-items-center rounded-full bg-sand text-ink-soft ${hero ? 'size-36 text-6xl' : 'size-20 text-4xl'}`}>
+          <Icon name="mic" />
+        </span>
+        <span className={`text-center font-extrabold text-ink-soft ${hero ? 'text-2xl' : 'text-base'}`}>{t('micSoon')}</span>
+      </div>
+    )
+  }
+
+  const label = busy ? t('micConnecting') : live ? (conversation.isSpeaking ? t('micSpeaking') : t('micListening')) : t('mic')
   return (
     <div className="flex flex-col items-center gap-2">
       <button

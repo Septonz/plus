@@ -8,7 +8,7 @@ import { applyKey, BigButton, Card, Icon, Keypad, Notice, PinDots } from '../plu
 import { VoiceButton } from '../plus/voice'
 import { CodeBox } from './confirm'
 import { useTool, type Go, type Wallet } from './NgApp'
-import { MIC_WORDS, naira, when, Y, type WKey } from './words'
+import { MIC_WORDS, naira, W, when, Y, type WKey } from './words'
 
 type Props = { data: PlusData; wallet: Wallet | null; go: Go; version: number }
 type Row = Record<string, unknown>
@@ -43,13 +43,14 @@ function Tile({ icon, k, onClick, children }: { icon: string; k: WKey; onClick: 
 }
 
 function Tick({ url, pending }: { url?: string | null; pending?: boolean }) {
-  if (pending) return <span className="inline-flex items-center gap-1 rounded-full bg-sand px-3 py-1 text-base font-semibold text-ink-soft">⏳ sending</span>
+  if (pending) return <span className="inline-flex items-center gap-1 rounded-full bg-sand px-3 py-1 text-base font-semibold text-ink-soft">⏳ <Y k="sending" sub="hidden" /></span>
   const body = (
-    <span className="inline-flex items-center gap-1 rounded-full bg-leaf-soft px-3 py-1 text-base font-semibold text-leaf">
-      <Icon name="check" /> Verified on Stellar
+    <span className="inline-flex items-center gap-1 rounded-2xl bg-leaf-soft px-3 py-1 text-base font-semibold text-leaf">
+      <Icon name="check" /> <Y k="verified" className="text-sm leading-tight" sub="text-leaf/80 text-xs" />
     </span>
   )
-  return url ? <a href={url} target="_blank" rel="noreferrer">{body}</a> : body
+  // A tick is a link to the transaction on Stellar Expert: anyone can check it.
+  return url ? <a href={url} target="_blank" rel="noreferrer" aria-label={`${W.verified.en}: open the transaction`}>{body}</a> : body
 }
 
 /** Cash-ins from an agent waiting for her Yes or No. */
@@ -78,6 +79,8 @@ function Waiting({ data, onAnswer }: { data: PlusData; onAnswer: (a: PendingActi
 export function Home({ data, wallet, go, version, onAnswer }: Props & { onAnswer: (a: PendingAction) => void }) {
   const ajo = useTool('group_status', version)
   const adv = useTool('advance_status', version)
+  const rec = useTool('my_record', version)
+  const latest = ((rec?.recent ?? []) as Row[]).filter((t) => t.kind !== 'adjustment').slice(0, 3)
   const sending = data.txs.filter((t) => t.status === 'pending').length
   return (
     <div className="space-y-5">
@@ -120,6 +123,16 @@ export function Home({ data, wallet, go, version, onAnswer }: Props & { onAnswer
           {adv ? (adv.open ? `${String(adv.owed_text)} left` : adv.eligible ? `Up to ${String(adv.limit_text)}` : 'Not yet') : '…'}
         </Tile>
       </div>
+
+      {latest.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-2xl font-extrabold"><Y k="latest" /></h2>
+          <ul className="space-y-2">
+            {latest.map((t) => <TxRow key={String(t.id)} t={t} />)}
+          </ul>
+          <button onClick={() => go('record')} className="min-h-11 text-lg font-bold text-brick underline">See all · {W.record.en}</button>
+        </section>
+      )}
     </div>
   )
 }
@@ -243,11 +256,47 @@ export function Ajo({ go, version }: Props) {
   )
 }
 
+/** The four promises, said the same way on every advance screen (and by the voice agent). */
+function AdvanceRules({ fee, pct }: { fee: string | null; pct: number }) {
+  const rules: [WKey, string][] = [
+    ['oneFee', fee ? `${W.oneFee.en}: ${fee}` : W.oneFee.en],
+    ['noInterest', W.noInterest.en],
+    ['noLateFees', W.noLateFees.en],
+    ['repaysItself', `${W.repaysItself.en}: ${pct}% of each cash-in`],
+  ]
+  return (
+    <ul className="mt-3 space-y-2 text-xl">
+      {rules.map(([k, en]) => (
+        <li key={k} className="flex gap-2">
+          <span className="text-leaf">✓</span>
+          <span className="flex flex-col leading-tight">
+            <span className="font-semibold">{en}</span>
+            <span className="text-base text-ink-soft">{W[k].yo}</span>
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function IfBehind() {
+  return (
+    <Notice>
+      <span className="flex flex-col gap-1">
+        <span className="font-semibold">{W.ifBehind.en} {W.nobodyCalled.en}</span>
+        <span className="text-base text-ink-soft">{W.ifBehind.yo} {W.nobodyCalled.yo}</span>
+      </span>
+    </Notice>
+  )
+}
+
 export function Advance({ go, version }: Props) {
   const a = useTool('advance_status', version)
   const { busy, msg, run } = useSubmit()
   if (!a) return <p className="py-20 text-center text-2xl">…</p>
   const options = (a.options ?? []) as Row[]
+  const pct = Number(a.repay_pct ?? NG.advance.repayFromCashInBps / 100)
+  const top = options.at(-1)
   return (
     <div className="space-y-5">
       <Title k="advance" go={go} />
@@ -255,20 +304,18 @@ export function Advance({ go, version }: Props) {
         <Card>
           <p className="text-lg font-semibold">Still to pay back</p>
           <p className="text-5xl font-extrabold text-brick">{String(a.owed_text)}</p>
-          <p className="mt-2 text-lg">You took {String(a.principal_text)} (fee {String(a.fee_text)}). Paid back so far: {String(a.repaid_text)}.</p>
-          <Notice>Pays back by itself: {String(a.repay_pct)}% of each cash-in, and first from your ajo payout. No interest. No late fees.</Notice>
+          <p className="mt-2 text-lg">You took {String(a.principal_text)}. Paid back so far: {String(a.repaid_text)}.</p>
+          <AdvanceRules fee={a.fee_text ? String(a.fee_text) : null} pct={pct} />
+          <p className="mt-3 text-lg">It also comes first out of your next ajo payout.</p>
         </Card>
       ) : a.eligible ? (
         <>
           <Card>
             <p className="text-lg font-semibold">You can take up to</p>
             <p className="text-5xl font-extrabold text-brick">{String(a.limit_text)}</p>
-            <ul className="mt-3 space-y-1 text-lg">
-              <li>✓ One fee of {Number(a.fee_bps) / 100}%</li>
-              <li>✓ No interest, no late fees</li>
-              <li>✓ Pays back with {String(a.repay_pct)}% of each cash-in</li>
-            </ul>
+            <AdvanceRules fee={top ? `${String(top.fee_text)} on ${String(top.amount_text)}` : null} pct={pct} />
           </Card>
+          <p className="text-xl font-bold"><Y k="takeAdvance" /></p>
           <div className="grid gap-3">
             {options.map((o) => (
               <BigButton key={String(o.amount_minor)} tone="white" disabled={busy} className="flex items-center justify-between text-left" onClick={() => void run('prepare_advance', { amount: String(BigInt(String(o.amount_minor)) / 100n) })}>
@@ -281,6 +328,7 @@ export function Advance({ go, version }: Props) {
       ) : (
         <Notice>{a.text}</Notice>
       )}
+      <IfBehind />
       {msg && <Notice tone="chili">{msg}</Notice>}
     </div>
   )
@@ -329,6 +377,22 @@ export function CashOut({ go, version }: Props) {
 
 const KIND_ICON: Record<string, string> = { incoming: 'add', pay: 'pay', group_contribution: 'group', advance: 'advance', repay: 'advance', cash_out: 'hand' }
 
+/** One transaction with its "verified on Stellar" tick, which links to the transaction. */
+function TxRow({ t }: { t: Row }) {
+  return (
+    <li className="flex items-center justify-between gap-2 rounded-2xl bg-white p-4 shadow-[0_2px_0_0_var(--color-sand-deep)]">
+      <div className="flex items-center gap-3">
+        <Icon name={KIND_ICON[String(t.kind)] ?? 'record'} className="text-3xl text-brick" />
+        <div>
+          <p className="text-xl font-bold">{t.outgoing ? '−' : '+'}{String(t.amount_text)} <span className="text-base font-normal text-ink-soft">{String(t.label)}</span></p>
+          <p className="text-base text-ink-soft">{when(String(t.at))}</p>
+        </div>
+      </div>
+      {t.status === 'pending' ? <Tick pending /> : t.url ? <Tick url={String(t.url)} /> : null}
+    </li>
+  )
+}
+
 export function Record({ go, version }: Props) {
   const r = useTool('my_record', version)
   if (!r) return <p className="py-20 text-center text-2xl">…</p>
@@ -352,18 +416,7 @@ export function Record({ go, version }: Props) {
         )}
       </Card>
       <ul className="space-y-2">
-        {recent.map((t) => (
-          <li key={String(t.id)} className="flex items-center justify-between gap-2 rounded-2xl bg-white p-4 shadow-[0_2px_0_0_var(--color-sand-deep)]">
-            <div className="flex items-center gap-3">
-              <Icon name={KIND_ICON[String(t.kind)] ?? 'record'} className="text-3xl text-brick" />
-              <div>
-                <p className="text-xl font-bold">{t.outgoing ? '−' : '+'}{String(t.amount_text)} <span className="text-base font-normal text-ink-soft">{String(t.label)}</span></p>
-                <p className="text-base text-ink-soft">{when(String(t.at))}</p>
-              </div>
-            </div>
-            {t.status === 'pending' ? <Tick pending /> : t.url ? <Tick url={String(t.url)} /> : null}
-          </li>
-        ))}
+        {recent.map((t) => <TxRow key={String(t.id)} t={t} />)}
       </ul>
     </div>
   )

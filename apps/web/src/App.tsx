@@ -12,6 +12,8 @@ function App() {
       <div className="flex flex-wrap justify-center gap-3">
         <a href="/app" className="rounded-full bg-[#7a2e14] px-6 py-3 text-lg font-bold text-white">Open the Plus app</a>
         <a href="/helper" className="rounded-full border-2 border-stone-300 bg-white px-6 py-3 text-lg font-bold">Helper page</a>
+        <a href="/agent" className="rounded-full border-2 border-stone-300 bg-white px-6 py-3 text-lg font-bold">Agent page</a>
+        <a href="/demo" className="rounded-full border-2 border-stone-300 bg-white px-6 py-3 text-lg font-bold">Demo view (staff)</a>
       </div>
 
       <div role="radiogroup" aria-label="Market" className="inline-flex rounded-full bg-stone-200 p-1">

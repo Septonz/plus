@@ -2,8 +2,8 @@
 // screen that opens by itself when a pending action she started arrives through Realtime.
 import { ConversationProvider } from '@elevenlabs/react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { DEMO_FUNMI_EMAIL, DEMO_SELVI_EMAIL, supabase } from '../lib/supabase'
-import { DemoChoice, useSession } from './auth'
+import { DEMO_AS, DEMO_FUNMI_EMAIL, DEMO_SELVI_EMAIL, supabase } from '../lib/supabase'
+import { AutoSignIn, DemoChoice, useSession } from './auth'
 import { ConfirmSheet } from './confirm'
 import { tool } from './api'
 import { usePlusData, type PendingAction } from './data'
@@ -46,6 +46,8 @@ export default function PlusApp() {
           <ConversationProvider>
             <Signed authUserId={session.user.id} />
           </ConversationProvider>
+        ) : DEMO_AS ? (
+          <AutoSignIn email={DEMO_AS === 'funmi' ? DEMO_FUNMI_EMAIL : DEMO_SELVI_EMAIL} name={DEMO_AS === 'funmi' ? 'Funmi' : 'Selvi'} />
         ) : (
           <DemoChoice
             people={[
