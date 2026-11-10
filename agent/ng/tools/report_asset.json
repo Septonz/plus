@@ -1,0 +1,46 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "report_asset",
+    "description": "When something changed: lost, stolen, damaged, found, repaired, or released (sold, given away, no longer hers). Lost, stolen or damaged stops it counting; found or repaired needs a new live photo.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/report_asset",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "asset": {
+            "type": "string",
+            "description": "Which asset, in her words (\"my stall stock\", \"the generator\"). Leave out if she has only one."
+          },
+          "status": {
+            "type": "string",
+            "description": "lost, stolen, damaged, found, repaired or released."
+          },
+          "note": {
+            "type": "string",
+            "description": "Optional, a few words."
+          }
+        },
+        "required": [
+          "status"
+        ]
+      }
+    }
+  }
+}

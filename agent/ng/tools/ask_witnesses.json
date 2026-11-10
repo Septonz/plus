@@ -1,0 +1,42 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "ask_witnesses",
+    "description": "Ask people to confirm her asset exists and is hers (two are needed). Needs a live photo first. They see the request on their own Plus screen.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/ask_witnesses",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "asset": {
+            "type": "string",
+            "description": "Which asset, in her words (\"my stall stock\", \"the generator\"). Leave out if she has only one."
+          },
+          "witnesses": {
+            "type": "string",
+            "description": "Names, comma-separated (\"Amaka, Mama Bisi\")."
+          }
+        },
+        "required": [
+          "witnesses"
+        ]
+      }
+    }
+  }
+}
