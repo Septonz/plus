@@ -1,0 +1,19 @@
+{
+  "tool_config": {
+    "type": "client",
+    "name": "new_cashout_code",
+    "description": "Show a fresh code for one of her cash-outs waiting for an agent, on her screen (the old code stops working). Never read the code out loud. Only in the Plus app (not on a phone call).",
+    "expects_response": true,
+    "response_timeout_secs": 20,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "amount": {
+          "type": "number",
+          "description": "The waiting cash-out's amount in naira, if she has more than one. Leave out otherwise."
+        }
+      },
+      "required": []
+    }
+  }
+}

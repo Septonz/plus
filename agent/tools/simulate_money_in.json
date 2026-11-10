@@ -1,0 +1,29 @@
+{
+  "tool_config": {
+    "type": "client",
+    "name": "simulate_money_in",
+    "description": "Demo only: the monthly state transfer (₹1,000) or wages arrive in her account. Only in the Plus app (not on a phone call).",
+    "expects_response": true,
+    "response_timeout_secs": 20,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "\"state_transfer\" or \"wages\".",
+          "enum": [
+            "state_transfer",
+            "wages"
+          ]
+        },
+        "amount": {
+          "type": "number",
+          "description": "Wages only: rupees, a whole number she said."
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    }
+  }
+}

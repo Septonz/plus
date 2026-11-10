@@ -8,6 +8,10 @@
 // Before showing the mic it asks voice-session/status whether her market's agent is set up; if
 // not, the mic shows "Voice coming soon" instead of failing.
 //
+// Screen awareness (plus/screen.ts): the app's client tools (navigate, what_is_on_screen, demo and
+// settings buttons) go to the conversation at start, and every time her screen changes the agent
+// gets a contextual update with what is on it, so it can always say what she is looking at.
+//
 // Variants: 'float' (the app: a round button bottom centre, above the nav; while live, a
 // translucent sheet shows the conversation as text and what the agent is doing), 'inline' (sign-up:
 // a mic beside a short line).
@@ -16,6 +20,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
 import { Icon, spring } from '../ds/components'
 import { call } from './api'
+import { clientTools, currentScreen, onScreenChange } from './screen'
 import { useT } from './ui'
 
 type Session = { signed_url?: string; plus_session?: string; error?: string }
@@ -39,6 +44,15 @@ function voiceConfigured(body?: Record<string, unknown>): Promise<boolean | null
 /** What the agent is doing, from the tool it just called. */
 const DOING: Record<string, string> = {
   get_user: 'Checking your account…',
+  help: 'Finding what you can do…',
+  navigate: 'Opening the screen…',
+  what_is_on_screen: 'Looking at your screen…',
+  new_cashout_code: 'Making a new code…',
+  simulate_bank_transfer: 'Simulating a bank transfer…',
+  simulate_money_in: 'Simulating money arriving…',
+  set_language: 'Changing the language…',
+  update_trusted_contact: 'Saving your trusted person…',
+  sign_out: 'Signing out…',
   get_balance: 'Checking your balance…',
   what_arrived: 'Looking at what came in…',
   prepare_pay: 'Preparing your payment…',
@@ -93,6 +107,28 @@ function useVoice(body: Record<string, unknown> | undefined, errorText: string) 
   const live = conversation.status === 'connected'
   const busy = starting || conversation.status === 'connecting'
 
+  // Tell the agent what is on her screen: once when the call connects, then on every change
+  // (debounced, so a screen's first read has landed).
+  const send = useRef(conversation.sendContextualUpdate)
+  useEffect(() => {
+    send.current = conversation.sendContextualUpdate
+  })
+  useEffect(() => {
+    if (!live) return
+    let t = 0
+    const tell = (text: string) => {
+      window.clearTimeout(t)
+      if (!text) return
+      t = window.setTimeout(() => send.current(`On her screen now: ${text}`), 600)
+    }
+    tell(currentScreen())
+    const off = onScreenChange(tell)
+    return () => {
+      off()
+      window.clearTimeout(t)
+    }
+  }, [live])
+
   async function toggle() {
     setError(null)
     if (live || conversation.status === 'connecting') {
@@ -110,7 +146,12 @@ function useVoice(body: Record<string, unknown> | undefined, errorText: string) 
         return
       }
       if (!s.signed_url || !s.plus_session) throw new Error(s.error ?? 'voice_unavailable')
-      conversation.startSession({ signedUrl: s.signed_url, connectionType: 'websocket', dynamicVariables: { plus_session: s.plus_session } })
+      conversation.startSession({
+        signedUrl: s.signed_url,
+        connectionType: 'websocket',
+        dynamicVariables: { plus_session: s.plus_session },
+        clientTools: clientTools(),
+      })
     } catch (err) {
       console.error('voice start failed', err)
       setError(errorText)

@@ -10,6 +10,8 @@ import { ConfirmSheet } from './confirm'
 import { usePlusData, type PendingAction } from './data'
 import { T, type Key, type Lang } from './i18n'
 import { AddMoney, Advance, Home, Pay, Record, Savings, Seettu, Settings, type Detail, type Screen } from './screens'
+import { call, newKey, tool, type ToolResult } from './api'
+import { settle, useScreenTools } from './screen'
 import { LangContext, Notice, Spinner, useLang as useLangContext } from './ui'
 import { VoiceButton } from './voice'
 
@@ -69,6 +71,11 @@ export default function PlusApp() {
 
 type Tab = 'home' | 'pay' | 'record' | 'settings'
 const TABS: Tab[] = ['home', 'pay', 'record', 'settings']
+/** The screens the voice agent can open (navigate), by the names she would use. */
+const VOICE_SCREENS: Record<string, Screen> = {
+  home: 'home', money: 'add', add_money: 'add', savings: 'savings', seettu: 'seettu', advance: 'advance',
+  pay: 'pay', activity: 'record', record: 'record', profile: 'settings', settings: 'settings',
+}
 const DETAIL_KEY: Record<Detail, Key> = { add: 'toSpend', savings: 'savings', seettu: 'seettu', advance: 'advance' }
 
 function Signed({ authUserId }: { authUserId: string }) {
@@ -107,6 +114,46 @@ function Signed({ authUserId }: { authUserId: string }) {
   const signOut = async () => {
     await supabase?.auth.signOut()
   }
+  const { setLang } = useLangContext()
+
+  // Every screen action, also by voice (ElevenLabs client tools; they run here, with her login).
+  // Nigeria registers its own in NgApp: none of these for a Nigeria user.
+  useScreenTools(data.me?.market_id !== 'in' ? {} : {
+    navigate: async ({ screen }) => {
+      const to = VOICE_SCREENS[String(screen ?? '').toLowerCase().replace(/[\s-]+/g, '_')]
+      if (!to) return `There is no "${String(screen)}" screen. Screens: ${Object.keys(VOICE_SCREENS).join(', ')}.`
+      if (!(TABS as string[]).includes(to)) setTab('home')
+      go(to)
+      await settle()
+      return 'Opened. Now tell her what is on her screen; what_is_on_screen describes it.'
+    },
+    set_language: async ({ language }) => {
+      const l = String(language ?? '').toLowerCase().startsWith('t') ? 'ta' : String(language ?? '').toLowerCase().startsWith('e') ? 'en' : null
+      if (!l) return 'Tamil or English?'
+      setLang(l)
+      const r = await tool('update_settings', { language: l })
+      return r.ok ? `The app is now in ${l === 'ta' ? 'Tamil' : 'English'}.` : r.text
+    },
+    update_trusted_contact: async ({ phone }) => {
+      const r = await tool('update_settings', { trusted_contact_phone: String(phone ?? '') })
+      if (r.ok) void data.refresh()
+      return r.ok ? 'Saved her trusted person.' : r.error === 'invalid_phone' ? 'That is not a 10-digit mobile number. Ask again.' : r.text
+    },
+    simulate_money_in: async ({ kind, amount }) => {
+      openDetail('add', false)
+      const wages = String(kind ?? '').startsWith('wage')
+      const r = await call<ToolResult>(`payout-sim/${wages ? 'wages_arrive' : 'state_transfer_arrives'}`, {
+        idempotency_key: newKey('voice'),
+        ...(wages ? { amount: Number(amount ?? 0) } : {}),
+      }).catch(() => ({ text: 'No connection.', ok: false }) as ToolResult)
+      void data.refresh()
+      return r.ok ? `${r.text} To spend: ${String(r.balance_text)}; saved: ${String(r.savings_text)}.` : r.text || String(r.error)
+    },
+    sign_out: async () => {
+      window.setTimeout(() => void signOut(), 1500)
+      return 'Signing her out now. Say goodbye.'
+    },
+  })
 
   if (data.loading) return <Loading />
   if (data.error === 'no_plus_account') {

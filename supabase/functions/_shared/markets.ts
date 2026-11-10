@@ -36,7 +36,7 @@ export interface Market {
   /** App screens, in bottom-nav order; the app picks screens and wording from this. */
   screens: Screen[];
   record: "attested" | "native";
-  /** Above this amount (major units) a payment needs the PIN, typed on the app's PIN pad. */
+  /** Money moves up to this amount (major units) are confirmed by a spoken or tapped Yes; above it, the PIN, typed on the app's PIN pad (never spoken). */
   pinThreshold: number;
   /** Most a user may pay out per day (major units), across payments and group contributions. */
   payDailyLimit: number;
@@ -121,7 +121,7 @@ export const MARKETS: Record<MarketId, Market> = {
     cashInExpiryHours: 24,
     screens: ["home", "pay", "group", "advance", "record", "add_money", "settings"],
     record: "attested",
-    pinThreshold: 2000,
+    pinThreshold: 500,
     payDailyLimit: 10000,
     idCheck: "partner_kyc_mock",
     kyc: {
@@ -158,7 +158,7 @@ export const MARKETS: Record<MarketId, Market> = {
     cashInExpiryHours: 24,
     screens: ["home", "add_cash", "pay", "group", "advance", "cash_out", "record", "settings"],
     record: "native",
-    pinThreshold: 20000,
+    pinThreshold: 5000,
     payDailyLimit: 200000,
     idCheck: "nin_mock",
     kyc: {

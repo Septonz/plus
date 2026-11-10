@@ -10,6 +10,7 @@ import { ConfirmSheet, type ConfirmPhase, type CostLine } from '../ds/ConfirmShe
 import { Button, Icon, Notice, VerifiedMark } from '../ds/components'
 import { tool, type ToolResult } from '../plus/api'
 import type { PendingAction, Tx } from '../plus/data'
+import { useSays } from '../plus/screen'
 import { SmsBubble } from '../plus/ui'
 import { forScreen, naira, W } from './words'
 
@@ -18,8 +19,9 @@ const NG = getMarket('ng')
 
 const localNg = (p: string) => (p.startsWith('+234') ? `0${p.slice(4, 7)} ${p.slice(7, 10)} ${p.slice(10)}` : p)
 
+/** Same rule as the server (tools-ng.ts): a spoken or tapped Yes up to ₦5,000, the PIN above. */
 export function ngNeedsPin(a: PendingAction): boolean {
-  if (!['pay', 'pay_code', 'group_contribution', 'cash_out'].includes(a.kind)) return false
+  if (!['pay', 'pay_code', 'group_contribution', 'cash_out', 'advance'].includes(a.kind)) return false
   return BigInt(String(a.params.amount ?? 0)) > BigInt(NG.pinThreshold) * 100n
 }
 
@@ -69,6 +71,15 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
   const [result, setResult] = useState<ToolResult | null>(null)
   const [seconds, setSeconds] = useState<number | null>(null)
   const t0 = useRef(0)
+
+  useSays(
+    phase === 'done' ? `Done: ${action.readback}. The tick shows; verified on Stellar${seconds !== null ? ` in ${seconds.toFixed(1)} seconds` : ''}.`
+      : phase === 'sending' || phase === 'working' ? `Sending on Stellar: ${action.readback}.`
+      : phase === 'failed' ? `Confirm sheet: ${message ?? 'it did not go through'}. A Close button.`
+      : `Confirm sheet: ${action.readback}. ` + (pinNeeded
+        ? `Above ${naira(BigInt(NG.pinThreshold) * 100n)}: she types her PIN on the screen, then Yes. Never ask for the PIN out loud.`
+        : 'She can tap Yes or say yes, or No to cancel.'),
+  )
 
   const txId = typeof result?.transaction_id === 'string' ? result.transaction_id : null
   const tx = txId ? txs.find((t) => t.id === txId) : undefined

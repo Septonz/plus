@@ -3,10 +3,12 @@
 // Tamil beneath), Yes and No, and the PIN pad above the PIN threshold. The PIN goes straight from
 // here to agent-tools (confirm_action, app channel); it never passes through the voice agent.
 import { useState } from 'react'
+import { getMarket } from '@plus/markets'
 import { ConfirmSheet as Sheet, type ConfirmPhase, type CostLine } from '../ds/ConfirmSheet'
 import { tool, type ToolResult } from './api'
 import { money, needsPin, type PendingAction } from './data'
 import { PAYEE_TA, T } from './i18n'
+import { useSays } from './screen'
 import { useLang, useT } from './ui'
 
 function readback(a: PendingAction): { to: string | null; toTa: string | null; lines: CostLine[] } {
@@ -43,6 +45,14 @@ export function ConfirmSheet({ action, onClose }: { action: PendingAction; onClo
   const [phase, setPhase] = useState<ConfirmPhase>('ask')
   const [message, setMessage] = useState<string | null>(null)
   const [result, setResult] = useState<ToolResult | null>(null)
+  useSays(
+    phase === 'done' ? `Done: ${action.readback}.`
+      : phase === 'working' ? `Confirming: ${action.readback}.`
+      : phase === 'failed' ? `Confirm sheet: ${message ?? 'it did not go through'}. A Close button.`
+      : `Confirm sheet: ${action.readback}. ` + (pinNeeded
+        ? `Above ${money(BigInt(getMarket('in').pinThreshold) * 100n)}: she types her PIN on the screen, then Yes. Never ask for the PIN out loud.`
+        : 'She can tap Yes or say yes, or No to cancel.'),
+  )
 
   async function yes() {
     setPhase('working')

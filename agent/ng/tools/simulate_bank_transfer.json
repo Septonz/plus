@@ -1,0 +1,21 @@
+{
+  "tool_config": {
+    "type": "client",
+    "name": "simulate_bank_transfer",
+    "description": "Demo only: pretend a bank transfer arrived at her account number; the partner bank pays her wallet on Stellar. Only in the Plus app (not on a phone call).",
+    "expects_response": true,
+    "response_timeout_secs": 20,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "amount": {
+          "type": "number",
+          "description": "Naira, a whole number she said (\"5k\" is 5000)."
+        }
+      },
+      "required": [
+        "amount"
+      ]
+    }
+  }
+}

@@ -240,7 +240,7 @@ Deno.test("PIN threshold: voice can't confirm above it, and never carries a PIN"
   const s = new FakeStore();
   s.acct = { ...s.acct, balance_paise: 1_000_000 };
   await s.setPin(SELVI.id, "2580");
-  const p = await run(preparePay, s, { payee: "medical shop", amount: 2500 }); // threshold ₹2,000
+  const p = await run(preparePay, s, { payee: "medical shop", amount: 600 }); // threshold ₹500
   assertEquals(p.requires_pin, true);
   assert(String(p.text).includes("PIN"), p.text);
 
@@ -257,7 +257,7 @@ Deno.test("PIN threshold: voice can't confirm above it, and never carries a PIN"
   assertEquals(s.debits.length, 1);
 
   // At or below the threshold the voice agent may confirm after a clear yes.
-  const small = await run(preparePay, s, { payee: "medical shop", amount: 2000 });
+  const small = await run(preparePay, s, { payee: "medical shop", amount: 500 });
   assertEquals(small.requires_pin, false);
   assertEquals((await run(confirmAction, s, { action_id: small.action_id })).status, "done");
 });

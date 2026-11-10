@@ -1,0 +1,14 @@
+{
+  "tool_config": {
+    "type": "client",
+    "name": "sign_out",
+    "description": "Sign her out of the app. Only when she clearly asks to sign out or log out. Only in the Plus app (not on a phone call).",
+    "expects_response": true,
+    "response_timeout_secs": 20,
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  }
+}

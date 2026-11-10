@@ -12,11 +12,27 @@ Webhook tools for the Plus voice agent. Each JSON file is a `POST /v1/convai/too
 | `set_auto_save` | Prepares an auto-save change (0–30%) | `percent` |
 | `prepare_pay` | Prepares a payment; Tamil/English payee matching | `payee`, `amount` (rupees) |
 | `prepare_group_contribution` | Prepares this month's seettu | none |
-| `confirm_action` | Confirms by voice, only below the PIN threshold | `action_id` |
+| `confirm_action` | Confirms by voice, only up to the PIN threshold (₹500) | `action_id` |
 | `reject_action` | Cancels, or says No to a cash-in | `action_id` |
 | `my_record` | Totals, count confirmed on Stellar, link | none |
 | `group_status` | Seettu and members' records | none |
 | `advance_status` | Eligibility, limit, cost in rupees | none |
+
+**Screen tools.** Everything on her screen is also by voice. `help` is a webhook (works on a call
+too). The rest are **client tools** (`type: client`): they run in her browser with her own login
+(`apps/web/src/plus/screen.ts`), so they only work in the app. The app also sends the agent a
+contextual update ("On her screen now: …") whenever the screen changes. The PIN is the exception:
+she sets and types it on the screen only.
+
+| Tool | Type | What it does | Body |
+| ---- | ---- | ------------ | ---- |
+| `help` | webhook | What she can do (each also by voice), the voice-yes limit, what is waiting | none |
+| `navigate` | client | Opens a screen | `screen` |
+| `what_is_on_screen` | client | What her screen shows now, in words | none |
+| `sign_out` | client | Signs her out (only when she clearly asks) | none |
+| `set_language` | client | The app's language, Tamil or English | `language` |
+| `update_trusted_contact` | client | Her trusted person's mobile number | `phone` |
+| `simulate_money_in` | client | Demo: the state transfer or wages arrive | `kind`, `amount` |
 
 ## How a tool call proves who she is
 
@@ -31,7 +47,7 @@ ElevenLabs fills in, never the LLM:
 - `caller_id`, bound to `system__caller_id`, for phone and WhatsApp later. Used only when there is
   no session token (the placeholder value `none`).
 
-The PIN never goes through the agent. Amounts above the PIN threshold (₹2,000 for India) can only
+The PIN never goes through the agent. Amounts above the PIN threshold (₹500 for India, ₦5,000 for Nigeria) can only
 be confirmed on the app's screen; `confirm_action` by voice answers `pin_required_on_screen`.
 A `pin` sent by voice is refused.
 

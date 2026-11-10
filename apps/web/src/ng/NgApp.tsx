@@ -8,11 +8,12 @@ import { BottomNav, CardDetail, PageHeader, useMarketAccent } from '../ds/compon
 import { supabase } from '../lib/supabase'
 import { tool, type ToolResult } from '../plus/api'
 import type { PendingAction, PlusData } from '../plus/data'
+import { settle, useScreenTools } from '../plus/screen'
 import { ENGLISH, LangContext } from '../plus/ui'
 import { VoiceButton } from '../plus/voice'
 import { NgConfirmSheet } from './confirm'
 import { AddCash, Advance, Ajo, CashOut, Home, Pay, Record, Settings, WalletDetail, type Detail } from './screens'
-import { MIC_WORDS, W, yo } from './words'
+import { MIC_WORDS, naira, W, yo } from './words'
 
 export type Wallet = { NGNT: bigint; USDC: bigint; updated_at: string | null }
 export type Go = (s: Screen) => void
@@ -47,6 +48,19 @@ export function useTool(name: string, version: number) {
     }
   }, [name, version])
   return r
+}
+
+/** The screens the voice agent can open (navigate), by the names she would use. */
+const VOICE_SCREENS: Record<string, { tab?: Tab; detail?: Detail }> = {
+  home: { tab: 'home' },
+  wallet: { detail: 'wallet' },
+  add_money: { detail: 'add_cash' },
+  pay: { tab: 'pay' },
+  ajo: { detail: 'group' },
+  advance: { detail: 'advance' },
+  cash_out: { detail: 'cash_out' },
+  activity: { tab: 'record' },
+  profile: { tab: 'settings' },
 }
 
 type Tab = 'home' | 'pay' | 'record' | 'settings'
@@ -89,6 +103,45 @@ export default function NgApp({ data }: { data: PlusData }) {
   }, [openDetail])
   const props = { data, wallet, go, version: data.version }
   const onAnswer = (a: PendingAction) => setChosen(a)
+  // A cash-out code made by voice is shown on the Cash out screen only (never handed to the agent).
+  const [shownCode, setShownCode] = useState<{ id: string; code: string } | null>(null)
+
+  // Every screen action, also by voice (ElevenLabs client tools; they run here, with her login).
+  useScreenTools({
+    navigate: async ({ screen }) => {
+      const to = VOICE_SCREENS[String(screen ?? '').toLowerCase().replace(/[\s-]+/g, '_')]
+      if (!to) return `There is no "${String(screen)}" screen. Screens: ${Object.keys(VOICE_SCREENS).join(', ')}.`
+      if (to.tab) go(to.tab)
+      else {
+        setTab('home')
+        openDetail(to.detail!, false)
+      }
+      await settle()
+      return `Opened. Now tell her what is on her screen; what_is_on_screen describes it.`
+    },
+    new_cashout_code: async ({ amount }) => {
+      openDetail('cash_out', false)
+      const r = await tool('cash_outs')
+      const open = ((r.cash_outs ?? []) as { id: string; amount: string; status: string; expires_at: string }[])
+        .filter((c) => c.status === 'issued' && new Date(c.expires_at) > new Date())
+      const want = amount !== undefined ? BigInt(Math.round(Number(amount))) * 100n : null
+      const c = want !== null ? open.find((x) => BigInt(x.amount) === want) : open[0]
+      if (!c) return open.length ? `No waiting cash-out of that amount. Waiting: ${open.map((x) => naira(x.amount)).join(', ')}.` : 'She has no cash-out waiting for an agent.'
+      const n = await tool('new_cashout_code', { cash_out_id: c.id })
+      if (!n.ok) return n.text
+      setShownCode({ id: c.id, code: String(n.cash_out_code) })
+      return `A new code for ${naira(c.amount)} is on her screen; the old one stopped working. Never read the code out loud.`
+    },
+    simulate_bank_transfer: async ({ amount }) => {
+      openDetail('add_cash', false)
+      const r = await tool('simulate_bank_transfer', { amount: String(amount ?? ''), sender: 'Chidi Okeke' })
+      return r.text
+    },
+    sign_out: async () => {
+      window.setTimeout(() => void supabase?.auth.signOut(), 1500)
+      return 'Signing her out now. Say goodbye.'
+    },
+  })
 
   return (
     <LangContext.Provider value={ENGLISH}>
@@ -106,7 +159,7 @@ export default function NgApp({ data }: { data: PlusData }) {
             {open === 'group' && <Ajo {...props} />}
             {open === 'advance' && <Advance {...props} />}
             {open === 'add_cash' && <AddCash {...props} onAnswer={onAnswer} />}
-            {open === 'cash_out' && <CashOut {...props} />}
+            {open === 'cash_out' && <CashOut {...props} shownCode={shownCode} onShowCode={setShownCode} />}
           </CardDetail>
         )}
       </AnimatePresence>
