@@ -18,7 +18,7 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { agentCashInCheck, agentCashInReadback, cashOutRedeemable, normalizeNgPhone, sameHex } from "../_shared/agent.ts";
-import { bearer, json, kickChainWorker, preflight, readJson } from "../_shared/http.ts";
+import { bearer, json, kickChainWorker, preflight, readJson, health } from "../_shared/http.ts";
 import { formatMoney, getMarket } from "../_shared/markets.ts";
 import { horizonBalances } from "../_shared/ng-chain.ts";
 import { parseMajorAmount } from "../_shared/payees.ts";
@@ -188,6 +188,8 @@ async function matchCode(userId: string, code: string) {
 }
 
 Deno.serve(async (req) => {
+  const up = health(req, "agent-api");
+  if (up) return up;
   const pre = preflight(req);
   if (pre) return pre;
   const endpoint = new URL(req.url).pathname.split("/").filter(Boolean).pop() ?? "";

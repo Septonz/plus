@@ -10,7 +10,7 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { cashInAllowance, cashInReadback } from "../_shared/helper.ts";
-import { bearer, json, preflight, readJson } from "../_shared/http.ts";
+import { bearer, json, preflight, readJson, health } from "../_shared/http.ts";
 import { formatMoney, type MarketId } from "../_shared/markets.ts";
 import { parseMajorAmount } from "../_shared/payees.ts";
 import { dayStart } from "../_shared/tools.ts";
@@ -73,6 +73,8 @@ const ERRORS: Record<string, [number, string]> = {
 };
 
 Deno.serve(async (req) => {
+  const up = health(req, "helper-api");
+  if (up) return up;
   const pre = preflight(req);
   if (pre) return pre;
   const endpoint = new URL(req.url).pathname.split("/").filter(Boolean).pop() ?? "";

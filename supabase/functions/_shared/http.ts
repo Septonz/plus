@@ -11,6 +11,23 @@ export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...CORS_HEADERS } });
 }
 
+const BOOTED_AT = Date.now();
+let healthHits = 0;
+
+/**
+ * GET .../<function>/health: no auth, no database, nothing secret. Used by `pnpm warm` and the
+ * warm-up cron so no demo request hits a cold start. `cold` is true on the first call this
+ * isolate has served.
+ */
+export function health(req: Request, fn: string): Response | null {
+  if (req.method !== "GET" || !new URL(req.url).pathname.endsWith("/health")) return null;
+  healthHits++;
+  return json({ ok: true, fn, cold: healthHits === 1, up_ms: Date.now() - BOOTED_AT });
+}
+
+/** The Edge Functions that serve the demo, in the order `pnpm warm` pings them. */
+export const DEMO_FUNCTIONS = ["agent-tools", "chain-worker", "agent-api", "voice-session", "helper-api", "payout-sim", "scheduler", "sync-events"] as const;
+
 export function preflight(req: Request): Response | null {
   return req.method === "OPTIONS" ? new Response("ok", { headers: CORS_HEADERS }) : null;
 }

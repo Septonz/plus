@@ -243,6 +243,7 @@ const KIND_WORDS: Record<string, string> = {
   advance: "advance",
   repay: "advance repaid",
   cash_out: "cash out",
+  adjustment: "demo reset (testnet)",
 };
 
 export const ngMyRecord: NgTool = async ({ user, store, explorer }) => {

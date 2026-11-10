@@ -6,12 +6,16 @@
 // 1. Verifies the Supabase login and finds her Plus account (users.auth_user_id).
 // 2. Gets a signed conversation URL for her market's private ElevenLabs agent (valid 15 minutes).
 // 3. Mints plus_session: an HMAC token bound to her user id, expiring in 15 minutes.
+//
+//   POST /functions/v1/voice-session/status  -> { configured }  (no ElevenLabs call)
+// The app asks this first and shows "Voice coming soon" when her market's agent isn't set up
+// (for example ELEVENLABS_AGENT_ID_NG not set yet); once the secret exists it works, no code change.
 // The app starts the ElevenLabs session with the signed URL and passes plus_session as a dynamic
 // variable; every tool call sends it back to agent-tools, which checks it. The ElevenLabs API key
 // never leaves the server.
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
-import { bearer, json, preflight } from "../_shared/http.ts";
+import { bearer, json, preflight, health } from "../_shared/http.ts";
 import { mintSession } from "../_shared/session.ts";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
@@ -19,6 +23,8 @@ const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SE
 });
 
 Deno.serve(async (req) => {
+  const up = health(req, "voice-session");
+  if (up) return up;
   const pre = preflight(req);
   if (pre) return pre;
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -35,9 +41,11 @@ Deno.serve(async (req) => {
   // One ElevenLabs agent per market: Nigeria users get the Pidgin/Yoruba "Plus Nigeria" agent.
   const agentId = user.market_id === "ng" ? Deno.env.get("ELEVENLABS_AGENT_ID_NG") : Deno.env.get("ELEVENLABS_AGENT_ID");
   const secret = Deno.env.get("VOICE_SESSION_SECRET");
+  const configured = Boolean(apiKey && agentId && secret);
+  if (new URL(req.url).pathname.endsWith("/status")) return json({ configured, market: user.market_id });
   if (!apiKey || !agentId || !secret) {
     console.error("voice-session: ELEVENLABS_API_KEY, the market's ELEVENLABS_AGENT_ID(_NG) or VOICE_SESSION_SECRET is not set");
-    return json({ error: "voice_not_configured" }, 503);
+    return json({ error: "voice_not_configured", configured: false }, 503);
   }
 
   const res = await fetch(

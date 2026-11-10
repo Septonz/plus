@@ -14,6 +14,7 @@ import {
   dayStart,
   preparePay,
   rejectAction,
+  roundStart,
   setAutoSave,
   type Store,
   type Tool,
@@ -331,4 +332,13 @@ Deno.test("amounts: integers only, rupees to paise", () => {
 Deno.test("dayStart: India's day starts at 18:30 UTC", () => {
   assertEquals(dayStart("in", new Date("2026-11-09T10:00:00Z")), "2026-11-08T18:30:00.000Z");
   assertEquals(dayStart("in", new Date("2026-11-09T19:00:00Z")), "2026-11-09T18:30:00.000Z");
+});
+
+Deno.test("roundStart: a hand-started round hides earlier contributions; otherwise one period back", () => {
+  const now = new Date("2026-11-10T12:00:00Z");
+  const month = 30 * 86_400;
+  assertEquals(roundStart({ period_secs: month, round_started_at: null }, now), "2026-10-11T12:00:00.000Z");
+  assertEquals(roundStart({ period_secs: month, round_started_at: "2026-11-10T09:00:00Z" }, now), "2026-11-10T09:00:00.000Z");
+  // A marker older than one period changes nothing.
+  assertEquals(roundStart({ period_secs: month, round_started_at: "2026-09-01T00:00:00Z" }, now), "2026-10-11T12:00:00.000Z");
 });

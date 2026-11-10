@@ -99,7 +99,7 @@ export function supabaseStore(db: SupabaseClient): Store {
     },
     async myGroup(userId) {
       const link = must(
-        await db.from("group_members").select("group_id, groups!inner(id, name, mode, onchain_id, amount, period_secs, next_due, market_id)")
+        await db.from("group_members").select("group_id, groups!inner(id, name, mode, onchain_id, amount, period_secs, next_due, market_id, round_started_at)")
           .eq("user_id", userId).limit(1).maybeSingle(),
         "myGroup",
       ) as { group_id: string; groups: Record<string, unknown> } | null;
