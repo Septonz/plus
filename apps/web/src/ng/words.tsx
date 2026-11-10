@@ -37,7 +37,9 @@ export const MIC_WORDS: MicWords = {
 
 export function when(iso: string): string {
   const d = new Date(iso)
-  const days = Math.floor((Date.now() - d.getTime()) / 86_400_000)
+  // Calendar days (yesterday at 23:00 is "yesterday", not "today").
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const days = Math.round((day(new Date()) - day(d)) / 86_400_000)
   const time = d.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })
   if (days <= 0) return `today ${time}`
   if (days === 1) return `yesterday ${time}`

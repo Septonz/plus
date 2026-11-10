@@ -51,7 +51,7 @@ export function Section({ title, action, children, className = '' }: { title?: R
     <section className={`space-y-2 ${className}`}>
       {(title || action) && (
         <div className="flex min-h-11 items-center justify-between gap-3 px-1">
-          {title && <h2 className="text-sm font-semibold uppercase tracking-wide text-secondary">{title}</h2>}
+          {title && <h2 className="text-lg font-semibold">{title}</h2>}
           {action}
         </div>
       )}
@@ -248,7 +248,7 @@ export function ListRow({
       )}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-lg font-medium leading-snug">{title}</span>
-        {subtitle && <span className="block truncate text-sm text-secondary">{subtitle}</span>}
+        {subtitle && <span className="line-clamp-2 block text-sm text-secondary">{subtitle}</span>}
       </span>
       {trailing && <span className="shrink-0 text-right">{trailing}</span>}
       {selected && <Icon name="check" className="shrink-0 text-xl text-accent-ink" />}
@@ -314,7 +314,7 @@ export function Segmented<T extends string>({ options, value, onChange, label }:
   return (
     <div role="tablist" aria-label={label} className="relative grid rounded-full bg-fill p-1" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0,1fr))` }}>
       {options.map(([v, text]) => (
-        <button key={v} role="tab" aria-selected={value === v} onClick={() => onChange(v)} className="relative min-h-11 rounded-full px-3 text-base font-semibold">
+        <button key={v} role="tab" aria-selected={value === v} onClick={() => onChange(v)} className="relative min-h-11 whitespace-nowrap rounded-full px-2 text-base font-semibold">
           {value === v && <motion.span layoutId={`seg-${id}`} transition={spring} className="absolute inset-0 rounded-full bg-surface shadow-card" />}
           <span className={`relative ${value === v ? 'text-label' : 'text-secondary'}`}>{text}</span>
         </button>

@@ -1,22 +1,38 @@
-// The seven screens. Money only moves through prepare -> the confirm screen -> confirm_action.
-import { useEffect, useState } from 'react'
+// Selvi's India screens. Money only moves through prepare -> the confirm sheet -> confirm_action.
+// Home is a stack of passes (Wallet, Savings, Seettu, Advance); a pass opens full-screen
+// (PlusApp's CardDetail). Labels: English, with Tamil beneath in a muted line in Tamil mode.
+import { useEffect, useState, type ReactNode } from 'react'
 import { getMarket } from '@plus/markets'
+import {
+  AmountDisplay, Bilingual, Button, Card, CardStack, EmptyState, Icon, ListGroup, ListRow, Notice, NumPad, Pass, PinPad, Section,
+  Segmented, Skeleton, VerifiedMark, applyKey,
+} from '../ds/components'
 import { call, newKey, tool, type ToolResult } from './api'
 import { money, type PlusData, whenText } from './data'
-import { PAYEE_TA, SOURCE_KEY, T } from './i18n'
-import { applyKey, BigButton, Card, Icon, Keypad, L, Notice, PinDots, ScreenTitle, StellarMark, useLang, useT } from './ui'
-import { VoiceButton } from './voice'
+import { PAYEE_TA, SOURCE_KEY, T, type Key } from './i18n'
+import { ErrorState, LoadingList, useLang, useT } from './ui'
 
-export type Screen = 'home' | 'pay' | 'seettu' | 'advance' | 'record' | 'add' | 'settings'
+export type Screen = 'home' | 'pay' | 'seettu' | 'advance' | 'record' | 'add' | 'savings' | 'settings'
 type Nav = { go: (s: Screen) => void }
+const EXPLORER = 'https://stellar.expert/explorer/testnet'
+
+/** English main, Tamil beneath (Tamil mode only), for a string key. */
+function useB() {
+  const { lang } = useLang()
+  return (k: Key): { main: string; sub?: string } => ({ main: T[k].en, sub: lang === 'ta' ? T[k].ta : undefined })
+}
+function B({ k, className = '' }: { k: Key; className?: string }) {
+  const b = useB()(k)
+  return <Bilingual main={b.main} sub={b.sub} className={className} />
+}
 
 /** Read a composite tool (seettu, advance, record), refetching when Realtime says something changed. */
-function useToolRead<T extends ToolResult>(name: string, version: number) {
-  const [data, setData] = useState<T | null>(null)
+function useToolRead<R extends ToolResult>(name: string, version: number) {
+  const [data, setData] = useState<R | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     let live = true
-    tool<T>(name)
+    tool<R>(name)
       .then((r) => live && (r.error ? setError(r.text || r.error) : setData(r)))
       .catch((e: unknown) => live && setError(e instanceof Error ? e.message : String(e)))
     return () => {
@@ -26,22 +42,52 @@ function useToolRead<T extends ToolResult>(name: string, version: number) {
   return { data, error }
 }
 
-function Loading() {
-  const t = useT()
-  return <p className="py-10 text-center text-xl text-secondary">{t('working')}</p>
+function Loaded<R>({ data, error, rows = 3, children }: { data: R | null; error: string | null; rows?: number; children: (d: R) => ReactNode }) {
+  if (error && !data) return <ErrorState text={error} onRetry={() => window.location.reload()} />
+  if (!data) return <LoadingList rows={rows} />
+  return <>{children(data)}</>
 }
 
+const payeeName = (name: string, lang: 'ta' | 'en') => (lang === 'ta' ? PAYEE_TA[name] ?? name : name)
+const payeeIcon = (name: string) => (/flower/.test(name) ? 'flower' : /medical/.test(name) ? 'medical' : 'person')
+
 // ---------------------------------------------------------------------------
-// 1. Home
+// Home
 // ---------------------------------------------------------------------------
 
-export function Home({ data, go }: { data: PlusData } & Nav) {
-  const { lang } = useLang()
+type GroupStatus = ToolResult & {
+  in_group: boolean
+  name: string
+  amount_text: string
+  paid_this_period: boolean
+  next_due: string | null
+  members: { name: string; position: number; is_me: boolean; contributions_on_stellar: number; total_text: string; verified_on_stellar: boolean; last_url: string | null }[]
+}
+
+type AdvanceStatus = ToolResult & {
+  eligible: boolean
+  limit_text: string
+  fee_bps: number
+  options: { amount_minor: string; amount_text: string; cost_minor: string; cost_text: string }[]
+  open: boolean
+  owed_text: string
+}
+
+export type Detail = 'add' | 'savings' | 'seettu' | 'advance'
+
+export function Home({ data, go, open, onOpen }: { data: PlusData; open: Detail | null; onOpen: (d: Detail) => void } & Nav) {
+  const { lang, setLang } = useLang()
   const t = useT()
+  const b = useB()
   const { me, account, txs, pending } = data
   const cashIns = pending.filter((a) => a.kind === 'confirm_cash_in')
-  const latest = txs.find((x) => x.kind === 'incoming')
+  // Adjustments are demo:reset bookkeeping, not her money moving.
+  const recent = txs.filter((x) => x.kind !== 'adjustment').slice(0, 5)
   const [busy, setBusy] = useState<string | null>(null)
+  const { data: g } = useToolRead<GroupStatus>('group_status', data.version)
+  const { data: adv } = useToolRead<AdvanceStatus>('advance_status', data.version)
+  const name = me?.name ?? ''
+  const autoSave = (me?.auto_save_bps ?? 0) / 100
 
   async function answer(id: string, yes: boolean) {
     setBusy(id)
@@ -49,102 +95,146 @@ export function Home({ data, go }: { data: PlusData } & Nav) {
     setBusy(null)
     void data.refresh()
   }
+  async function toggleLang() {
+    const next = lang === 'ta' ? 'en' : 'ta'
+    setLang(next)
+    await tool('update_settings', { language: next }).catch(() => null)
+  }
 
   return (
-    <div className="space-y-5">
-      <header className="flex items-baseline justify-between">
-        <h1 className="text-3xl font-semibold">
-          {lang === 'ta' ? `வணக்கம், ${me?.name === 'Selvi' ? 'செல்வி' : me?.name ?? ''}!` : `Hello, ${me?.name ?? ''}!`}
-        </h1>
+    <div className="space-y-6">
+      <header className="flex items-center justify-between gap-3 pt-1">
+        <div className="min-w-0">
+          <p className="text-base text-secondary">{lang === 'ta' ? `${T.hello.en} · ${T.hello.ta}` : T.hello.en}</p>
+          <h1 className="truncate text-3xl font-semibold">{lang === 'ta' && name === 'Selvi' ? 'Selvi · செல்வி' : name}</h1>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button onClick={() => void toggleLang()} aria-label="Language / மொழி" className="min-h-11 rounded-full bg-fill px-3 text-sm font-medium text-label active:bg-fill-strong">
+            {lang === 'ta' ? 'English' : 'தமிழ்'}
+          </button>
+          <button onClick={() => go('settings')} aria-label={t('profile')} className="grid size-11 place-items-center rounded-full bg-fill text-base font-semibold text-label active:bg-fill-strong">
+            {name.slice(0, 1).toUpperCase() || <Icon name="profile" />}
+          </button>
+        </div>
       </header>
 
-      <Card className="bg-accent! text-on-accent">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <L k="toSpend" sub="text-on-accent/80" className="text-lg font-semibold" />
-            <p className="mt-1 text-4xl font-semibold">{account ? money(account.balance_paise) : '—'}</p>
-          </div>
-          <div>
-            <L k="saved" sub="text-on-accent/80" className="text-lg font-semibold" />
-            <p className="mt-1 text-4xl font-semibold text-warning">{account ? money(account.savings_paise) : '—'}</p>
-          </div>
-        </div>
-        {account && <p className="mt-3 text-base text-on-accent/80">{account.bank_name}</p>}
-      </Card>
-
       {cashIns.map((a) => (
-        <Card key={a.id} className="border-4 border-warning">
-          <p className="text-base font-semibold uppercase tracking-wide text-warning">{t('waitingForYou')}</p>
-          <p className="mt-2 text-2xl font-semibold">
-            {lang === 'ta'
-              ? `${String(a.params.helper_name)} நீங்க ${money(String(a.params.amount))} கையில கொடுத்ததா சொல்றாங்க. சரியா?`
-              : `${String(a.params.helper_name)} says you gave her ${money(String(a.params.amount))} in cash. Is that right?`}
+        <Card key={a.id} className="border border-warning/30 bg-warning-soft!">
+          <p className="flex items-center gap-2 text-sm font-medium text-warning-strong">
+            <Icon name="cash" /> <B k="waitingForYou" />
           </p>
-          {lang === 'ta' && <p className="mt-1 text-lg text-secondary">{a.readback}</p>}
+          <p className="mt-2 text-xl font-medium">
+            {`${String(a.params.helper_name)} says you gave her ${money(String(a.params.amount))} in cash. Is that right?`}
+          </p>
+          {lang === 'ta' && (
+            <p className="mt-1 text-sm text-secondary">{`${String(a.params.helper_name)} நீங்க ${money(String(a.params.amount))} கையில கொடுத்ததா சொல்றாங்க. சரியா?`}</p>
+          )}
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <BigButton tone="white" onClick={() => answer(a.id, false)} disabled={busy === a.id}>
-              <Icon name="x" /> <L k="no" />
-            </BigButton>
-            <BigButton tone="leaf" onClick={() => answer(a.id, true)} disabled={busy === a.id}>
-              <Icon name="check" /> <L k="yes" sub="text-white/85" />
-            </BigButton>
+            <Button variant="secondary" onClick={() => void answer(a.id, false)} disabled={busy === a.id}>
+              <Icon name="x" /> {lang === 'ta' ? `${T.no.en} · ${T.no.ta}` : T.no.en}
+            </Button>
+            <Button onClick={() => void answer(a.id, true)} loading={busy === a.id}>
+              <Icon name="check" /> {lang === 'ta' ? `${T.yes.en} · ${T.yes.ta}` : T.yes.en}
+            </Button>
           </div>
         </Card>
       ))}
 
-      <div className="py-2">
-        <VoiceButton size="hero" />
-      </div>
+      <CardStack>
+        <Pass
+          id="add"
+          tone="wallet"
+          icon="wallet"
+          title={b('toSpend').main}
+          sub={b('toSpend').sub}
+          hidden={open === 'add'}
+          onOpen={() => onOpen('add')}
+          note={account ? account.bank_name : undefined}
+        >
+          {account ? <AmountDisplay text={money(account.balance_paise)} size="lg" /> : <Skeleton className="h-12 w-48 opacity-30" />}
+        </Pass>
+        <Pass
+          id="savings"
+          icon="savings"
+          title={b('savings').main}
+          sub={lang === 'ta' ? `${T.savings.ta} · ${autoSave}% ${T.autoSaveOn.ta}` : `${autoSave}% auto-save`}
+          value={account ? money(account.savings_paise) : undefined}
+          hidden={open === 'savings'}
+          onOpen={() => onOpen('savings')}
+        />
+        <Pass
+          id="seettu"
+          icon="group"
+          title={b('seettu').main}
+          sub={g ? (g.in_group ? `${g.name}${lang === 'ta' ? ` · ${T.seettu.ta}` : ''}` : t('nothingYet')) : ' '}
+          value={g?.in_group ? (g.paid_this_period ? T.paidThisMonth.en : g.amount_text) : undefined}
+          hidden={open === 'seettu'}
+          onOpen={() => onOpen('seettu')}
+        />
+        <Pass
+          id="advance"
+          icon="advance"
+          title={b('advance').main}
+          sub={adv ? (adv.open ? b('owed').main : adv.eligible ? b('eligible').main : b('notEligible').main) : ' '}
+          value={adv ? (adv.open ? adv.owed_text : adv.eligible ? `${T.upTo.en} ${adv.limit_text}` : undefined) : undefined}
+          hidden={open === 'advance'}
+          onOpen={() => onOpen('advance')}
+        />
+      </CardStack>
 
-      <Card>
-        <L k="latestIn" className="text-lg font-semibold text-secondary" />
-        {latest ? (
-          <div className="mt-2 flex flex-col items-start gap-2">
-            <div>
-              <p className="text-3xl font-semibold text-success">+{money(latest.amount)}</p>
-              <p className="text-lg">
-                {latest.source && SOURCE_KEY[latest.source] ? T[SOURCE_KEY[latest.source]][lang] : latest.source} · {whenText(latest.created_at, lang)}
-              </p>
-            </div>
-            {latest.chain_tx_hash ? <StellarMark url={`https://stellar.expert/explorer/testnet/tx/${latest.chain_tx_hash}`} /> : null}
-          </div>
+      <Section
+        title={<B k="recentActivity" />}
+        action={recent.length > 0 && <button onClick={() => go('record')} className="min-h-11 px-1 text-base font-medium text-accent-ink">{T.seeAll.en}</button>}
+      >
+        {recent.length > 0 ? (
+          <ListGroup>{recent.map((x) => <TxRow key={x.id} kind={x.kind} source={x.source} amount={money(x.amount)} at={x.created_at} url={x.chain_tx_hash ? `${EXPLORER}/tx/${x.chain_tx_hash}` : null} pending={!x.chain_tx_hash} />)}</ListGroup>
         ) : (
-          <p className="mt-2 text-xl">{t('nothingYet')}</p>
+          <EmptyState icon="activity" title={<B k="nothingYet" />} />
         )}
-      </Card>
-
-      <nav className="grid grid-cols-2 gap-3" aria-label="Plus">
-        {(
-          [
-            ['pay', 'pay', 'pay'],
-            ['seettu', 'group', 'seettu'],
-            ['advance', 'advance', 'advance'],
-            ['record', 'record', 'record'],
-            ['add', 'add', 'addMoney'],
-            ['settings', 'settings', 'settings'],
-          ] as const
-        ).map(([s, icon, k]) => (
-          <button
-            key={s}
-            onClick={() => go(s)}
-            className="flex min-h-24 flex-col items-start justify-between gap-2 rounded-3xl bg-surface p-4 text-left shadow-[0_2px_0_0_var(--color-sand-deep)] active:bg-fill"
-          >
-            <span className="grid size-11 place-items-center rounded-full bg-fill text-2xl text-accent-ink">
-              <Icon name={icon} />
-            </span>
-            <L k={k} className="text-xl font-semibold" />
-          </button>
-        ))}
-      </nav>
+      </Section>
     </div>
   )
 }
 
+const KIND_LABEL: Record<string, { ta: string; en: string }> = {
+  incoming: { ta: 'வந்தது', en: 'Received' },
+  received: { ta: 'வந்தது', en: 'Received' },
+  saved: { ta: 'சேமிச்சது', en: 'Saved' },
+  pay: { ta: 'அனுப்பியது', en: 'Paid' },
+  paid: { ta: 'அனுப்பியது', en: 'Paid' },
+  group: { ta: 'சீட்டு', en: 'Seettu' },
+  group_contribution: { ta: 'சீட்டு', en: 'Seettu' },
+}
+const KIND_ICON: Record<string, string> = { incoming: 'in', received: 'in', saved: 'savings', pay: 'pay', paid: 'pay', group: 'group', group_contribution: 'group' }
+
+function TxRow({ kind, source, amount, at, url, pending, dateOnly }: { kind: string; source?: string | null; amount: string; at: string; url: string | null; pending?: boolean; dateOnly?: boolean }) {
+  const { lang } = useLang()
+  const incoming = kind === 'incoming' || kind === 'received'
+  const label = KIND_LABEL[kind]?.en ?? kind
+  const src = source && SOURCE_KEY[source] ? T[SOURCE_KEY[source]] : null
+  const when = dateOnly ? new Date(at).toLocaleDateString(lang === 'ta' ? 'ta-IN' : 'en-IN', { day: 'numeric', month: 'short' }) : whenText(at, lang)
+  const clean = amount.replace('-', '')
+  return (
+    <ListRow
+      icon={KIND_ICON[kind] ?? 'record'}
+      iconTone={incoming ? 'success' : kind === 'saved' ? 'accent' : 'neutral'}
+      title={src ? src.en : label}
+      subtitle={lang === 'ta' ? `${src ? src.ta : KIND_LABEL[kind]?.ta ?? ''} · ${when}` : `${src ? `${label} · ` : ''}${when}`}
+      trailing={
+        <span className="flex flex-col items-end gap-0.5">
+          <span className={`num text-lg font-medium ${incoming ? 'text-success' : ''}`}>{incoming ? '+' : kind === 'saved' ? '' : '−'}{clean}</span>
+          {pending ? <VerifiedMark pending pendingLabel={T.confirming.en} /> : url ? <VerifiedMark url={url} label="Verified" /> : null}
+        </span>
+      }
+    />
+  )
+}
+
 // ---------------------------------------------------------------------------
-// 2. Pay
+// Pay
 // ---------------------------------------------------------------------------
 
-export function Pay({ data, go }: { data: PlusData } & Nav) {
+export function Pay({ data }: { data: PlusData } & Nav) {
   const { lang } = useLang()
   const t = useT()
   const [payee, setPayee] = useState<{ id: string; name: string } | null>(null)
@@ -156,7 +246,7 @@ export function Pay({ data, go }: { data: PlusData } & Nav) {
     if (!payee || !amount) return
     setBusy(true)
     setError(null)
-    // Same tool the voice agent uses; the confirm screen opens from the pending action.
+    // Same tool the voice agent uses; the confirm sheet opens from the pending action.
     const r = await tool('prepare_pay', { payee: payee.name, amount: Number(amount) }).catch(() => ({ text: '', error: 'network' }) as ToolResult)
     setBusy(false)
     if (!r.ok) {
@@ -174,75 +264,58 @@ export function Pay({ data, go }: { data: PlusData } & Nav) {
     void data.refresh()
   }
 
-  if (!payee) {
-    return (
-      <div>
-        <ScreenTitle k="pay" onBack={() => go('home')} />
-        <p className="mb-4 text-2xl font-semibold">
-          <L k="choosePayee" />
-        </p>
-        <div className="space-y-3">
-          {data.payees.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setPayee(p)}
-              className="flex w-full items-center gap-4 rounded-3xl bg-surface p-5 text-left shadow-[0_2px_0_0_var(--color-sand-deep)] active:bg-fill"
-            >
-              <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-fill text-4xl text-accent-ink">
-                <Icon name={/flower/.test(p.name) ? 'flower' : /medical/.test(p.name) ? 'medical' : 'person'} />
-              </span>
-              <span className="flex flex-col">
-                <span className="text-2xl font-semibold">{lang === 'ta' ? PAYEE_TA[p.name] ?? p.name : p.name}</span>
-                {lang === 'ta' && <span className="text-lg text-secondary">{p.name}</span>}
-                <span className="text-base text-secondary">{p.upi_handle}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-        <p className="mt-6 text-center text-lg text-secondary">
-          {lang === 'ta' ? '“பூக்கடைக்கு 300 அனுப்பு” னு சொல்லலாம்' : 'Or just say “send 300 to the flower shop”'}
-        </p>
-        <div className="mt-3">
-          <VoiceButton size="dock" />
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div>
-      <ScreenTitle k="howMuch" onBack={() => setPayee(null)} />
-      <p className="text-2xl font-semibold">{lang === 'ta' ? `${PAYEE_TA[payee.name] ?? payee.name}க்கு` : `To ${payee.name}`}</p>
-      <p className="my-5 text-center text-6xl font-semibold text-accent-ink" aria-live="polite">
-        ₹{amount ? Number(amount).toLocaleString('en-IN') : '0'}
-      </p>
-      {error && (
-        <div className="mb-3">
-          <Notice tone="chili">{error}</Notice>
-        </div>
+    <div className="space-y-6">
+      <Section title={<B k="choosePayee" />}>
+        {data.payees.length === 0 ? (
+          <EmptyState icon="person" title={<B k="nothingYet" />} />
+        ) : (
+          <ListGroup>
+            {data.payees.map((p) => (
+              <ListRow
+                key={p.id}
+                icon={payeeIcon(p.name)}
+                iconTone={payee?.id === p.id ? 'accent' : 'neutral'}
+                title={<Bilingual main={p.name.charAt(0).toUpperCase() + p.name.slice(1)} sub={lang === 'ta' ? payeeName(p.name, 'ta') : undefined} />}
+                subtitle={p.upi_handle ?? undefined}
+                selected={payee?.id === p.id}
+                onClick={() => { setPayee(p); setError(null) }}
+              />
+            ))}
+          </ListGroup>
+        )}
+      </Section>
+
+      {payee ? (
+        <Section title={<B k="howMuch" />}>
+          <Card className="space-y-5">
+            <p className="text-center text-lg font-medium">
+              <Bilingual main={`To ${payee.name}`} sub={lang === 'ta' ? `${payeeName(payee.name, 'ta')}க்கு` : undefined} />
+            </p>
+            <div className="py-2 text-center" aria-live="polite">
+              <AmountDisplay text={money(BigInt(amount || '0') * 100n)} size="xl" className={amount ? '' : 'text-secondary'} />
+            </div>
+            <NumPad onKey={(k) => setAmount((a) => applyKey(a, k, 6))} clearLabel={t('clear')} />
+            {error && <Notice tone="danger">{error}</Notice>}
+            <Button className="w-full" onClick={() => void next()} disabled={!amount} loading={busy}>
+              {lang === 'ta' ? `${T.next.en} · ${T.next.ta}` : T.next.en}
+            </Button>
+          </Card>
+        </Section>
+      ) : (
+        <p className="px-1 text-center text-base text-secondary">
+          {lang === 'ta' ? 'அல்லது மைக்கை தொட்டு சொல்லுங்க: “பூக்கடைக்கு 300 அனுப்பு”' : 'Or tap the mic and say “send 300 to the flower shop”'}
+        </p>
       )}
-      <Keypad onKey={(k) => setAmount((a) => applyKey(a, k, 6))} />
-      <BigButton className="mt-4 w-full" onClick={next} disabled={!amount || busy}>
-        {busy ? t('working') : <L k="next" sub="text-on-accent/80" />}
-      </BigButton>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// 3. Seettu
+// Seettu
 // ---------------------------------------------------------------------------
 
-type GroupStatus = ToolResult & {
-  in_group: boolean
-  name: string
-  amount_text: string
-  paid_this_period: boolean
-  next_due: string | null
-  members: { name: string; position: number; is_me: boolean; contributions_on_stellar: number; total_text: string; verified_on_stellar: boolean; last_url: string | null }[]
-}
-
-export function Seettu({ data, go }: { data: PlusData } & Nav) {
+export function Seettu({ data }: { data: PlusData } & Nav) {
   const { lang } = useLang()
   const t = useT()
   const { data: g, error } = useToolRead<GroupStatus>('group_status', data.version)
@@ -260,156 +333,118 @@ export function Seettu({ data, go }: { data: PlusData } & Nav) {
   }
 
   return (
-    <div>
-      <ScreenTitle k="seettu" onBack={() => go('home')} />
-      {error && <Notice tone="chili">{error}</Notice>}
-      {!g ? (
-        <Loading />
-      ) : !g.in_group ? (
-        <Notice>{g.text}</Notice>
+    <Loaded data={g} error={error} rows={4}>
+      {(g) => !g.in_group ? (
+        <EmptyState icon="group" title={<B k="seettu" />}>{g.text}</EmptyState>
       ) : (
-        <div className="space-y-5">
-          <Card>
-            <L k="thisMonth" className="text-lg font-semibold text-secondary" />
-            <p className="mt-1 text-5xl font-semibold text-accent-ink">{g.amount_text}</p>
+        <>
+          <Card className="space-y-4">
+            <div>
+              <h2 className="text-2xl font-semibold">{g.name}</h2>
+              <p className="text-base text-secondary"><B k="thisMonth" /></p>
+            </div>
+            <AmountDisplay text={g.amount_text} size="lg" />
             {g.paid_this_period ? (
-              <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-success-soft px-4 py-2 text-lg font-semibold text-success">
-                <Icon name="check" /> {t('paidThisMonth')}
-              </p>
+              <Notice tone="success"><B k="paidThisMonth" /></Notice>
             ) : (
               <>
-                <p className="mt-2 text-lg">{t('notPaidYet')}</p>
-                <BigButton className="mt-4 w-full" onClick={payNow} disabled={busy}>
-                  {busy ? t('working') : <L k="payNow" sub="text-on-accent/80" />}
-                </BigButton>
+                <p className="text-base text-secondary"><B k="notPaidYet" /></p>
+                <Button className="w-full" onClick={() => void payNow()} loading={busy}>
+                  {lang === 'ta' ? `${T.payNow.en} · ${T.payNow.ta}` : T.payNow.en}
+                </Button>
               </>
             )}
-            {msg && (
-              <div className="mt-3">
-                <Notice>{msg}</Notice>
-              </div>
-            )}
+            {msg && <Notice>{msg}</Notice>}
           </Card>
 
-          <h2 className="text-2xl font-semibold">
-            <L k="members" />
-          </h2>
-          <ul className="space-y-3">
-            {g.members.map((m) => (
-              <li key={m.position} className={`rounded-3xl bg-surface p-4 shadow-[0_2px_0_0_var(--color-sand-deep)] ${m.is_me ? 'border-4 border-warning' : ''}`}>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="grid size-12 place-items-center rounded-full bg-fill text-xl font-semibold text-accent-ink">{m.position + 1}</span>
-                    <div>
-                      <p className="text-xl font-semibold">
-                        {m.name} {m.is_me && <span className="text-lg text-secondary">({t('you')})</span>}
-                      </p>
-                      <p className="text-base text-secondary">
-                        {m.contributions_on_stellar} {t('contributions')} · {m.total_text}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {m.verified_on_stellar && <StellarMark url={m.last_url} />}
-                  {m.is_me && myPendingContribution && <StellarMark pending />}
-                </div>
-              </li>
-            ))}
-          </ul>
-          <p className="text-center text-base text-secondary">{lang === 'ta' ? T.privacyNote.ta : T.privacyNote.en}</p>
-        </div>
+          <Section title={<B k="members" />}>
+            <ListGroup>
+              {g.members.map((m) => (
+                <ListRow
+                  key={m.position}
+                  icon="person"
+                  iconTone={m.is_me ? 'accent' : 'neutral'}
+                  title={`${m.name}${m.is_me ? ` (${T.you.en})` : ''}`}
+                  subtitle={`${m.contributions_on_stellar} ${T.contributions.en} · ${m.total_text}`}
+                  trailing={
+                    m.is_me && myPendingContribution ? <VerifiedMark pending pendingLabel={T.confirming.en} />
+                      : m.verified_on_stellar ? <VerifiedMark url={m.last_url} label="Verified" /> : <span className="text-sm text-secondary">{T.notPaidYet.en}</span>
+                  }
+                />
+              ))}
+            </ListGroup>
+            <p className="px-1 text-sm text-secondary"><B k="privacyPlain" /></p>
+          </Section>
+        </>
       )}
-    </div>
+    </Loaded>
   )
 }
 
 // ---------------------------------------------------------------------------
-// 4. Advance
+// Advance
 // ---------------------------------------------------------------------------
 
-type AdvanceStatus = ToolResult & {
-  eligible: boolean
-  limit_text: string
-  fee_bps: number
-  options: { amount_minor: string; amount_text: string; cost_minor: string; cost_text: string }[]
-  open: boolean
-  owed_text: string
-}
-
-export function Advance({ data, go }: { data: PlusData } & Nav) {
+export function Advance({ data }: { data: PlusData } & Nav) {
   const { lang } = useLang()
-  const t = useT()
   const { data: a, error } = useToolRead<AdvanceStatus>('advance_status', data.version)
-  const [pick, setPick] = useState<number>(-1)
-  const chosen = a && a.options.length > 0 ? a.options[pick < 0 ? a.options.length - 1 : pick] : null
+  const [pick, setPick] = useState<string | null>(null)
   const rules = getMarket('in').advance
 
   return (
-    <div>
-      <ScreenTitle k="advance" onBack={() => go('home')} />
-      {error && <Notice tone="chili">{error}</Notice>}
-      {!a ? (
-        <Loading />
-      ) : (
-        <div className="space-y-5">
-          <Card className={a.eligible ? 'border-4 border-success' : ''}>
-            <p className={`text-2xl font-semibold ${a.eligible ? 'text-success' : 'text-secondary'}`}>
-              <L k={a.eligible ? 'eligible' : 'notEligible'} />
-            </p>
-            {a.eligible && (
-              <p className="mt-2 text-xl">
-                {t('upTo')} <span className="text-4xl font-semibold text-accent-ink">{a.limit_text}</span>
-              </p>
-            )}
-            {!a.eligible && !a.open && (
-              <p className="mt-2 text-lg">
+    <Loaded data={a} error={error} rows={2}>
+      {(a) => {
+        const chosen = a.options.find((o) => o.amount_minor === pick) ?? a.options.at(-1) ?? null
+        return (
+          <>
+            {a.open ? (
+              <Card>
+                <AmountDisplay text={a.owed_text} size="lg" label={<B k="owed" />} />
+              </Card>
+            ) : a.eligible ? (
+              <Card>
+                <AmountDisplay text={a.limit_text} size="lg" label={<B k="eligible" />} />
+              </Card>
+            ) : (
+              <EmptyState icon="advance" title={<B k="notEligible" />}>
                 {lang === 'ta' ? `Plus மூலம் ${rules.eligibleAfterWeeks} வாரம் பணம் வந்த பிறகு கிடைக்கும்.` : `Opens after ${rules.eligibleAfterWeeks} weeks of money coming in through Plus.`}
-              </p>
+              </EmptyState>
             )}
-          </Card>
 
-          {a.eligible && chosen && (
-            <Card>
-              <div className="flex flex-wrap gap-2">
-                {a.options.map((o, i) => (
-                  <button
-                    key={o.amount_minor}
-                    onClick={() => setPick(i)}
-                    className={`min-h-14 rounded-2xl px-4 text-xl font-semibold ${o === chosen ? 'bg-accent text-on-accent' : 'bg-fill text-label'}`}
-                  >
-                    {o.amount_text}
-                  </button>
-                ))}
-              </div>
-              <dl className="mt-5 grid grid-cols-2 gap-y-3 text-xl">
-                <dt><L k="youGet" /></dt>
-                <dd className="text-right text-2xl font-semibold">{chosen.amount_text}</dd>
-                <dt><L k="cost" /> ({a.fee_bps / 100}%)</dt>
-                <dd className="text-right text-2xl font-semibold text-danger">{chosen.cost_text}</dd>
-                <dt><L k="youRepay" /></dt>
-                <dd className="text-right text-2xl font-semibold">{money(BigInt(chosen.amount_minor) + BigInt(chosen.cost_minor))}</dd>
-              </dl>
-              <p className="mt-4 text-lg text-secondary">
-                {lang === 'ta' ? 'ஒத்துக்கிறதுக்கு முன்னாடியே செலவு ரூபாய்ல தெரியும். வேற கட்டணம் எதுவும் இல்ல.' : 'You see the cost in rupees before you agree. No other charges.'}
-              </p>
-              <BigButton className="mt-4 w-full" disabled>
-                <L k="askAdvance" sub="text-on-accent/80" /> · {t('comingSoon')}
-              </BigButton>
-            </Card>
-          )}
+            {a.eligible && chosen && (
+              <Section title={<B k="youGet" />}>
+                <Segmented label="Amount" value={chosen.amount_minor} onChange={setPick} options={a.options.map((o) => [o.amount_minor, o.amount_text] as [string, ReactNode])} />
+                <dl className="divide-y divide-hairline rounded-card bg-surface shadow-card">
+                  {([
+                    ['youGet', chosen.amount_text, false],
+                    ['cost', `${chosen.cost_text}`, false],
+                    ['youRepay', money(BigInt(chosen.amount_minor) + BigInt(chosen.cost_minor)), true],
+                  ] as const).map(([k, v, strong]) => (
+                    <div key={k} className="flex items-center justify-between gap-4 px-4 py-3">
+                      <dt className={strong ? 'font-medium' : 'text-secondary'}><B k={k} />{k === 'cost' ? ` (${a.fee_bps / 100}%)` : ''}</dt>
+                      <dd className={`num ${strong ? 'text-xl font-semibold' : 'text-lg font-medium'}`}>{v}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="px-1 text-sm text-secondary">
+                  {lang === 'ta' ? 'ஒத்துக்கிறதுக்கு முன்னாடியே செலவு ரூபாய்ல தெரியும். வேற கட்டணம் எதுவும் இல்ல.' : 'You see the cost in rupees before you agree. No other charges.'}
+                </p>
+                <Button className="w-full" disabled>
+                  {T.askAdvance.en} · {T.comingSoon.en}
+                </Button>
+              </Section>
+            )}
 
-          <Card>
-            <p className="text-xl font-semibold">{a.open ? <><L k="owed" />: {a.owed_text}</> : <L k="noAdvanceOpen" />}</p>
-          </Card>
-        </div>
-      )}
-    </div>
+            {!a.open && <p className="px-1 text-sm text-secondary"><B k="noAdvanceOpen" /></p>}
+          </>
+        )
+      }}
+    </Loaded>
   )
 }
 
 // ---------------------------------------------------------------------------
-// 5. My record
+// Activity
 // ---------------------------------------------------------------------------
 
 type RecordResult = ToolResult & {
@@ -421,103 +456,65 @@ type RecordResult = ToolResult & {
   record_url: string | null
 }
 
-const KIND_LABEL: Record<string, { ta: string; en: string }> = {
-  incoming: { ta: 'வந்தது', en: 'Received' },
-  received: { ta: 'வந்தது', en: 'Received' },
-  saved: { ta: 'சேமிச்சது', en: 'Saved' },
-  pay: { ta: 'அனுப்பியது', en: 'Paid' },
-  paid: { ta: 'அனுப்பியது', en: 'Paid' },
-  group: { ta: 'சீட்டு', en: 'Seettu' },
-  group_contribution: { ta: 'சீட்டு', en: 'Seettu' },
-}
-
-export function Record({ data, go }: { data: PlusData } & Nav) {
-  const { lang } = useLang()
-  const t = useT()
+export function Record({ data }: { data: PlusData } & Nav) {
   const { data: r, error } = useToolRead<RecordResult>('my_record', data.version)
-  const label = (k: string) => (KIND_LABEL[k] ? KIND_LABEL[k][lang] : k)
-
   return (
-    <div>
-      <ScreenTitle k="record" onBack={() => go('home')} />
-      {error && <Notice tone="chili">{error}</Notice>}
-      {!r ? (
-        <Loading />
-      ) : (
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-3">
-            {(
-              [
-                ['received', r.totals.received_text, 'text-success'],
-                ['saved', r.totals.saved_text, 'text-warning'],
-                ['paidOut', r.totals.paid_text, 'text-accent-ink'],
-                ['intoSeettu', r.totals.group_text, 'text-info'],
-              ] as const
-            ).map(([k, v, c]) => (
-              <Card key={k} className="p-4!">
-                <L k={k} className="text-lg font-semibold text-secondary" />
-                <p className={`mt-1 text-3xl font-semibold ${c}`}>{v}</p>
-              </Card>
-            ))}
-          </div>
-
-          <Card className="bg-success-soft!">
-            <p className="text-5xl font-semibold text-success">{r.confirmed_on_stellar}</p>
-            <L k="confirmedOnStellar" className="text-xl font-semibold" />
-            {r.waiting_for_stellar > 0 && <p className="mt-2 text-lg">⏳ +{r.waiting_for_stellar} · {t('waitingForStellar')}</p>}
-            {r.record_url && (
-              <a href={r.record_url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-lg font-semibold text-info underline">
-                <Icon name="link" /> {t('openStellar')}
-              </a>
-            )}
-            <p className="mt-2 text-base text-secondary">{t('privacyNote')}</p>
-          </Card>
-
-          <h2 className="text-2xl font-semibold">
-            <L k="history" />
-          </h2>
-          <ul className="space-y-2">
-            {r.recent.map((x) => (
-              <li key={x.id} className="flex items-center justify-between gap-3 rounded-2xl bg-surface p-4 shadow-[0_2px_0_0_var(--color-sand-deep)]">
-                <div>
-                  <p className="text-xl font-semibold">{x.kind === 'incoming' ? '+' : ''}{x.amount_text.replace('-', '−')}</p>
-                  <p className="text-base text-secondary">
-                    {label(x.kind)}
-                    {x.source && SOURCE_KEY[x.source] ? ` · ${T[SOURCE_KEY[x.source]][lang]}` : ''} · {whenText(x.at, lang)}
-                  </p>
-                </div>
-                {x.on_stellar ? <StellarMark url={x.url} /> : <StellarMark pending />}
-              </li>
-            ))}
-            {r.history
-              .filter((h) => !r.recent.some((x) => x.url === h.url))
-              .map((h, i) => (
-                <li key={`h${i}`} className="flex items-center justify-between gap-3 rounded-2xl bg-surface p-4 shadow-[0_2px_0_0_var(--color-sand-deep)]">
-                  <div>
-                    <p className="text-xl font-semibold">{h.amount_text}</p>
-                    <p className="text-base text-secondary">
-                      {label(h.kind)} · {new Date(h.at).toLocaleDateString(lang === 'ta' ? 'ta-IN' : 'en-IN', { day: 'numeric', month: 'short' })}
-                    </p>
+    <Loaded data={r} error={error} rows={4}>
+      {(r) => {
+        const older = r.history.filter((h) => !r.recent.some((x) => x.url === h.url))
+        return (
+          <div className="space-y-6">
+            <Card>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-5">
+                {([
+                  ['received', r.totals.received_text],
+                  ['saved', r.totals.saved_text],
+                  ['paidOut', r.totals.paid_text],
+                  ['intoSeettu', r.totals.group_text],
+                ] as const).map(([k, v]) => (
+                  <div key={k}>
+                    <dt className="text-sm text-secondary"><B k={k} /></dt>
+                    <dd className="num text-2xl font-light">{v}</dd>
                   </div>
-                  <StellarMark url={h.url} />
-                </li>
-              ))}
-          </ul>
-        </div>
-      )}
-    </div>
+                ))}
+              </dl>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-hairline pt-3">
+                <p className="text-sm text-secondary">
+                  <span className="num">{r.confirmed_on_stellar}</span> <B k="recordsCheckable" />
+                  {r.waiting_for_stellar > 0 && <span className="block">+{r.waiting_for_stellar} · {T.confirming.en}</span>}
+                </p>
+                {r.record_url && <VerifiedMark url={r.record_url} />}
+              </div>
+            </Card>
+
+            {r.recent.length + older.length === 0 ? (
+              <EmptyState icon="activity" title={<B k="nothingYet" />} />
+            ) : (
+              <Section title={<B k="history" />}>
+                <ListGroup>
+                  {r.recent.filter((x) => x.kind !== 'adjustment').map((x) => <TxRow key={x.id} kind={x.kind} source={x.source} amount={x.amount_text} at={x.at} url={x.url} pending={!x.on_stellar} />)}
+                  {older.map((h, i) => <TxRow key={`h${i}`} kind={h.kind} amount={h.amount_text} at={h.at} url={h.url} dateOnly />)}
+                </ListGroup>
+              </Section>
+            )}
+            <p className="px-1 text-center text-sm text-secondary"><B k="privacyPlain" /></p>
+          </div>
+        )
+      }}
+    </Loaded>
   )
 }
 
 // ---------------------------------------------------------------------------
-// 6. Add money
+// Add money (the wallet pass, opened)
 // ---------------------------------------------------------------------------
 
-export function AddMoney({ data, go }: { data: PlusData } & Nav) {
+export function AddMoney({ data }: { data: PlusData } & Nav) {
   const { lang } = useLang()
   const t = useT()
   const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState<{ tone: 'leaf' | 'chili'; text: string } | null>(null)
+  const [msg, setMsg] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null)
+  const { account } = data
 
   async function simulate(endpoint: 'state_transfer_arrives' | 'wages_arrive', amount?: number) {
     setBusy(true)
@@ -527,9 +524,9 @@ export function AddMoney({ data, go }: { data: PlusData } & Nav) {
     )
     setBusy(false)
     if (r.ok) {
-      setMsg({ tone: 'leaf', text: `${String(r.amount_text)} ${t('arrived')} ✓  ${t('toSpend')}: ${String(r.balance_text)} · ${t('saved')}: ${String(r.savings_text)}` })
+      setMsg({ tone: 'success', text: `${String(r.amount_text)} ${t('arrived')}. ${t('toSpend')}: ${String(r.balance_text)} · ${t('saved')}: ${String(r.savings_text)}` })
       void data.refresh()
-    } else setMsg({ tone: 'chili', text: r.text || String(r.error) })
+    } else setMsg({ tone: 'danger', text: r.text || String(r.error) })
   }
 
   const ways = [
@@ -540,76 +537,105 @@ export function AddMoney({ data, go }: { data: PlusData } & Nav) {
   ] as const
 
   return (
-    <div>
-      <ScreenTitle k="addMoney" onBack={() => go('home')} />
-      <h2 className="mb-3 text-2xl font-semibold">
-        <L k="waysIn" />
-      </h2>
-      <ul className="space-y-3">
-        {ways.map(([icon, k, help]) => (
-          <li key={k} className="flex gap-4 rounded-3xl bg-surface p-4 shadow-[0_2px_0_0_var(--color-sand-deep)]">
-            <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-fill text-3xl text-accent-ink">
-              <Icon name={icon} />
-            </span>
-            <div>
-              <L k={k} className="text-xl font-semibold" />
-              <p className="mt-1 text-lg text-secondary">{help[lang]}</p>
-            </div>
-          </li>
-        ))}
-      </ul>
-
-      <Card className="mt-6 border-4 border-dashed border-fill-strong">
-        <p className="text-base font-semibold uppercase tracking-wide text-warning">{t('demo')}</p>
-        <div className="mt-3 space-y-3">
-          <BigButton className="w-full" onClick={() => simulate('state_transfer_arrives')} disabled={busy}>
-            <Icon name="gov" /> <L k="demoStateTransfer" sub="text-on-accent/80" />
-          </BigButton>
-          <div className="grid grid-cols-2 gap-3">
-            {[500, 1500].map((a) => (
-              <BigButton key={a} tone="sand" onClick={() => simulate('wages_arrive', a)} disabled={busy}>
-                <Icon name="wages" /> {t('wages')} ₹{a.toLocaleString('en-IN')}
-              </BigButton>
-            ))}
-          </div>
-        </div>
-        {msg && (
-          <div className="mt-3">
-            <Notice tone={msg.tone}>{msg.text}</Notice>
-          </div>
+    <>
+      <div className="rounded-card p-6 text-white shadow-lift" style={{ background: 'var(--wallet)' }}>
+        {account ? (
+          <AmountDisplay text={money(account.balance_paise)} size="xl" label={lang === 'ta' ? `${T.toSpend.en} · ${T.toSpend.ta}` : T.toSpend.en} />
+        ) : (
+          <Skeleton className="h-14 w-56 opacity-30" />
         )}
+        {account && <p className="mt-3 text-sm text-white/75">{account.bank_name}</p>}
+      </div>
+
+      <Section title={<B k="waysIn" />}>
+        <ListGroup>
+          {ways.map(([icon, k, help]) => (
+            <ListRow key={k} icon={icon} iconTone="accent" title={<B k={k} />} subtitle={lang === 'ta' ? help.ta : help.en} />
+          ))}
+        </ListGroup>
+      </Section>
+
+      <Card className="space-y-4 border border-dashed border-fill-strong bg-surface-2! shadow-none!">
+        <p className="flex items-center gap-2 text-sm font-medium text-secondary"><Icon name="star4" /> <B k="demo" /></p>
+        <Button variant="secondary" className="w-full" onClick={() => void simulate('state_transfer_arrives')} disabled={busy}>
+          <Icon name="gov" /> {T.demoStateTransfer.en}
+        </Button>
+        <div className="grid grid-cols-2 gap-3">
+          {[500, 1500].map((a) => (
+            <Button key={a} variant="secondary" onClick={() => void simulate('wages_arrive', a)} disabled={busy}>
+              <Icon name="wages" /> {T.wages.en} ₹{a.toLocaleString('en-IN')}
+            </Button>
+          ))}
+        </div>
+        {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
       </Card>
-    </div>
+    </>
   )
 }
 
 // ---------------------------------------------------------------------------
-// 7. Settings
+// Savings (auto-save)
 // ---------------------------------------------------------------------------
 
-export function Settings({ data, go, onSignOut }: { data: PlusData; onSignOut: () => void } & Nav) {
-  const { lang, setLang } = useLang()
-  const t = useT()
+export function Savings({ data }: { data: PlusData } & Nav) {
+  const { lang } = useLang()
   const current = (data.me?.auto_save_bps ?? 1000) / 100
   const [percent, setPercent] = useState<number | null>(null)
   const shown = percent ?? current
+  const [msg, setMsg] = useState<string | null>(null)
+
+  async function saveAutoSave() {
+    // Two-step like every change: prepare here, the confirm sheet asks Yes/No.
+    const r = await tool('set_auto_save', { percent: shown })
+    if (!r.ok) setMsg(r.text)
+    else {
+      setPercent(null)
+      void data.refresh()
+    }
+  }
+
+  return (
+    <>
+      <Card>
+        {data.account ? <AmountDisplay text={money(data.account.savings_paise)} size="xl" label={<B k="saved" />} /> : <Skeleton className="h-14 w-48" />}
+      </Card>
+      <Section title={<B k="autoSave" />}>
+        <Card className="space-y-4">
+          <p className="text-base text-secondary"><Bilingual main={T.autoSaveHelp.en} sub={lang === 'ta' ? T.autoSaveHelp.ta : undefined} /></p>
+          <div className="flex items-center justify-between gap-3">
+            <button aria-label="Less" onClick={() => setPercent(Math.max(0, shown - 5))} className="grid size-14 place-items-center rounded-full bg-fill text-2xl active:bg-fill-strong">−</button>
+            <span className="num text-5xl font-light">{shown}%</span>
+            <button aria-label="More" onClick={() => setPercent(Math.min(30, shown + 5))} className="grid size-14 place-items-center rounded-full bg-fill text-2xl active:bg-fill-strong">+</button>
+          </div>
+          <Button className="w-full" onClick={() => void saveAutoSave()} disabled={shown === current}>
+            {lang === 'ta' ? `${T.save.en} · ${T.save.ta}` : T.save.en}
+          </Button>
+          {msg && <Notice tone="danger">{msg}</Notice>}
+        </Card>
+      </Section>
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Profile
+// ---------------------------------------------------------------------------
+
+export function Settings({ data, onSignOut }: { data: PlusData; onSignOut: () => void } & Nav) {
+  const { lang, setLang } = useLang()
+  const t = useT()
   const [phone, setPhone] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [pinStep, setPinStep] = useState<'idle' | 'current' | 'new'>('idle')
   const [curPin, setCurPin] = useState('')
   const [newPin, setNewPin] = useState('')
   const [hasPin, setHasPin] = useState<boolean | null>(null)
+  const name = data.me?.name ?? ''
 
   useEffect(() => {
     tool<ToolResult & { has_pin: boolean }>('get_user').then((r) => setHasPin(Boolean(r.has_pin))).catch(() => setHasPin(null))
   }, [data.version])
 
-  async function saveAutoSave() {
-    // Two-step like every change: prepare here, the confirm screen asks Yes/No.
-    const r = await tool('set_auto_save', { percent: shown })
-    if (!r.ok) setMsg(r.text)
-    else void data.refresh()
-  }
   async function saveContact() {
     const r = await tool('update_settings', { trusted_contact_phone: phone ?? '' })
     setMsg(r.ok ? t('saveDone') : r.error === 'invalid_phone' ? (lang === 'ta' ? '10 இலக்க மொபைல் நம்பர் போடுங்க' : 'Use a 10-digit mobile number') : r.text)
@@ -627,85 +653,75 @@ export function Settings({ data, go, onSignOut }: { data: PlusData; onSignOut: (
     setMsg(r.ok ? t('saveDone') : lang === 'ta' ? 'PIN மாத்த முடியல. இப்போ இருக்குற PIN சரியா?' : r.text)
     if (r.ok) setHasPin(true)
   }
+  const both = (k: Key) => (lang === 'ta' ? `${T[k].en} · ${T[k].ta}` : T[k].en)
 
   return (
-    <div className="space-y-5">
-      <ScreenTitle k="settings" onBack={() => go('home')} />
-      {msg && <Notice tone="leaf">{msg}</Notice>}
-
-      <Card>
-        <L k="autoSave" className="text-2xl font-semibold" />
-        <p className="mt-1 text-lg text-secondary">{lang === 'ta' ? T.autoSaveHelp.ta : T.autoSaveHelp.en}</p>
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <button aria-label="−" onClick={() => setPercent(Math.max(0, shown - 5))} className="size-16 rounded-2xl bg-fill text-4xl font-semibold">−</button>
-          <span className="text-5xl font-semibold text-accent-ink">{shown}%</span>
-          <button aria-label="+" onClick={() => setPercent(Math.min(30, shown + 5))} className="size-16 rounded-2xl bg-fill text-4xl font-semibold">+</button>
+    <div className="space-y-6">
+      <div className="flex items-center gap-4">
+        <span className="grid size-16 shrink-0 place-items-center rounded-full bg-accent-soft text-2xl font-medium text-accent-ink">{name.slice(0, 1).toUpperCase()}</span>
+        <div className="min-w-0">
+          <p className="truncate text-2xl font-semibold">{name}</p>
+          {data.account && <p className="text-base text-secondary">{data.account.bank_name}</p>}
         </div>
-        <BigButton className="mt-4 w-full" onClick={saveAutoSave} disabled={shown === current}>
-          <L k="save" sub="text-on-accent/80" />
-        </BigButton>
-      </Card>
+      </div>
+      {msg && <Notice tone="success">{msg}</Notice>}
 
-      <Card>
-        <L k="trustedContact" className="text-2xl font-semibold" />
-        <p className="mt-1 text-lg text-secondary">{lang === 'ta' ? T.trustedHelp.ta : T.trustedHelp.en}</p>
-        <input
-          inputMode="tel"
-          autoComplete="tel"
-          aria-label={t('trustedContact')}
-          value={phone ?? data.me?.trusted_contact_phone ?? ''}
-          onChange={(e) => setPhone(e.target.value)}
-          placeholder="98765 43210"
-          className="mt-3 h-16 w-full rounded-2xl border-2 border-fill-strong bg-canvas px-4 text-2xl font-semibold"
-        />
-        <BigButton tone="sand" className="mt-3 w-full" onClick={saveContact} disabled={phone === null}>
-          <L k="save" />
-        </BigButton>
-      </Card>
+      <Section title={<B k="language" />}>
+        <Segmented label="Language / மொழி" value={lang} onChange={(l) => void chooseLang(l)} options={[['ta', 'தமிழ்'], ['en', 'English']]} />
+      </Section>
 
-      <Card>
-        <L k="language" className="text-2xl font-semibold" />
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <BigButton tone={lang === 'ta' ? 'brick' : 'white'} onClick={() => chooseLang('ta')}>தமிழ்</BigButton>
-          <BigButton tone={lang === 'en' ? 'brick' : 'white'} onClick={() => chooseLang('en')}>English</BigButton>
-        </div>
-      </Card>
+      <Section title={<B k="trustedContact" />}>
+        <Card className="space-y-3">
+          <p className="text-sm text-secondary"><Bilingual main={T.trustedHelp.en} sub={lang === 'ta' ? T.trustedHelp.ta : undefined} /></p>
+          <input
+            inputMode="tel"
+            autoComplete="tel"
+            aria-label={t('trustedContact')}
+            value={phone ?? data.me?.trusted_contact_phone ?? ''}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="98765 43210"
+            className="block min-h-14 w-full rounded-control border border-hairline bg-surface-2 px-4 text-xl text-label focus:border-accent focus:bg-surface focus:outline-none"
+          />
+          <Button variant="secondary" className="w-full" onClick={() => void saveContact()} disabled={phone === null}>
+            {both('save')}
+          </Button>
+        </Card>
+      </Section>
 
-      <Card>
-        <L k="pin" className="text-2xl font-semibold" />
-        {pinStep === 'idle' ? (
-          <BigButton tone="sand" className="mt-3 w-full" onClick={() => setPinStep(hasPin ? 'current' : 'new')}>
-            <Icon name="lock" /> <L k={hasPin ? 'changePin' : 'setPin'} />
-          </BigButton>
-        ) : (
-          <div className="mt-3">
-            <p className="text-center text-xl font-semibold">
-              <L k={pinStep === 'current' ? 'currentPin' : 'newPin'} />
-            </p>
-            <PinDots length={(pinStep === 'current' ? curPin : newPin).length} />
-            <Keypad onKey={(k) => (pinStep === 'current' ? setCurPin((p) => applyKey(p, k, 6, true)) : setNewPin((p) => applyKey(p, k, 6, true)))} />
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <BigButton tone="white" onClick={() => { setPinStep('idle'); setCurPin(''); setNewPin('') }}>
-                <L k="back" />
-              </BigButton>
-              {pinStep === 'current' ? (
-                <BigButton onClick={() => setPinStep('new')} disabled={curPin.length < 4}>
-                  <L k="next" sub="text-on-accent/80" />
-                </BigButton>
-              ) : (
-                <BigButton tone="leaf" onClick={savePin} disabled={newPin.length < 4}>
-                  <L k="save" sub="text-white/85" />
-                </BigButton>
-              )}
-            </div>
-            <p className="mt-2 text-center text-base text-secondary">{t('pinHidden')}</p>
-          </div>
-        )}
-      </Card>
+      <Section title={<B k="pin" />}>
+        <Card className="space-y-3">
+          {pinStep === 'idle' ? (
+            <Button variant="secondary" className="w-full" onClick={() => setPinStep(hasPin ? 'current' : 'new')}>
+              <Icon name="lock" /> {both(hasPin ? 'changePin' : 'setPin')}
+            </Button>
+          ) : (
+            <>
+              <PinPad
+                value={pinStep === 'current' ? curPin : newPin}
+                onChange={pinStep === 'current' ? setCurPin : setNewPin}
+                label={both(pinStep === 'current' ? 'currentPin' : 'newPin')}
+                hint={both('pinHidden')}
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <Button variant="secondary" onClick={() => { setPinStep('idle'); setCurPin(''); setNewPin('') }}>
+                  {both('back')}
+                </Button>
+                {pinStep === 'current' ? (
+                  <Button onClick={() => setPinStep('new')} disabled={curPin.length < 4}>{both('next')}</Button>
+                ) : (
+                  <Button onClick={() => void savePin()} disabled={newPin.length < 4}>{both('save')}</Button>
+                )}
+              </div>
+            </>
+          )}
+        </Card>
+      </Section>
 
-      <BigButton tone="white" className="w-full" onClick={onSignOut}>
-        <L k="signOut" />
-      </BigButton>
+      <Button variant="destructive" className="w-full" onClick={onSignOut}>
+        <Icon name="signOut" /> {both('signOut')}
+      </Button>
+      <p className="text-center text-sm text-secondary"><B k="demoNote" /></p>
     </div>
   )
 }
+

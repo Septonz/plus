@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
-import { ROOT, loadLocalEnv } from "./lib/supabase-admin.ts";
+import { ROOT, adminClient, loadLocalEnv } from "./lib/supabase-admin.ts";
 import { testNin, testPin } from "./lib/onboard.ts";
 
 loadLocalEnv();
@@ -97,14 +97,17 @@ class Page {
     await this.waitClickable(text, opts);
     await sleep(350);
   }
-  private async waitClickable(text: string, { exact = false, within = "body" }: { exact?: boolean; within?: string }) {
+  private async waitClickable(text: string, { exact = false, within = "" }: { exact?: boolean; within?: string }) {
     const t0 = Date.now();
     while (Date.now() - t0 < 20_000) {
       const ok = await this.eval<boolean>(`(() => {
         const t = ${JSON.stringify(text)};
-        const els = [...document.querySelector(${JSON.stringify(within)}).querySelectorAll('button, a, [role=tab], [role=radio]')];
+        // Default scope: the top-most open dialog (sheet or full-screen card), else the page.
+        const dialogs = [...document.querySelectorAll('[role=dialog]')];
+        const root = ${JSON.stringify(within)} ? document.querySelector(${JSON.stringify(within)}) : (dialogs.at(-1) || document.body);
+        const els = [...root.querySelectorAll('button, a, [role=tab], [role=radio]')];
         const hit = els.find((el) => {
-          if (el.disabled || el.offsetParent === null) return false;
+          if (el.disabled || el.offsetParent === null || getComputedStyle(el).visibility === 'hidden' || el.closest('[aria-hidden=true]')) return false;
           const s = (el.innerText || '').trim().replace(/\\s+/g, ' ');
           const a = el.getAttribute('aria-label') || '';
           return ${exact} ? (s === t || a === t) : (s.includes(t) || a === t);
@@ -188,6 +191,19 @@ async function sessionJson(email: string): Promise<string> {
   const { data, error } = await sb.auth.signInWithPassword({ email, password: process.env.VITE_DEMO_LOGIN_PASSWORD! });
   if (error || !data.session) throw new Error(`demo login ${email}: ${error?.message}`);
   return JSON.stringify(data.session);
+}
+/** The staff user (app_metadata.role = staff), signed in by a one-off magic link: no password used or changed. */
+async function staffSessionJson(): Promise<string> {
+  const { db } = adminClient();
+  const { data } = await db.auth.admin.listUsers({ page: 1, perPage: 200 });
+  const staff = data.users.find((u) => u.app_metadata?.role === "staff");
+  if (!staff?.email) throw new Error("no staff user (pnpm staff:create)");
+  const { data: link, error } = await db.auth.admin.generateLink({ type: "magiclink", email: staff.email });
+  if (error) throw error;
+  const sb = createClient(url, anon, { auth: { persistSession: false } });
+  const { data: s, error: e } = await sb.auth.verifyOtp({ token_hash: link.properties.hashed_token, type: "magiclink" });
+  if (e || !s.session) throw new Error(`staff sign-in: ${e?.message}`);
+  return JSON.stringify(s.session);
 }
 async function signedIn(page: Page, path: string, key: string, email: string) {
   await page.goto(`${APP}/`);
@@ -287,7 +303,7 @@ async function main() {
       await page.waitText("Open my wallet");
       await page.shot("21-signup-wallet");
       await page.click("Open my wallet");
-      await page.waitText("Opening your wallet on Stellar");
+      await page.waitText("Opening your wallet");
       await page.shot("22-signup-wallet-opening");
       await page.waitText("Your account is ready", 120_000);
       await sleep(900);
@@ -296,13 +312,14 @@ async function main() {
       await page.waitText("Bola Adeyemi", 30_000);
       await sleep(1500);
       await page.shot("30-newuser-home");
+      await page.click("Your wallet");
       await page.click("Add money");
       await page.waitText("Account number");
       await page.shot("31-add-money");
       await page.click("Simulate transfer received");
       await page.waitText("arrived", 90_000);
       await page.shot("32-add-money-arrived");
-      await page.click("Back");
+      await page.click("Close", { exact: true });
       await page.click("Pay", { exact: true });
       await page.waitText("Their phone number");
       await page.shot("33-pay-new-user");
@@ -318,55 +335,70 @@ async function main() {
       await page.waitText("Funmi");
       await sleep(2500);
       await page.shot("40-home");
+      await page.click("Your wallet");
+      await page.waitText("Available");
+      await page.shot("41-wallet");
       await page.click("Add money");
       await page.waitText("Account number");
-      await page.shot("41-add-money");
-      await page.click("Back");
+      await page.shot("42-add-money");
+      await page.click("Close", { exact: true });
       await page.click("Pay", { exact: true });
-      await page.waitText("Who you wan pay?");
+      await page.waitText("Iya Tunde");
       await page.click("Iya Tunde");
       await page.keys("1500");
       await page.top();
-      await page.shot("42-pay-saved");
+      await page.shot("43-pay-saved");
       await page.click("By phone number");
       await page.type("Their phone number", "0803 555 0101");
       await page.type("Their name", "Mama Ngozi");
       await page.keys("300");
-      await page.shot("43-pay-phone");
+      await page.shot("44-pay-phone");
       await page.click("Next");
       await page.waitText("by code");
-      await page.shot("44-confirm-pay-code");
+      await page.shot("45-confirm-pay-code");
       await page.click("Yes", { within: "[role=dialog]" });
-      await page.waitText("Text message (simulated");
+      await page.waitText("Text message");
       await page.waitText("Verified on Stellar", 60_000);
-      await page.shot("45-confirm-done-sms");
+      await page.shot("46-confirm-done-sms");
       await page.click("Save this person");
       await page.waitText("Saved");
       await page.click("Close", { within: "[role=dialog]" });
-      await page.click("Ajo", { exact: true });
-      await page.waitText("Members");
-      await page.shot("46-ajo");
       await page.click("Home", { exact: true });
+      await page.click("Ajo");
+      await page.waitText("this round");
+      await sleep(600);
+      await page.shot("47-ajo");
+      await page.click("Close", { exact: true });
       await page.click("Advance");
       await page.waitText("No interest");
-      await page.shot("47-advance");
-      await page.click("Back");
-      await page.click("Cash out", { exact: true });
+      await sleep(600);
+      await page.shot("48-advance");
+      await page.click("Close", { exact: true });
+      await page.click("Your wallet");
+      await page.click("Cash out");
       await page.waitText("How much cash do you need?");
-      await page.shot("48-cash-out");
-      await page.click("My record", { exact: true });
+      await page.shot("49-cash-out");
+      await page.click("Close", { exact: true });
+      await page.click("Activity", { exact: true });
       await page.waitText("Came in");
-      await page.shot("49-record");
-      await page.click("Home", { exact: true });
-      await page.click("Settings");
+      await page.shot("50-activity");
+      await page.click("Profile", { exact: true });
       await page.waitText("Level");
-      await page.shot("50-settings");
+      await page.shot("51-profile");
+      await page.click("Home", { exact: true });
+      // The voice sheet: a real conversation (Chrome's fake microphone); the agent greets first.
+      const mic = `document.querySelector('button[aria-label^="Talk to Plus"], button[aria-pressed="true"]').click(); 1`;
+      await page.eval(mic);
+      await page.waitText("Wetin I fit do", 30_000).catch(() => undefined);
+      await sleep(1500);
+      await page.shot("52-voice");
+      await page.eval(mic).catch(() => undefined);
     }
 
     if (on("agent")) {
       console.log("Mama Bisi (agent page)");
       await signedIn(page, "/agent", "plus-agent-auth", "demo-mamabisi@example.com");
-      await page.waitText("Float on Stellar");
+      await page.waitText("Left today");
       await page.shot("60-agent-cash");
       await page.click("Redeem code");
       await page.shot("61-agent-redeem");
@@ -379,11 +411,39 @@ async function main() {
       await page.click("Stop");
     }
 
+    if (on("demo")) {
+      console.log("/demo (staff projector view, 1440 x 900)");
+      await page.goto(`${APP}/`);
+      // Without a staff user (pnpm staff:create), this shows the staff sign-in.
+      const staff = await staffSessionJson().catch((e) => (console.log(`  (${e.message}: showing the sign-in)`), null));
+      await page.eval(staff ? `localStorage.clear(); localStorage.setItem("plus-demo-auth", ${JSON.stringify(staff)}); 1` : "localStorage.clear(); 1");
+      await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+      await page.goto(`${APP}/demo`);
+      await sleep(9000);
+      const r = await page.send("Page.captureScreenshot", { format: "png" });
+      const file = `80-demo${DARK ? "-dark" : ""}.png`;
+      writeFileSync(join(OUT, file), Buffer.from(String(r.data), "base64"));
+      console.log(`  docs/screens/${file}`);
+      await page.send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: SCALE, mobile: true });
+    }
+
     if (on("india")) {
       console.log("Selvi (India, shared components)");
       await signedIn(page, "/app", "plus-auth", "demo-selvi@example.com");
-      await sleep(3000);
+      await page.waitText("Recent activity");
+      await sleep(2500);
       await page.shot("70-india-home");
+      for (const [pass, name] of [["To spend", "72-india-add-money"], ["Savings", "73-india-savings"], ["Seettu", "74-india-seettu"], ["Advance", "75-india-advance"]]) {
+        await page.click(pass);
+        await sleep(900);
+        await page.shot(name);
+        await page.click("Close", { exact: true });
+      }
+      for (const [tab, name] of [["Pay", "76-india-pay"], ["Activity", "77-india-activity"], ["Profile", "78-india-profile"]]) {
+        await page.click(tab, { exact: true });
+        await sleep(1500);
+        await page.shot(name);
+      }
       await signedOut(page);
       await page.click("Open a Plus account");
       await page.click("India");

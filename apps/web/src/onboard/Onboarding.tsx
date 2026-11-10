@@ -7,10 +7,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { formatMoney, getMarket, type MarketId } from '@plus/markets'
 import { supabase } from '../lib/supabase'
 import { tool, type ToolResult } from '../plus/api'
-import { applyKey, BigButton, Card, CopyButton, Icon, Keypad, Notice, PinDots, SmsBubble, Spinner, SuccessTick, TextField } from '../plus/ui'
+import {
+  applyKey, Bilingual, Button, Card, Icon, IconButton, ListGroup, ListRow, Notice, NumPad, PageHeader, PinDots, Segmented, Spinner, Tick, VerifiedMark,
+} from '../ds/components'
+import { CopyButton, SmsBubble, TextField } from '../plus/ui'
 import { VoiceButton } from '../plus/voice'
-import { MIC_WORDS, W, Y, type WKey } from '../ng/words'
-import { ArtHello, ArtId, ArtLock, ArtPeople, ArtPhone, ArtSelfie, ArtWallet, ArtWelcome } from './art'
+import { MIC_WORDS, W, Y, yo, type WKey } from '../ng/words'
+
+/** The demo shows the text message on screen instead of sending it. */
+const SMS_NOTE = 'Text message (simulated on this demo)'
 
 type Step = 'name' | 'language' | 'phone' | 'pin' | 'verify' | 'wallet'
 type Status = ToolResult & {
@@ -79,43 +84,35 @@ function StepTrack({ st, note }: { st: Status; note?: string }) {
   const label = note ?? (st.current === 'done' ? 'All steps done' : W[STEP_META[st.current][1]].en)
   return (
     <div>
-      <ol className="flex items-center justify-between" aria-label="Sign-up steps">
-        {st.steps.map((s, n) => {
-          const [icon, k] = STEP_META[s.step]
+      <ol className="flex gap-1.5" aria-label="Sign-up steps">
+        {st.steps.map((s) => {
+          const k = STEP_META[s.step][1]
           const current = s.step === st.current
           return (
-            <li key={s.step} className="flex flex-1 items-center last:flex-none">
-              <span
-                aria-label={`${W[k].en}: ${s.done ? 'done' : current ? 'now' : 'to do'}`}
-                aria-current={current ? 'step' : undefined}
-                className={`grid size-10 shrink-0 place-items-center rounded-full text-xl transition ${
-                  s.done ? 'bg-success text-white' : current ? 'bg-accent text-on-accent ring-4 ring-warning/50' : 'bg-fill text-secondary'
-                }`}
-              >
-                <Icon name={s.done ? 'check' : icon} />
-              </span>
-              {n < st.steps.length - 1 && <span className={`mx-1 h-1 flex-1 rounded-full ${s.done ? 'bg-success' : 'bg-fill-strong'}`} />}
-            </li>
+            <li
+              key={s.step}
+              aria-label={`${W[k].en}: ${s.done ? 'done' : current ? 'now' : 'to do'}`}
+              aria-current={current ? 'step' : undefined}
+              className={`h-1 flex-1 rounded-full transition-colors duration-300 ${s.done ? 'bg-accent' : current ? 'bg-accent/45' : 'bg-fill-strong'}`}
+            />
           )
         })}
       </ol>
-      <p className="mt-2 text-lg font-semibold text-secondary" aria-live="polite">
+      <p className="mt-2.5 text-sm font-medium text-secondary" aria-live="polite">
         {st.current === 'done' ? label : `Step ${i + 1} of ${st.steps.length} · ${label}`}
       </p>
     </div>
   )
 }
 
-/** One step: an illustration, a title (English with Yoruba under it), why it matters, the controls. */
-function Panel({ art, k, title, why, children }: { art: ReactNode; k?: WKey; title?: string; why: ReactNode; children: ReactNode }) {
+/** One step: a title (English, with Yoruba in a muted line beneath), why it matters, the controls. */
+function Panel({ k, title, why, children }: { k?: WKey; title?: string; why: ReactNode; children: ReactNode }) {
   return (
-    <section className="sheet-in space-y-4">
-      {art}
-      <h2 className="text-3xl font-semibold">{k ? <Y k={k} /> : title}</h2>
-      <p className="flex gap-2 text-lg text-secondary">
-        <Icon name="info" className="mt-1 text-xl text-info" />
-        <span>{why}</span>
-      </p>
+    <section className="sheet-in space-y-5">
+      <div className="space-y-2">
+        <h2 className="text-3xl font-semibold">{k ? <Bilingual main={W[k].en} sub={yo(k)} /> : title}</h2>
+        <p className="text-base text-secondary">{why}</p>
+      </div>
       {children}
     </section>
   )
@@ -128,7 +125,7 @@ function Digits({ value, length, group = [] }: { value: string; length: number; 
       {cells.map((c, i) => (
         <span
           key={i}
-          className={`grid h-14 max-w-10 min-w-0 flex-1 place-items-center rounded-lg border-2 font-mono font-semibold ${length > 8 ? 'text-2xl' : 'text-3xl'} ${c ? 'border-accent bg-surface' : 'border-hairline bg-canvas'} ${group.includes(i) ? 'ml-1.5' : ''}`}
+          className={`num grid h-14 max-w-10 min-w-0 flex-1 place-items-center rounded-control border font-light ${length > 8 ? 'text-2xl' : 'text-3xl'} ${c ? 'border-accent bg-surface' : 'border-hairline bg-surface-2'} ${group.includes(i) ? 'ml-1.5' : ''}`}
         >
           {c}
         </span>
@@ -204,38 +201,25 @@ export default function Onboarding({ mode, onExit }: { mode: 'app' | 'agent'; on
   if (!token || !st) {
     return (
       <Shell mode={mode} onExit={onExit}>
-        <section className="space-y-5">
-          <ArtWelcome />
-          <h1 className="text-3xl font-semibold">{mode === 'agent' ? 'Register a customer' : <Y k="openAccount" />}</h1>
-          <ul className="space-y-3 text-lg">
-            <Li icon="star4">It takes about two minutes{mode === 'app' ? ', by voice or by tapping' : ''}.</Li>
-            <Li icon="phone">{mode === 'agent' ? 'She needs her phone with her: a code comes to it.' : 'Have your phone with you: a code comes to it.'}</Li>
-            <Li icon="lock">{mode === 'agent' ? 'She types her PIN and NIN herself on this screen. Turn it to her and look away.' : 'Your PIN and NIN are typed on this screen. Never say them out loud.'}</Li>
-            <Li icon="wallet">The wallet is free. Plus pays the Stellar setup cost.</Li>
-          </ul>
+        <section className="space-y-6">
+          <PageHeader title={mode === 'agent' ? 'Register a customer' : W.openAccount.en} sub={mode === 'agent' ? undefined : yo('openAccount')} />
+          <ListGroup>
+            <ListRow icon="star4" iconTone="accent" title="About two minutes" subtitle={mode === 'app' ? 'By voice or by tapping' : 'Six short steps'} />
+            <ListRow icon="phone" iconTone="accent" title={mode === 'agent' ? 'Her phone with her' : 'Your phone with you'} subtitle="A code comes to it" />
+            <ListRow icon="lock" iconTone="accent" title="PIN and NIN on screen only" subtitle={mode === 'agent' ? 'She types them herself; look away' : 'Never say them out loud'} />
+            <ListRow icon="wallet" iconTone="accent" title="The wallet is free" subtitle="Plus pays the setup cost" />
+          </ListGroup>
           {mode === 'app' && (
-            <div>
-              <p className="text-lg font-semibold">Country</p>
-              <div className="mt-2 grid grid-cols-2 gap-3" role="radiogroup" aria-label="Country">
-                {(['ng', 'in'] as const).map((id) => (
-                  <button
-                    key={id}
-                    role="radio"
-                    aria-checked={market === id}
-                    onClick={() => setMarket(id)}
-                    className={`min-h-14 rounded-control border-2 text-xl font-semibold ${market === id ? 'border-accent bg-accent text-on-accent' : 'border-hairline bg-surface'}`}
-                  >
-                    {getMarket(id).country}
-                  </button>
-                ))}
-              </div>
+            <div className="space-y-2">
+              <p className="px-1 text-lg font-semibold">Country</p>
+              <Segmented label="Country" value={market} onChange={setMarket} options={(['ng', 'in'] as const).map((id) => [id, getMarket(id).country])} />
             </div>
           )}
-          {msg && <Notice tone="chili">{msg}</Notice>}
-          <BigButton className="w-full" loading={busy} onClick={() => void start()}>
-            {mode === 'agent' ? 'Start' : <Y k="openAccount" sub="text-on-accent/80" />}
-          </BigButton>
-          <p className="text-center text-base text-secondary">Testnet demo: simulated money, test phone numbers.</p>
+          {msg && <Notice tone="danger">{msg}</Notice>}
+          <Button className="w-full" loading={busy} onClick={() => void start()}>
+            {mode === 'agent' ? 'Start' : W.openAccount.en}
+          </Button>
+          <p className="text-center text-sm text-secondary">Testnet demo: simulated money, test phone numbers.</p>
         </section>
       </Shell>
     )
@@ -258,34 +242,31 @@ export default function Onboarding({ mode, onExit }: { mode: 'app' | 'agent'; on
 
   return (
     <Shell mode={mode} onExit={onExit} finished={st.finished || st.current === 'done'}>
-      <div className="space-y-5">
+      <div className="space-y-6">
         {!agentDone && <StepTrack st={st} note={view === 'nin' ? `Optional: your ${idDoc?.name ?? 'ID'}` : view === 'trusted' ? 'Optional: someone you trust' : undefined} />}
         {mode === 'app' && view !== 'ready' && (
-          <Card className="py-3!">
+          <Card className="px-4! py-3!">
             <VoiceButton size="inline" body={voiceBody} words={{ ...MIC_WORDS, mic: 'Sign up by voice: tap and talk' }} />
           </Card>
         )}
 
         {agentDone ? (
           <section className="space-y-5 text-center">
-            <SuccessTick />
+            <Tick />
             <h2 className="text-3xl font-semibold">{st.name}'s account is ready</h2>
-            <Notice tone="leaf">{agentDone}</Notice>
-            <BigButton className="w-full" onClick={onExit}>Back to the agent page</BigButton>
+            <Notice tone="success">{agentDone}</Notice>
+            <Button className="w-full" onClick={onExit}>Back to the agent page</Button>
           </section>
         ) : view === 'name' ? (
           <NameStep st={st} busy={busy} msg={msg} onSave={(name) => void call('set_profile', { name })} />
         ) : view === 'language' ? (
-          <Panel art={<ArtHello />} k="whichLanguage" why="Plus talks to you in this language, and the screens follow it where they can.">
-            <div className="grid gap-3">
+          <Panel k="whichLanguage" why="Plus talks to you in this language, and the screens follow it where they can.">
+            <ListGroup>
               {st.languages.map((l) => (
-                <button key={l.code} disabled={busy} onClick={() => void call('set_profile', { language: l.code })}
-                  className="flex min-h-16 items-center justify-between rounded-control border-2 border-hairline bg-surface px-5 text-left text-2xl font-semibold active:bg-fill">
-                  {l.label} <Icon name="pay" className="text-secondary" />
-                </button>
+                <ListRow key={l.code} icon="globe" title={l.label} chevron onClick={busy ? undefined : () => void call('set_profile', { language: l.code })} />
               ))}
-            </div>
-            {msg && <Notice tone="chili">{msg}</Notice>}
+            </ListGroup>
+            {msg && <Notice tone="danger">{msg}</Notice>}
           </Panel>
         ) : view === 'phone' ? (
           <PhoneStep st={st} busy={busy} msg={msg} onSend={async (phone) => {
@@ -314,20 +295,20 @@ export default function Onboarding({ mode, onExit }: { mode: 'app' | 'agent'; on
             onSave={(name, phone) => void call('set_trusted_contact', { name, phone })}
             onSkip={() => { setTrustedSkipped(true); setMsg(null) }} />
         ) : view === 'wallet' ? (
-          <Panel art={<ArtWallet />} k={ng ? 'openWallet' : undefined} title={ng ? undefined : 'Open my account'}
+          <Panel k={ng ? 'openWallet' : undefined} title={ng ? undefined : 'Open my account'}
             why={ng
-              ? 'Your wallet is your own account on Stellar, a public payment network. Plus pays the setup cost. Your name is never written on it: only numbers.'
-              : 'Plus opens your account with the partner bank (simulated). In India you never hold crypto; your money stays in rupees at the bank.'}>
+              ? 'Your wallet is your own account on a public payment network. Plus pays the setup cost. Your name is never written on it: only numbers.'
+              : 'Plus opens your account with the partner bank (simulated). Your money stays in rupees at the bank.'}>
             {st.wallet.status === 'none' || st.wallet.status === 'failed' ? (
               <>
-                {st.wallet.status === 'failed' && <Notice tone="chili">Opening the wallet did not work. Nothing was charged. Try again.</Notice>}
-                {msg && <Notice tone="chili">{msg}</Notice>}
-                <BigButton tone="leaf" className="w-full" loading={busy} onClick={async () => {
+                {st.wallet.status === 'failed' && <Notice tone="danger">Opening the wallet did not work. Nothing was charged. Try again.</Notice>}
+                {msg && <Notice tone="danger">{msg}</Notice>}
+                <Button className="w-full" loading={busy} onClick={async () => {
                   setWalletSince(Date.now())
                   await call('create_wallet')
                 }}>
-                  <Icon name="wallet" /> {ng ? W.openWallet.en : 'Open my account'}
-                </BigButton>
+                  {ng ? W.openWallet.en : 'Open my account'}
+                </Button>
               </>
             ) : (
               <WalletOpening since={walletSince} />
@@ -341,24 +322,16 @@ export default function Onboarding({ mode, onExit }: { mode: 'app' | 'agent'; on
   )
 }
 
-function Li({ icon, children }: { icon: string; children: ReactNode }) {
-  return (
-    <li className="flex gap-3">
-      <span className="grid size-10 shrink-0 place-items-center rounded-full bg-fill text-xl text-accent-ink"><Icon name={icon} /></span>
-      <span className="pt-1.5">{children}</span>
-    </li>
-  )
-}
 
 function Shell({ mode, onExit, finished, children }: { mode: 'app' | 'agent'; onExit: () => void; finished?: boolean; children: ReactNode }) {
   return (
-    <div className={mode === 'app' ? 'mx-auto min-h-dvh max-w-md px-4 pb-16 pt-4' : ''}>
-      <header className="flex items-center justify-between pb-4">
-        <p className="text-base font-semibold uppercase tracking-wide text-warning-strong">{mode === 'agent' ? 'Register a customer' : 'New account'}</p>
+    <div className={mode === 'app' ? 'mx-auto min-h-dvh max-w-md px-4 pb-16 pt-[max(env(safe-area-inset-top),1rem)]' : ''}>
+      <header className="flex min-h-11 items-center justify-between pb-4">
+        <p className="text-sm font-medium text-secondary">{mode === 'agent' ? 'Register a customer' : 'New account'}</p>
         {!finished && (
-          <button onClick={onExit} className="inline-flex min-h-12 items-center gap-1 rounded-full border-2 border-hairline bg-surface px-4 text-base font-semibold active:bg-fill">
+          <Button variant="secondary" size="sm" onClick={onExit}>
             <Icon name="x" /> {mode === 'agent' ? 'Stop' : 'Leave'}
-          </button>
+          </Button>
         )}
       </header>
       {children}
@@ -369,12 +342,12 @@ function Shell({ mode, onExit, finished, children }: { mode: 'app' | 'agent'; on
 function NameStep({ st, busy, msg, onSave }: { st: Status; busy: boolean; msg: string | null; onSave: (n: string) => void }) {
   const [name, setName] = useState(st.name ?? '')
   return (
-    <Panel art={<ArtHello />} k="whatName" why="Plus greets you by this name, and people you pay see it on their receipt.">
+    <Panel k="whatName" why="Plus greets you by this name, and people you pay see it on their receipt.">
       <TextField label="Your name" value={name} onChange={setName} placeholder="Adaeze Okafor" autoComplete="name" maxLength={60} />
-      {msg && <Notice tone="chili">{msg}</Notice>}
-      <BigButton className="w-full" loading={busy} disabled={name.trim().length < 2} onClick={() => onSave(name)}>
-        <Y k="next" sub="text-on-accent/80" />
-      </BigButton>
+      {msg && <Notice tone="danger">{msg}</Notice>}
+      <Button className="w-full" loading={busy} disabled={name.trim().length < 2} onClick={() => onSave(name)}>
+        {W.next.en}
+      </Button>
     </Panel>
   )
 }
@@ -382,13 +355,13 @@ function NameStep({ st, busy, msg, onSave }: { st: Status; busy: boolean; msg: s
 function PhoneStep({ st, busy, msg, onSend }: { st: Status; busy: boolean; msg: string | null; onSend: (p: string) => void }) {
   const [phone, setPhone] = useState(st.phone ? local(st.phone) : '')
   return (
-    <Panel art={<ArtPhone />} k="yourPhone" why="Your number is how people pay you and how you sign in. We send a code to it to check it is really yours.">
+    <Panel k="yourPhone" why="Your number is how people pay you and how you sign in. We send a code to it to check it is really yours.">
       <TextField label="Phone number" value={phone} onChange={setPhone} inputMode="tel" placeholder={st.phone_hint} autoComplete="tel"
-        hint={<>Demo: test numbers like <b>{st.phone_hint}</b> show their code on this screen.</>} />
-      {msg && <Notice tone="chili">{msg}</Notice>}
-      <BigButton className="w-full" loading={busy} disabled={phone.replace(/\D/g, '').length < 10} onClick={() => onSend(phone)}>
-        <Icon name="sms" /> Send me a code
-      </BigButton>
+        hint={<>Demo: test numbers like <b className="font-medium">{st.phone_hint}</b> show their code on this screen.</>} />
+      {msg && <Notice tone="danger">{msg}</Notice>}
+      <Button className="w-full" loading={busy} disabled={phone.replace(/\D/g, '').length < 10} onClick={() => onSend(phone)}>
+        Send me a code
+      </Button>
     </Panel>
   )
 }
@@ -398,21 +371,21 @@ function CodeStep({ st, sms, busy, msg, onVerify, onResend, onChange }: {
 }) {
   const [code, setCode] = useState('') // keyed by the code sent: a new code starts empty
   return (
-    <Panel art={<ArtPhone />} k="typeCode" why={<>We sent 6 numbers to <b>{local(st.phone)}</b>. Typing them proves the phone is yours. Never give this code to anyone.</>}>
-      {sms ? <SmsBubble to={local(sms.to)} text={sms.text} /> : <Notice tone="sky">The code was sent. Don't see it? Tap "Send a new code".</Notice>}
+    <Panel k="typeCode" why={<>We sent 6 numbers to <b className="font-medium text-label">{local(st.phone)}</b>. Typing them proves the phone is yours. Never give this code to anyone.</>}>
+      {sms ? <SmsBubble to={local(sms.to)} text={sms.text} note={SMS_NOTE} /> : <Notice tone="info">The code was sent. Don't see it? Tap "Send a new code".</Notice>}
       <Digits value={code} length={6} />
-      <Keypad onKey={(k) => {
+      <NumPad onKey={(k) => {
         const next = applyKey(code, k, 6, true)
         setCode(next)
         if (next.length === 6 && code.length === 5) onVerify(next)
       }} />
-      {msg && <Notice tone="chili">{msg}</Notice>}
-      <BigButton className="w-full" loading={busy} disabled={code.length !== 6} onClick={() => onVerify(code)}>
-        <Icon name="check" /> Check code
-      </BigButton>
+      {msg && <Notice tone="danger">{msg}</Notice>}
+      <Button className="w-full" loading={busy} disabled={code.length !== 6} onClick={() => onVerify(code)}>
+        Check code
+      </Button>
       <div className="grid grid-cols-2 gap-3">
-        <button onClick={onResend} disabled={busy} className="min-h-12 rounded-control bg-fill text-lg font-semibold active:bg-fill-strong">Send a new code</button>
-        <button onClick={onChange} disabled={busy} className="min-h-12 rounded-control bg-fill text-lg font-semibold active:bg-fill-strong">Change number</button>
+        <Button variant="plain" size="md" onClick={onResend} disabled={busy}>Send a new code</Button>
+        <Button variant="plain" size="md" onClick={onChange} disabled={busy}>Change number</Button>
       </div>
     </Panel>
   )
@@ -424,14 +397,14 @@ function PinStep({ agent, busy, msg, onSave, clear }: { agent: boolean; busy: bo
   const [mismatch, setMismatch] = useState(false)
   const again = first !== null
   return (
-    <Panel art={<ArtLock />} k={again ? 'pinAgain' : 'choosePin'}
+    <Panel k={again ? 'pinAgain' : 'choosePin'}
       why="Your PIN protects bigger payments and signing in. Type it here only. Never say it out loud, not even to Plus.">
-      {agent && <Notice tone="sky">Turn the screen to her. She types her PIN herself; look away.</Notice>}
+      {agent && <Notice tone="info">Turn the screen to her. She types her PIN herself; look away.</Notice>}
       <PinDots length={pin.length} max={6} />
-      <Keypad onKey={(k) => { setPin((p) => applyKey(p, k, 6, true)); setMismatch(false); clear() }} />
-      {mismatch && <Notice tone="chili">The two PINs were different. Choose your PIN again.</Notice>}
-      {msg && <Notice tone="chili">{msg}</Notice>}
-      <BigButton className="w-full" loading={busy} disabled={pin.length < 4} onClick={() => {
+      <NumPad onKey={(k) => { setPin((p) => applyKey(p, k, 6, true)); setMismatch(false); clear() }} />
+      {mismatch && <Notice tone="danger">The two PINs were different. Choose your PIN again.</Notice>}
+      {msg && <Notice tone="danger">{msg}</Notice>}
+      <Button className="w-full" loading={busy} disabled={pin.length < 4} onClick={() => {
         if (!again) {
           setFirst(pin)
           setPin('')
@@ -447,9 +420,9 @@ function PinStep({ agent, busy, msg, onSave, clear }: { agent: boolean; busy: bo
         setFirst(null)
         setPin('')
       }}>
-        {again ? 'Save my PIN' : <Y k="next" sub="text-on-accent/80" />}
-      </BigButton>
-      <p className="text-center text-base text-secondary">4 to 6 numbers. Not all the same, not 1234.</p>
+        {again ? 'Save my PIN' : W.next.en}
+      </Button>
+      <p className="text-center text-sm text-secondary">4 to 6 numbers. Not all the same, not 1234.</p>
     </Panel>
   )
 }
@@ -495,28 +468,31 @@ function SelfieStep({ busy, msg, onPass }: { busy: boolean; msg: string | null; 
   }
 
   return (
-    <Panel art={cam === 'on' ? null : <ArtSelfie />} k="takePhoto"
+    <Panel k="takePhoto"
       why="A quick photo checks that a real person is opening this account. The photo stays on this phone: Plus keeps only “photo check passed”.">
-      {cam === 'on' && (
-        <div className="relative mx-auto aspect-square w-64 overflow-hidden rounded-full border-8 border-warning bg-scrim">
+      <div className="relative mx-auto aspect-[3/4] w-full max-w-[17rem] overflow-hidden rounded-card bg-fill shadow-card">
+        {cam === 'on' ? (
           <video ref={video} playsInline muted className="size-full -scale-x-100 object-cover" />
-          {phase === 'checking' && (
-            <div className="absolute inset-0 grid place-items-center bg-scrim/55 text-xl font-semibold text-white">
-              <span className="flex items-center gap-2"><Spinner /> Checking…</span>
-            </div>
-          )}
-        </div>
-      )}
-      {cam === 'none' && <Notice tone="sky">No camera here (or it was blocked). On this demo you can use the demo check instead.</Notice>}
-      {msg && <Notice tone="chili">{msg}</Notice>}
+        ) : (
+          <span className="grid size-full place-items-center text-6xl text-secondary/60"><Icon name="face" strokeWidth={1.2} /></span>
+        )}
+        <span aria-hidden className="pointer-events-none absolute inset-6 rounded-[50%] border border-white/70 shadow-[0_0_0_999px_rgb(0_0_0/0.18)]" />
+        {phase === 'checking' && (
+          <div className="glass absolute inset-x-4 bottom-4 flex items-center justify-center gap-2 rounded-full py-2 text-base font-medium text-label">
+            <Spinner /> Checking…
+          </div>
+        )}
+      </div>
+      {cam === 'none' && <Notice tone="info">No camera here (or it was blocked). On this demo you can use the demo check instead.</Notice>}
+      {msg && <Notice tone="danger">{msg}</Notice>}
       {cam === 'on' ? (
-        <BigButton className="w-full" loading={busy || phase === 'checking'} onClick={take}><Icon name="camera" /> Take the photo</BigButton>
+        <Button className="w-full" loading={busy || phase === 'checking'} onClick={take}><Icon name="camera" /> Take the photo</Button>
       ) : cam === 'none' ? (
-        <BigButton className="w-full" loading={busy || phase === 'checking'} onClick={() => { setPhase('checking'); window.setTimeout(onPass, 900) }}>
-          <Icon name="check" /> Use the demo check
-        </BigButton>
+        <Button className="w-full" loading={busy || phase === 'checking'} onClick={() => { setPhase('checking'); window.setTimeout(onPass, 900) }}>
+          Use the demo check
+        </Button>
       ) : (
-        <BigButton className="w-full" loading={cam === 'starting'} onClick={() => void open()}><Icon name="camera" /> Open the camera</BigButton>
+        <Button className="w-full" loading={cam === 'starting'} onClick={() => void open()}><Icon name="camera" /> Open the camera</Button>
       )}
     </Panel>
   )
@@ -531,34 +507,34 @@ function NinStep({ st, doc, agent, busy, msg, onCheck, onSkip }: {
   const t2 = m.kyc.tiers[2]
   const money = (n: number) => formatMoney(BigInt(n) * 100n, st.market)
   return (
-    <Panel art={<ArtId />} k="addNin" why={`Your ${doc.name} lets you send and keep more, and opens advances later. Type it here; never say it out loud. Plus keeps only the last 4 numbers and a scrambled check, never the whole number.`}>
-      {agent && <Notice tone="sky">Turn the screen to her. She types her {doc.name} herself.</Notice>}
-      <div className="grid grid-cols-2 gap-3 text-base">
-        <div className="rounded-control bg-fill p-3">
-          <p className="font-semibold">Now</p>
-          <p>{money(t1.dailyLimit)} a day</p>
-          <p>Hold {money(t1.balanceLimit)}</p>
-          <p>No advances</p>
+    <Panel k="addNin" why={`Your ${doc.name} lets you send and keep more, and opens advances later. Type it here; never say it out loud. Plus keeps only the last 4 numbers and a scrambled check, never the whole number.`}>
+      {agent && <Notice tone="info">Turn the screen to her. She types her {doc.name} herself.</Notice>}
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div className="rounded-card bg-surface p-4 shadow-card">
+          <p className="text-xs font-semibold text-secondary">Now</p>
+          <p className="num mt-1 text-base">{money(t1.dailyLimit)} a day</p>
+          <p className="text-secondary">Hold {money(t1.balanceLimit)}</p>
+          <p className="text-secondary">No advances</p>
         </div>
-        <div className="rounded-control border-2 border-success bg-success-soft p-3 text-success-strong">
-          <p className="font-semibold">With {doc.name}</p>
-          <p>{money(t2.dailyLimit)} a day</p>
-          <p>Hold {money(t2.balanceLimit)}</p>
-          <p>Advances after {m.advance.eligibleAfterWeeks} weeks</p>
+        <div className="rounded-card bg-accent-soft p-4">
+          <p className="text-xs font-semibold text-accent-ink">With {doc.name}</p>
+          <p className="num mt-1 text-base">{money(t2.dailyLimit)} a day</p>
+          <p className="text-secondary">Hold {money(t2.balanceLimit)}</p>
+          <p className="text-secondary">Advances after {m.advance.eligibleAfterWeeks} weeks</p>
         </div>
       </div>
       <Digits value={nin} length={doc.digits} group={[4, 8]} />
-      <Keypad onKey={(k) => setNin((v) => applyKey(v, k, doc.digits, true))} />
-      {msg && <Notice tone="chili">{msg}</Notice>}
-      <BigButton className="w-full" loading={busy} disabled={nin.length !== doc.digits} onClick={async () => {
+      <NumPad onKey={(k) => setNin((v) => applyKey(v, k, doc.digits, true))} />
+      {msg && <Notice tone="danger">{msg}</Notice>}
+      <Button className="w-full" loading={busy} disabled={nin.length !== doc.digits} onClick={async () => {
         const r = await onCheck(nin)
         if (r.ok === false) setNin('')
       }}>
-        <Icon name="shield" /> Check my {doc.name}
-      </BigButton>
-      <button onClick={onSkip} disabled={busy} className="min-h-12 w-full rounded-control text-lg font-semibold text-accent-ink underline">
-        <Y k="skip" /> <span className="block text-base font-normal text-secondary">You can add it later in Settings</span>
-      </button>
+        Check my {doc.name}
+      </Button>
+      <Button variant="plain" className="w-full" onClick={onSkip} disabled={busy}>
+        <Bilingual main={W.skip.en} sub="You can add it later in Profile" />
+      </Button>
     </Panel>
   )
 }
@@ -567,14 +543,14 @@ function TrustedStep({ busy, msg, hint, onSave, onSkip }: { busy: boolean; msg: 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   return (
-    <Panel art={<ArtPeople />} k="trusted" why="If you lose your phone or forget your PIN, Plus can call this person to help you back in. They never see your money or move it.">
+    <Panel k="trusted" why="If you lose your phone or forget your PIN, Plus can call this person to help you back in. They never see your money or move it.">
       <TextField label="Their name" value={name} onChange={setName} placeholder="Chidi" maxLength={40} />
       <TextField label="Their phone" value={phone} onChange={setPhone} inputMode="tel" placeholder={hint.replace(/\d{4}$/, '0199')} />
-      {msg && <Notice tone="chili">{msg}</Notice>}
-      <BigButton className="w-full" loading={busy} disabled={!name.trim() || phone.replace(/\D/g, '').length < 10} onClick={() => onSave(name, phone)}>
-        <Icon name="userPlus" /> Save
-      </BigButton>
-      <button onClick={onSkip} disabled={busy} className="min-h-12 w-full rounded-control text-lg font-semibold text-accent-ink underline"><Y k="skip" /></button>
+      {msg && <Notice tone="danger">{msg}</Notice>}
+      <Button className="w-full" loading={busy} disabled={!name.trim() || phone.replace(/\D/g, '').length < 10} onClick={() => onSave(name, phone)}>
+        Save
+      </Button>
+      <Button variant="plain" className="w-full" onClick={onSkip} disabled={busy}>{W.skip.en}</Button>
     </Panel>
   )
 }
@@ -587,10 +563,10 @@ function WalletOpening({ since }: { since: number }) {
   }, [])
   const secs = since ? Math.max(0, (now - since) / 1000) : null
   return (
-    <div className="flex flex-col items-center gap-3 rounded-card bg-surface p-6 text-center shadow-card" role="status">
-      <Spinner className="text-5xl text-accent-ink" />
-      <p className="text-xl font-semibold">Opening your wallet on Stellar…</p>
-      <p className="text-lg text-secondary">A few seconds. {secs !== null && <span className="font-mono">{secs.toFixed(1)} s</span>}</p>
+    <div className="flex items-center gap-3 rounded-card bg-surface px-5 py-4 shadow-card" role="status">
+      <Spinner className="text-xl text-secondary" />
+      <p className="min-w-0 flex-1 text-lg">Opening your wallet…</p>
+      {secs !== null && <span className="num text-base text-secondary">{secs.toFixed(1)} s</span>}
     </div>
   )
 }
@@ -600,36 +576,32 @@ function ReadyStep({ st, mode, busy, msg, onFinish }: { st: Status; mode: 'app' 
   const acct = w.virtual_account ?? null
   return (
     <section className="space-y-5">
-      <div className="space-y-3 text-center">
-        <SuccessTick />
+      <div className="space-y-3 pt-4 text-center">
+        <Tick />
         <h2 className="text-3xl font-semibold"><Y k="ready" /></h2>
-        <p className="text-lg text-secondary">{st.name} · {local(st.phone)}</p>
+        <p className="text-base text-secondary">{st.name} · {local(st.phone)}</p>
       </div>
-      <Card className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-lg font-semibold">Level {st.limits.tier}</p>
-          <span className="rounded-full bg-success-soft px-3 py-1 text-base font-semibold text-success-strong">{st.limits.tier >= 2 ? 'ID checked' : 'Photo checked'}</span>
-        </div>
-        <p className="text-lg">Send up to <b>{st.limits.daily_text}</b> a day · hold up to <b>{st.limits.balance_text}</b></p>
-        {st.limits.advances ? <p className="text-base text-secondary">Advances open after {getMarket(st.market).advance.eligibleAfterWeeks} weeks.</p> : <p className="text-base text-secondary">Add your {st.id_document?.name ?? 'ID'} later for higher limits and advances.</p>}
-      </Card>
+      <ListGroup>
+        <ListRow icon="shield" iconTone="success" title={`Level ${st.limits.tier}`} subtitle={st.limits.tier >= 2 ? 'ID checked' : 'Photo checked'} />
+        <ListRow icon="pay" title="Send per day" trailing={<span className="num font-medium">{st.limits.daily_text}</span>} />
+        <ListRow icon="wallet" title="Hold up to" trailing={<span className="num font-medium">{st.limits.balance_text}</span>} />
+      </ListGroup>
+      <p className="px-1 text-sm text-secondary">
+        {st.limits.advances ? `Advances open after ${getMarket(st.market).advance.eligibleAfterWeeks} weeks.` : `Add your ${st.id_document?.name ?? 'ID'} later for higher limits and advances.`}
+      </p>
       {acct && (
-        <Card className="space-y-2">
-          <p className="text-lg font-semibold"><Icon name="bank" className="text-accent-ink" /> Your account number</p>
-          <p className="font-mono text-3xl font-semibold tracking-wider">{acct.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3')}</p>
-          <p className="text-base text-secondary">{w.bank_label}. Anyone can send you money by bank transfer to this number.</p>
+        <Card className="space-y-3">
+          <p className="text-sm text-secondary">Your account number</p>
+          <p className="num font-mono text-3xl font-light tracking-wider">{acct.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3')}</p>
+          <p className="text-sm text-secondary">{w.bank_label}. Anyone can send you money by bank transfer to this number.</p>
           <CopyButton text={acct} label="Copy number" />
         </Card>
       )}
-      {w.account_url && (
-        <a href={w.account_url} target="_blank" rel="noreferrer" className="flex min-h-14 items-center gap-2 rounded-control bg-success-soft px-4 text-lg font-semibold text-success-strong">
-          <Icon name="link" /> See your wallet on Stellar Expert
-        </a>
-      )}
-      {msg && <Notice tone="chili">{msg}</Notice>}
-      <BigButton tone="leaf" className="w-full" loading={busy} onClick={onFinish}>
-        {mode === 'agent' ? 'Finish' : <Y k="goToWallet" sub="text-white/85" />}
-      </BigButton>
+      {w.account_url && <div className="flex justify-center"><VerifiedMark url={w.account_url} label="Your wallet, verified on Stellar" /></div>}
+      {msg && <Notice tone="danger">{msg}</Notice>}
+      <Button className="w-full" loading={busy} onClick={onFinish}>
+        {mode === 'agent' ? 'Finish' : W.goToWallet.en}
+      </Button>
     </section>
   )
 }
@@ -655,22 +627,22 @@ export function SignIn({ onBack }: { onBack: () => void }) {
     if (error) setMsg('Signing in did not work. Try again.')
   }
   return (
-    <div className="mx-auto min-h-dvh max-w-md space-y-5 px-4 pb-16 pt-4">
-      <header className="flex items-center gap-3">
-        <button onClick={onBack} aria-label="Back" className="grid size-12 shrink-0 place-items-center rounded-full bg-fill text-2xl active:bg-fill-strong"><Icon name="back" /></button>
-        <h1 className="text-3xl font-semibold"><Y k="signIn" /></h1>
-      </header>
-      <TextField label="Your phone number" value={phone} onChange={setPhone} inputMode="tel" placeholder="0700 000 0201" autoComplete="tel" />
-      <div>
-        <p className="text-xl font-semibold"><Icon name="lock" /> Your PIN</p>
-        <PinDots length={pin.length} />
-        <Keypad onKey={(k) => setPin((p) => applyKey(p, k, 6, true))} />
+    <div className="mx-auto min-h-dvh max-w-md space-y-6 px-4 pb-16 pt-[max(env(safe-area-inset-top),1rem)]">
+      <div className="flex items-center gap-3">
+        <IconButton icon="back" label="Back" onClick={onBack} />
       </div>
-      {msg && <Notice tone="chili">{msg}</Notice>}
-      <BigButton className="w-full" loading={busy} disabled={pin.length < 4 || phone.replace(/\D/g, '').length < 10} onClick={() => void go()}>
-        <Y k="signIn" sub="text-on-accent/80" />
-      </BigButton>
-      <p className="text-center text-base text-secondary">Too many wrong PINs locks sign-in for 15 minutes.</p>
+      <PageHeader title={W.signIn.en} sub={yo('signIn')} />
+      <TextField label="Your phone number" value={phone} onChange={setPhone} inputMode="tel" placeholder="0700 000 0201" autoComplete="tel" />
+      <div className="space-y-1">
+        <p className="flex items-center justify-center gap-2 text-base font-medium text-secondary"><Icon name="lock" /> Your PIN</p>
+        <PinDots length={pin.length} />
+        <NumPad onKey={(k) => setPin((p) => applyKey(p, k, 6, true))} />
+      </div>
+      {msg && <Notice tone="danger">{msg}</Notice>}
+      <Button className="w-full" loading={busy} disabled={pin.length < 4 || phone.replace(/\D/g, '').length < 10} onClick={() => void go()}>
+        {W.signIn.en}
+      </Button>
+      <p className="text-center text-sm text-secondary">Too many wrong PINs locks sign-in for 15 minutes.</p>
     </div>
   )
 }

@@ -44,7 +44,7 @@ export function ConfirmSheet({
   return (
     <Sheet open onClose={onClose} label={label} dismissible={phase !== 'working'}>
       <div className="pb-2 pt-1 text-center">
-        <p className="text-sm font-medium uppercase tracking-wide text-secondary">{heading}</p>
+        {phase !== 'done' && <p className="text-sm font-medium uppercase tracking-wide text-secondary">{heading}</p>}
         <div className="mt-4">
           {amount ? <AmountDisplay text={amount} size="xl" /> : big}
         </div>

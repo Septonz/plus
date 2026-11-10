@@ -102,7 +102,7 @@ export default function NgApp({ data }: { data: PlusData }) {
       <AnimatePresence>
         {open && (
           <CardDetail key={open} id={open} title={DETAIL_TITLE[open][0]} sub={DETAIL_TITLE[open][1]} fromPass={fromPass} onClose={() => setOpen(null)}>
-            {open === 'wallet' && <WalletDetail wallet={wallet} onOpen={(d) => openDetail(d, false)} />}
+            {open === 'wallet' && <WalletDetail wallet={wallet} version={data.version} onOpen={(d) => openDetail(d, false)} />}
             {open === 'group' && <Ajo {...props} />}
             {open === 'advance' && <Advance {...props} />}
             {open === 'add_cash' && <AddCash {...props} onAnswer={onAnswer} />}

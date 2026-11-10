@@ -26,10 +26,10 @@ Before every rehearsal: `pnpm demo:reset ng` (and `pnpm demo:reset in`), then `p
 | ---- | --------- | --- |
 | 0:00 | /demo, Nigeria. Funmi's phone: ₦26,400 | "Funmi sells tomatoes at Bodija market in Ibadan. She has no bank account. This wallet on Stellar is her account." |
 | 0:08 | Mama Bisi records ₦500 on /agent. Funmi's phone: "Mama Bisi says you gave her ₦500. Is that right?" | "She hands cash to Mama Bisi, a Plus agent. Nothing moves until Funmi herself says yes." |
-| 0:15 | Funmi taps **Yes / Bẹ́ẹ̀ ni**. "Sending on Stellar…", then the tick. The feed shows *Mama Bisi → Funmi* with its seconds | "About five seconds, and anyone can check it: here it is on Stellar Expert." |
-| 0:25 | **Ajo** tab: 4 of 5 ticks, each linking to its transaction. Funmi taps **Pay my part** | "Her ajo's pot is held by a contract nobody can edit or run off with. It pays Amaka tomorrow, on time." |
-| 0:35 | **Advance**: up to ₦20,000, **one fee ₦300**, no interest, no late fees, 10% of each cash-in | "The full cost in naira, before she agrees. If she falls behind, her limit just pauses. Nobody is called." |
-| 0:45 | **Cash out** ₦2,000: a 6-digit code; Mama Bisi redeems it on /agent; the feed shows the claim | "Cash out works the same way: the money waits on Stellar for the agent holding her code." |
+| 0:15 | Funmi taps **Yes** on the confirm sheet. "Sending…", then the tick. The feed shows *Mama Bisi → Funmi* with its seconds | "About five seconds, and anyone can check it: here it is on Stellar Expert." |
+| 0:25 | **Ajo** card: 4 of 5 ticks, each linking to its transaction. Funmi taps **Pay my part** | "Her ajo's pot is held by a contract nobody can edit or run off with. It pays Amaka tomorrow, on time." |
+| 0:35 | **Advance** card: up to ₦20,000, **one fee ₦300**, no interest, no late fees, 10% of each cash-in | "The full cost in naira, before she agrees. If she falls behind, her limit just pauses. Nobody is called." |
+| 0:45 | **Wallet** card → **Cash out** ₦2,000: a 6-digit code; Mama Bisi redeems it on /agent; the feed shows the claim | "Cash out works the same way: the money waits on Stellar for the agent holding her code." |
 | 0:55 | Switch to **India**: Selvi's phone | "Same agent, same record, for people who do have a bank account." |
 
 ### Why the blockchain is essential in Nigeria
@@ -163,7 +163,7 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   `pnpm demo:reset ng` before every rehearsal.
 - **Deploys.** Vercel project `plus-wallet` (root `apps/web`) redeploys on every merge to `main`;
   pull requests get preview URLs (allowed by the Edge Function CORS list).
-- `pnpm screens`: phone-size screenshots of every screen into `docs/screens/` (headless Chrome,
+- `pnpm screens` (`--dark` for dark mode): phone-size screenshots of every screen into `docs/screens/` (headless Chrome,
   no extra installs; needs `pnpm --filter web dev --port 5199`).
 
 ## Market packs
@@ -263,7 +263,20 @@ The old command still works, so we have not switched yet. When we do, change onl
 - **http://localhost:5173/agent**: the cash agent page, Mama Bisi ("Continue as Mama Bisi"). **Register a customer** (the sign-up on her screen), record cash (customer phone + amount; checks her float and the ₦500,000 daily limit; Funmi then gets "Mama Bisi says you gave her ₦500. Is that right?"; 10% goes to an open advance) and redeem a cash-out code (shows the amount, then claims the cash-out on Stellar). Own login, so it can sit next to `/app`.
 - **http://localhost:5173/helper**: the helper page, where Meena records cash a member handed her. It keeps its own login, so both pages can be open side by side.
 
-**Design system.** One set of tokens in `apps/web/src/index.css` (colours, a type scale whose floor is 16px, radius, shadows) and shared pieces in `apps/web/src/plus/ui.tsx`: buttons (64px; nothing tappable under 48px), cards, notices, one stroke icon set, skeleton loading, empty and error states, and the success tick (the circle pops, the check draws itself; off with reduced motion). Sign-up illustrations are simple original shapes (`apps/web/src/onboard/art.tsx`). Screenshots: `docs/screens/`.
+**Design system.** Calm and minimal, in the spirit of a modern wallet app. One tokens file, `apps/web/src/ds/tokens.css`, holds every colour, type size, radius and shadow:
+- near-white and near-black with soft greys;
+- one accent per market (Nigeria deep green, India deep indigo);
+- full dark mode that follows the phone;
+- Inter with tabular, light numerals for money;
+- body text 17px, nothing under 13px.
+
+The core components are in `apps/web/src/ds/` and every screen uses them:
+- Card, CardStack and Pass: Home is a stack of passes that open full-screen and close with a swipe down.
+- Sheet, ConfirmSheet, AmountDisplay, ListRow, PinPad and NumPad.
+- Tick, EmptyState and VerifiedMark: the only chain word users see is "Verified on Stellar".
+- The floating mic (`plus/voice.tsx`), with a live waveform and the conversation as text.
+
+Lucide line icons; gentle springs (motion), off with reduce motion. Screenshots in light and dark: `docs/screens/`.
 
 **Logins.** The demo uses two Supabase Auth users created by `pnpm seed:db`: "Continue as Selvi" (`demo-selvi@example.com`) and "Continue as Meena" (`demo-meena@example.com`), password generated into `VITE_DEMO_LOGIN_PASSWORD` in the root `.env.local`. They are linked through `users.auth_user_id` and `helpers.auth_user_id`. **Production login is phone OTP plus a PIN**, not these demo buttons.
 

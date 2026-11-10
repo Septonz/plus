@@ -129,7 +129,9 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
 }
 
 /** The wallet opened: balance, Add money and Cash out. */
-export function WalletDetail({ wallet, onOpen }: { wallet: Wallet | null; onOpen: (d: Detail) => void }) {
+export function WalletDetail({ wallet, version, onOpen }: { wallet: Wallet | null; version: number; onOpen: (d: Detail) => void }) {
+  const rec = useTool('my_record', version)
+  const recent = ((rec?.recent ?? []) as Row[]).filter((t) => t.kind !== 'adjustment').slice(0, 10)
   return (
     <>
       <div className="rounded-card p-6 text-white shadow-lift" style={{ background: 'var(--wallet)' }}>
@@ -140,6 +142,11 @@ export function WalletDetail({ wallet, onOpen }: { wallet: Wallet | null; onOpen
         <Button variant="secondary" onClick={() => onOpen('add_cash')}><Icon name="add" /> {W.addMoney.en}</Button>
         <Button variant="secondary" onClick={() => onOpen('cash_out')}><Icon name="cash" /> {W.cashOut.en}</Button>
       </div>
+      <Section title="Recent activity">
+        <Loaded r={rec} rows={4}>
+          {() => recent.length > 0 ? <ListGroup>{recent.map((t) => <TxRow key={String(t.id)} t={t} />)}</ListGroup> : <EmptyState icon="activity" title="Nothing yet">Money in and out shows here.</EmptyState>}
+        </Loaded>
+      </Section>
     </>
   )
 }
