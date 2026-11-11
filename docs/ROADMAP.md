@@ -59,13 +59,20 @@ Two demo users (naira, illustrative numbers), both with demo login buttons.
 
 ## Piece 6: Demo reset and README
 
-- [ ] `pnpm demo:reset ng` resets Kemi and Funmi to their starting states (Funmi: no loan open,
+- [x] `pnpm demo:reset ng` resets Kemi and Funmi to their starting states (Funmi: no loan open,
   offer available; Kemi: week 4 of 6).
-- [ ] README: both demo users, a 60-second demo script, and a plain list of what's simulated.
-- [ ] `pnpm warm` reaches every function, including payout-sim: payout-sim's `/health` gets the same
+- [x] README: both demo users, a 60-second demo script, and a plain list of what's simulated.
+- [x] `pnpm warm` reaches every function, including payout-sim: payout-sim's `/health` gets the same
   cron-secret check (or staff login) as the others instead of the gateway JWT. Update the approved
   `verify_jwt` list and its CI check (`pnpm functions:check-jwt`) to match (approved 2026-11-10).
   Confirm a warmed first click on "simulate transfer received" responds in under 1 second.
+- [x] `pnpm demo:ready`: both resets, the warm-up, then every function, the cron jobs (and what
+  their calls answered), the chain outbox, Stellar RPC and Horizon, and a first tap; prints READY
+  or what's wrong.
+- Done 2026-11-10: demo:ready READY in 26 s (reset ng 20 s, in 2 s). A warmed first "simulate
+  transfer received" answers in 0.32-0.40 s (was 1.15 s): agent-tools/warm now opens its database and
+  Stellar RPC connections. payout-sim /health takes the cron or agent secret; verify_jwt off for it.
+  No open shares to clear yet (they arrive with piece 9).
 
 ## Piece 7: Send to a bank account (Nigeria)
 

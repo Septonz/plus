@@ -25,6 +25,7 @@
     "bench:rpc": "deno run -A --no-config --node-modules-dir=none scripts/bench-rpc.ts",
     "bench:confirm": "node scripts/bench-confirm.ts",
     "warm": "node scripts/warm.ts",
+    "demo:ready": "node scripts/demo-ready.ts",
     "demo:reset": "pnpm --filter @plus/client build && node scripts/demo-reset.ts"
   },
   "devDependencies": {
