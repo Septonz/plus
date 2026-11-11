@@ -161,7 +161,7 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
   const assetsPart = maxBps > 0 ? bestBps / maxBps : 0;
   const savings = Math.min(1, savedWeeks / considered);
   const why = [
-    { key: "activity", label: "Activity", weight: L.weights.activity, points: Math.round(activity * L.weights.activity), detail: `${activeWeeks} active weeks, ${qualifying} qualifying transactions` },
+    { key: "activity", label: "Activity", weight: L.weights.activity, points: Math.round(activity * L.weights.activity), detail: `${activeWeeks} active weeks and ${qualifying} qualifying transactions since joining Plus` },
     { key: "assets", label: "Verified assets", weight: L.weights.assets, points: Math.round(assetsPart * L.weights.assets), detail: verified.length ? `${verified[0].description}, ${levelWords(verified[0].level)}` : "None verified yet" },
     { key: "savings", label: "Savings consistency", weight: L.weights.savings, points: Math.round(savings * L.weights.savings), detail: `Ajo paid in ${savedWeeks} of ${considered} weeks` },
   ];

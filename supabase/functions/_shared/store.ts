@@ -77,9 +77,12 @@ export function supabaseStore(db: SupabaseClient): Store {
         "incoming",
       ) as Tx[];
     },
-    async transactions(userId, limit) {
+    async transactions(userId, limit, includeHidden = false) {
+      // Piece 11: the demo reset's own rows and everything before its curated history are hidden
+      // from her lists (hidden_from_history); they stay for audit, balances and Stellar.
+      const q = db.from("transactions").select(TX_COLS).eq("user_id", userId);
       return must(
-        await db.from("transactions").select(TX_COLS).eq("user_id", userId).order("created_at", { ascending: false }).limit(limit),
+        await (includeHidden ? q : q.eq("hidden_from_history", false)).order("created_at", { ascending: false }).limit(limit),
         "transactions",
       ) as Tx[];
     },

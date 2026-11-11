@@ -78,7 +78,8 @@ export interface NgStore {
   execute(id: string, userId: string, extra: Record<string, unknown>): Promise<{ action: Action; claimed: boolean }>;
   rejectAction(id: string, userId: string): Promise<Action>;
   awaitingCashIns(userId: string): Promise<CashIn[]>;
-  transactions(userId: string, limit: number): Promise<NgTx[]>;
+  /** Newest first; rows hidden from her history are left out unless includeHidden. */
+  transactions(userId: string, limit: number, includeHidden?: boolean): Promise<NgTx[]>;
   myGroup(userId: string): Promise<NgGroup | null>;
   /** Latest contribution transaction per member address in an on-chain group (contract events). */
   contributionTxs(onchainId: number): Promise<Map<string, string>>;
@@ -368,17 +369,18 @@ const KIND_WORDS: Record<string, string> = {
 };
 
 export const ngMyRecord: NgTool = async ({ user, store, explorer }) => {
-  const txs = await store.transactions(user.id, 500);
+  // Totals and the Stellar count cover everything she did; the list shows her recent history only.
+  const [txs, visible] = await Promise.all([store.transactions(user.id, 500, true), store.transactions(user.id, 40)]);
   let received = 0n, paid = 0n, ajo = 0n, cashedOut = 0n;
   for (const t of txs) {
-    if (t.status !== "completed") continue;
+    if (t.status !== "completed" || t.kind === "adjustment") continue;
     const a = BigInt(t.amount);
     if (t.kind === "incoming") received += a;
     else if (t.kind === "pay") paid += -a;
     else if (t.kind === "group_contribution") ajo += -a;
     else if (t.kind === "cash_out") cashedOut += -a;
   }
-  const onChain = txs.filter((t) => t.chain_tx_hash);
+  const onChain = txs.filter((t) => t.chain_tx_hash && t.kind !== "adjustment");
   const waiting = txs.filter((t) => t.status === "pending").length;
   const cashIns = txs.filter((t) => t.kind === "incoming" && t.source === "cash" && t.status === "completed").length;
   const link = (h: string) => (explorer ? `${explorer}/tx/${h}` : null);
@@ -395,7 +397,7 @@ export const ngMyRecord: NgTool = async ({ user, store, explorer }) => {
     cash_ins: cashIns,
     confirmed_on_stellar: onChain.length,
     waiting_for_stellar: waiting,
-    recent: txs.slice(0, 40).map((t) => ({
+    recent: visible.filter((t) => t.kind !== "adjustment").map((t) => ({
       id: t.id,
       kind: t.kind,
       label: t.kind === "pay" && t.source === "code" ? "paid by code"

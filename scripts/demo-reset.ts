@@ -221,6 +221,76 @@ async function addTx(row: { user_id: string; kind: string; source: string; amoun
   }, { onConflict: "rail,ref", ignoreDuplicates: true }), "transaction row");
 }
 
+/**
+ * Piece 11: her recent history, as she would live it. Each row is a real testnet transaction (the
+ * explorer link works and its on-chain time is true); only the row's created_at in Postgres is set
+ * back a few days so the list reads like the last ten days of market life. Everything older is
+ * hidden from her lists (hidden_from_history), never deleted.
+ */
+function daysAgo(days: number, hour: number): string {
+  const d = new Date(Date.now() - days * 86_400_000);
+  d.setUTCHours(hour - 1, Math.floor(Math.random() * 50), 0, 0); // Lagos is UTC+1
+  return d.toISOString();
+}
+
+async function addHistory(row: { user_id: string; kind: string; source: string | null; counterparty: string | null; amount: bigint; hash: string; at: string }) {
+  must(await db.from("transactions").upsert({
+    user_id: row.user_id, market_id: "ng", kind: row.kind, source: row.source, counterparty: row.counterparty, amount: row.amount.toString(),
+    currency: "NGN", rail: "stellar", ref: `demo_history:${row.hash}`, tx_hash: row.hash, chain_tx_hash: row.hash, status: "completed", created_at: row.at,
+  }, { onConflict: "rail,ref", ignoreDuplicates: true }), "history row");
+}
+
+async function curateFunmi(funmiId: string, NGNT: Asset) {
+  must(await db.from("transactions").update({ hidden_from_history: true }).eq("user_id", funmiId).eq("hidden_from_history", false), "hide older rows");
+  // The partner bank's anchor key stays in Vault: money in from a bank goes through the real
+  // ng_bank_transfer_in (anchor -> her wallet, on the outbox); its row is then dated for display.
+  const anchor = (must(await db.from("system_wallets").select("pub").eq("signer", "anchor_ng").single(), "anchor") as { pub: string }).pub;
+  const dest = (to: string) => to === "anchor_ng" ? anchor : pub(to);
+  const pay = (from: string, to: string, naira: bigint) => classic(from, [Operation.payment({ destination: dest(to), asset: NGNT, amount: naira.toString() })], from === "funmi");
+  const steps: { label: string; from: string; to: string; naira: bigint; kind: string; source: string | null; counterparty: string | null; at: string }[] = [
+    { label: "Chidi Okeke's bank transfer to Funmi (through the partner bank)", from: "anchor_ng", to: "funmi", naira: 12_500n, kind: "incoming", source: "bank", counterparty: "Chidi Okeke", at: daysAgo(9, 11) },
+    { label: "Funmi pays Iya Tunde (tomato wholesaler)", from: "funmi", to: "iya_tunde", naira: 15_000n, kind: "pay", source: null, counterparty: "Iya Tunde (tomato wholesaler)", at: daysAgo(8, 7) },
+    { label: "Mama Bisi's cash-in to Funmi", from: "agent_ng", to: "funmi", naira: 8_000n, kind: "incoming", source: "cash", counterparty: "Mama Bisi", at: daysAgo(6, 17) },
+    { label: "Funmi pays her landlord (to the bank, through the partner)", from: "funmi", to: "anchor_ng", naira: 10_000n, kind: "pay", source: "bank", counterparty: "Landlord", at: daysAgo(3, 9) },
+    { label: "A customer's transfer to Funmi", from: "anchor_ng", to: "funmi", naira: 4_500n, kind: "incoming", source: "bank", counterparty: "A customer", at: daysAgo(1, 15) },
+  ];
+  for (const s of steps) {
+    if (s.from === "anchor_ng") {
+      const r = must(await db.rpc("ng_bank_transfer_in", { p_user_id: funmiId, p_amount: Number(s.naira * 100n), p_repay: 0, p_ref: `demo_history_${Date.now()}_${s.naira}`, p_sender: s.counterparty }), s.label) as { transaction_id: string };
+      must(await db.from("transactions").update({ created_at: s.at, hidden_from_history: false }).eq("id", r.transaction_id), "date the transfer");
+      console.log(`  ✓ ${s.label}: ₦${s.naira.toLocaleString("en-NG")} (queued on Stellar)`);
+      continue;
+    }
+    const hash = await send(s.label, await pay(s.from, s.to, s.naira));
+    await addHistory({ user_id: funmiId, kind: s.kind, source: s.source, counterparty: s.counterparty, amount: (s.kind === "incoming" ? 1n : -1n) * s.naira * 100n, hash, at: s.at });
+  }
+  await waitForOutbox(["anchor_ng"]); // the transfers in land before her balance is set
+  // Her last ajo payment (a real group_contribute on the plus contract) shows too.
+  const ajo = must(await db.from("transactions").select("id").eq("user_id", funmiId).eq("kind", "group_contribution").eq("status", "completed")
+    .not("chain_tx_hash", "is", null).order("created_at", { ascending: false }).limit(1).maybeSingle(), "last ajo") as { id: string } | null;
+  if (ajo) must(await db.from("transactions").update({ hidden_from_history: false, created_at: daysAgo(5, 8) }).eq("id", ajo.id), "ajo row");
+  console.log(`  recent history: ${steps.length + (ajo ? 1 : 0)} real movements over the last 10 days (older rows hidden from her lists, kept)`);
+}
+
+/** India: Selvi's own real rows (each recorded on Stellar), a few kept visible over the last 10 days. */
+async function curateSelvi(selviId: string) {
+  const rows = must(await db.from("transactions").select("id, kind, source, amount, chain_tx_hash, created_at").eq("user_id", selviId).eq("status", "completed")
+    .not("chain_tx_hash", "is", null).order("created_at", { ascending: false }).limit(200), "Selvi's rows") as
+    { id: string; kind: string; source: string | null; amount: number; chain_tx_hash: string }[];
+  const pick = (kind: string, source?: string | null, skip = 0) => rows.filter((r) => r.kind === kind && (source === undefined || r.source === source))[skip];
+  const chosen = [
+    [pick("incoming", "state_transfer"), 9, 10], [pick("pay", undefined, 0), 8, 12], [pick("saved", "auto_save"), 7, 18],
+    [pick("incoming", "cash"), 5, 16], [pick("pay", undefined, 1), 4, 11], [pick("group_contribution"), 3, 9], [pick("pay", undefined, 2), 1, 17],
+  ].filter(([r]) => r) as [{ id: string }, number, number][];
+  must(await db.from("transactions").update({ hidden_from_history: true }).eq("user_id", selviId).eq("hidden_from_history", false), "hide older rows");
+  for (const [r, d, h] of chosen) {
+    const at = new Date(Date.now() - d * 86_400_000);
+    at.setUTCHours(h - 5, 30 - Math.floor(Math.random() * 30), 0, 0); // India is UTC+5:30
+    must(await db.from("transactions").update({ hidden_from_history: false, created_at: at.toISOString() }).eq("id", r.id), "Selvi row");
+  }
+  console.log(`  recent history: ${chosen.length} of her own rows (each on Stellar) over the last 10 days; older rows hidden from her list, kept`);
+}
+
 async function waitForOutbox(signers: string[]) {
   for (let i = 0; i < 45; i++) {
     const { count } = await db.from("chain_outbox").select("id", { count: "exact", head: true })
@@ -481,6 +551,9 @@ async function resetNigeria() {
     { onConflict: "user_id,name" }), "Funmi's landlord");
   console.log("  saved bank account: Landlord, ADEBAYO STORES, Ironwood Bank •••• 6789 (simulated)");
 
+  console.log("\n3c. Her recent history (what Home and Activity show)");
+  await curateFunmi(funmi.id, NGNT);
+
   console.log("\n4. Funmi's wallet and Mama Bisi's float");
   for (const [name, target, userId] of [["funmi", FUNMI_START * UNIT, funmi.id], ["agent_ng", FLOAT_START * UNIT, null]] as const) {
     const have = await assetBalance(name, NGNT);
@@ -633,6 +706,9 @@ async function resetIndia() {
   } else {
     console.log("  no advance open");
   }
+
+  console.log("\n2b. Her recent history (what Home and Activity show)");
+  await curateSelvi(selvi.id);
 
   console.log("\n3. Simulated bank account");
   const acct = must(await db.rpc("demo_set_sim_balance", { p_user_id: selvi.id, p_spend: SELVI_SPEND.toString(), p_saved: SELVI_SAVED.toString(), p_ref: runRef }), "sim balance") as

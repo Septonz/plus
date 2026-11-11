@@ -112,7 +112,8 @@ export interface Store {
   executeAction(id: string, userId: string): Promise<Action>;
   rejectAction(id: string, userId: string): Promise<Action>;
   incoming(userId: string, sinceIso: string, limit: number): Promise<Tx[]>;
-  transactions(userId: string, limit: number): Promise<Tx[]>;
+  /** Newest first; rows hidden from her history are left out unless includeHidden. */
+  transactions(userId: string, limit: number, includeHidden?: boolean): Promise<Tx[]>;
   awaitingCashIns(userId: string): Promise<CashIn[]>;
   myGroup(userId: string): Promise<{ group: Group; members: Member[] } | null>;
   lastContribution(userId: string, groupId: string, sinceIso: string): Promise<Tx | null>;
@@ -301,8 +302,10 @@ export const whatArrived: Tool = async ({ user, store, now = new Date() }) => {
 
 export const myRecord: Tool = async ({ user, store, explorer, contractId }) => {
   const m = user.market_id;
-  const [txs, events, waiting] = await Promise.all([
-    store.transactions(user.id, 500),
+  // Totals cover everything; the list shows her recent history (piece 11: not the reset's rows).
+  const [txs, visible, events, waiting] = await Promise.all([
+    store.transactions(user.id, 500, true),
+    store.transactions(user.id, 30),
     user.ref_hash ? store.chainEventsForRef(user.ref_hash) : Promise.resolve([] as ChainEvent[]),
     user.ref_hash ? store.chainPending(user.ref_hash) : Promise.resolve(0),
   ]);
@@ -343,7 +346,7 @@ export const myRecord: Tool = async ({ user, store, explorer, contractId }) => {
     confirmed_on_stellar: recordEvents.length,
     waiting_for_stellar: waiting,
     history,
-    recent: txs.slice(0, 30).map((t) => ({
+    recent: visible.filter((t) => t.kind !== "adjustment").map((t) => ({
       id: t.id,
       kind: t.kind,
       source: t.source,

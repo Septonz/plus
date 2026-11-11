@@ -888,7 +888,7 @@ export function Record({ version }: Props) {
                 ))}
               </dl>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-hairline pt-3">
-                <p className="text-sm text-secondary">{String(r.confirmed_on_stellar)} records, each checkable. Your name is never on it.</p>
+                <p className="text-sm text-secondary">{String(r.confirmed_on_stellar)} transactions on Stellar since your wallet opened, each checkable. Your name is never on it.</p>
                 {typeof r.account_url === 'string' && <VerifiedMark url={r.account_url} />}
               </div>
             </Card>
