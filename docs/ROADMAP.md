@@ -148,40 +148,40 @@ Pitch from a phone tomorrow: every screen finished, every action possible by voi
 `feat/piece-11-demo-ready`, one commit per item, in this order.
 
 P0 (the first 30 seconds)
-- [ ] 1. Activity looks like Funmi's (and Selvi's) real life: hide `adjustment` and demo-reset rows
+- [x] 1. Activity looks like Funmi's (and Selvi's) real life: hide `adjustment` and demo-reset rows
   in tools and lists (kept in the DB); `demo:reset` ends with 6-8 curated, real testnet movements
   over ~10 days (DB `created_at` backdated for display; the chain time stays true). The Loan
   screen's activity figures, Activity and /verify agree, or say where they come from.
-- [ ] 2. The floating mic never covers content: dock it in the tab bar's centre (checked at 375x812, 360x740).
-- [ ] 3. Payment confirm ≤ 5 s (about 3 s): DEMO_WARM on, warm every 60-second-demo path, and
+- [x] 2. The floating mic never covers content: dock it in the tab bar's centre (checked at 375x812, 360x740).
+- [x] 3. Payment confirm ≤ 5 s (about 3 s): DEMO_WARM on, warm every 60-second-demo path, and
   `demo:ready` prints the measured times.
-- [ ] 4. Landing page markets panel from markets.ts: "Loans ₦30,000 → ₦80,000, from 6%"; real
+- [x] 4. Landing page markets panel from markets.ts: "Loans ₦30,000 → ₦80,000, from 6%"; real
   languages only (English, Pidgin, Yoruba; Tamil and English).
-- [ ] 5. 12-hour times everywhere through one `formatTime` helper.
+- [x] 5. 12-hour times everywhere through one `formatTime` helper.
 
 P1 (product gaps)
-- [ ] 6. Nigeria Savings on Stellar: a goal pot on the plus contract (pot_create/pot_fund/pot_send),
+- [x] 6. Nigeria Savings on Stellar: a goal pot on the plus contract (pot_create/pot_fund/pot_send),
   Savings card and sheet, auto-save 0/5/10/20% of money-in after loan repayment, voice tools
   (`savings_status`, `prepare_save`, `prepare_withdraw_savings`, `set_savings_goal`,
   `set_auto_save`), savings consistency counts savings, demo: "Stall shade" ₦18,500 of ₦50,000.
   Dollar savings: path payment, next (not built in piece 11, so the app never shows a USD figure).
-- [ ] 7. Pay a shop: "My code" (QR + short pay code) and "Scan to pay" (camera, or type the code),
+- [x] 7. Pay a shop: "My code" (QR + short pay code) and "Scan to pay" (camera, or type the code),
   same prepare_pay flow; voice `navigate("receive")` and `prepare_pay` with `code`.
-- [ ] 8. Loan screen: one "You receive", Cost and Total rows; ladder rungs 3-4 merged (in markets.ts
+- [x] 8. Loan screen: one "You receive", Cost and Total rows; ladder rungs 3-4 merged (in markets.ts
   copy too); a repayment example.
-- [ ] 9. Ajo sheet: no duplicate Yoruba subtitle (global rule), amount, members, payout, her turn,
+- [x] 9. Ajo sheet: no duplicate Yoruba subtitle (global rule), amount, members, payout, her turn,
   who has paid.
-- [ ] 10. Vouch copy is gender-neutral (screens, /verify, tools, prompt).
-- [ ] 11. Wallet sheet's button pair fits on one line at 375px.
-- [ ] 12. Profile: account number label + copy, language row, Stellar details, PIN behind "Change PIN".
-- [ ] 13. Agent page: "Earned today", demo-reset rows hidden.
-- [ ] 14. /verify: "Try a sample record" when demo logins are on.
-- [ ] 15. Sheets underneath don't take clicks while animating.
+- [x] 10. Vouch copy is gender-neutral (screens, /verify, tools, prompt).
+- [x] 11. Wallet sheet's button pair fits on one line at 375px.
+- [x] 12. Profile: account number label + copy, language row, Stellar details, PIN behind "Change PIN".
+- [x] 13. Agent page: "Earned today", demo-reset rows hidden.
+- [x] 14. /verify: "Try a sample record" when demo logins are on.
+- [x] 15. Sheets underneath don't take clicks while animating.
 
 P2 (voice drives everything)
-- [ ] 16. `scripts/voice-coverage.ts`: every app action maps to a voice tool; prompts updated; agents:sync.
-- [ ] 17. Language consistency: the confirm sheet and its follow-ups in the user's language (translations.ts).
-- [ ] 18. `scripts/e2e-ng.ts` runs the 60-second demo by tool calls only; passes twice after a reset.
+- [x] 16. `scripts/voice-coverage.ts`: every app action maps to a voice tool; prompts updated; agents:sync.
+- [x] 17. Language consistency: the confirm sheet and its follow-ups in the user's language (translations.ts).
+- [x] 18. `scripts/e2e-ng.ts` runs the 60-second demo by tool calls only; passes twice after a reset.
 
 Finish: README demo script (savings, shop pay), fresh docs/screens (`pnpm screens`), tick here,
 PR merged on green CI, Vercel live, `pnpm demo:ready ng` and `pnpm demo:ready in`.

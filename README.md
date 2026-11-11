@@ -32,22 +32,33 @@ first tap as Funmi, and prints a green **READY** or exactly what is wrong (about
 
 | Who | Login | What she shows |
 | --- | ----- | -------------- |
-| **Funmi** (Nigeria) | demo button | The unlocked borrower: no bank account, a wallet on Stellar, ₦26,400, an ajo round to pay, verified stall stock and a ₦30,000 loan offer. |
+| **Funmi** (Nigeria) | demo button | The unlocked borrower: no bank account, a wallet on Stellar, ₦26,400, Stall shade savings (₦18,500 of ₦50,000, auto-save 10%), an ajo round to pay, verified stall stock and a ₦30,000 loan offer. |
 | **Kemi** (Nigeria) | demo button | New to Plus: "week 4 of 6", building her history toward a first loan, and verifying an asset from scratch (live photo, two witnesses, an inspection). |
-| **Amaka** (Nigeria) | demo button | A witness: 20 weeks with Plus and a verified ID, so she can confirm Kemi's asset in her own app. In Funmi's ajo, so she can vouch for Funmi's loan ("I vouch for Funmi"). |
+| **Amaka** (Nigeria) | demo button | A stall to pay by QR (Pay → My code). A witness: 20 weeks with Plus and a verified ID, so she can confirm Kemi's asset in her own app. In Funmi's ajo, so she can vouch for Funmi's loan ("I vouch for Funmi"). |
 | **Mama Bisi** (Nigeria) | /agent | The cash agent: records cash in, pays out codes, confirms and inspects assets. Float ₦200,000. |
 | **Selvi** (India) | demo button | The same record for someone who does have a bank account: ₹2,350 to spend, ₹1,415 saved, a seettu. Meena is her group leader (helper page). |
 
 ### The 60-second script
 
+Funmi's phone on the projector (**/demo**), Amaka's and Mama Bisi's phones to hand, **/verify** on a
+second screen. `pnpm e2e:ng` runs these same steps by tool calls (run it after `pnpm demo:reset ng`,
+then reset again before the real thing).
+
 | Time | On screen | Say |
 | ---- | --------- | --- |
-| 0:00–0:10 | Mama Bisi records ₦500 on /agent. Funmi's phone: "Mama Bisi says you gave her ₦500. Is that right?" She says "yes"; the tick, and the transaction on Stellar | "Funmi has no bank account. She hands cash to Mama Bisi, a Plus agent; nothing moves until Funmi says yes. There it is on Stellar." |
-| 0:10–0:25 | Funmi: "Pay my ajo." Plus reads it back, she says yes; the ajo card's pot grows | "Her ajo's pot is held by a contract that nobody can edit or run off with." |
-| 0:25–0:45 | Funmi: "Can I get a loan?" The Loan screen: you receive ₦30,000, cost ₦1,800, total ₦31,800, and why. She types her PIN; the money arrives. Then **Simulate transfer received** on Add money: 10% repays the loan by itself | "The full cost in naira before she agrees, and why she qualifies. The next money in repays a tenth of it, on its own." |
-| 0:45–0:55 | Funmi: "Share my record with the lender." Her PIN, a code on her screen. On a second screen, **/verify**: type the code; her history, ajo, assets and loans, each "Read from Stellar", verified in about a second | "Any lender can check her record without trusting Plus, and never sees her name." |
-| 0:55–1:00 | Kemi's phone: "week 4 of 6" | "And Kemi, two weeks from her first loan." |
-| Optional, before the loan (+10 s) | Amaka's phone: "I vouch for Funmi." Her PIN. Funmi's Loan screen: "Amaka and Tunde vouched for you: 100% collateral instead of 150%" | "Her ajo backs her. If the loan isn't repaid, they lose the right to vouch for six months, and nobody's money is touched." |
+| 0:00–0:05 | Funmi: "How much do I have?" ₦26,400; the wallet card | "Funmi has no bank account. This wallet on Stellar is her account." |
+| 0:05–0:15 | She buys from Amaka's stall: **Scan** on Pay, Amaka's QR (Amaka's phone: Pay → **My code**), ₦2,000, Yes. The tick on both phones | "A shop is paid by scanning its code, like any QR payment, and it lands on Stellar in about four seconds." |
+| 0:15–0:22 | "Pay my ajo." Plus reads it back; yes; the ajo pot grows | "Her ajo's pot is held by a contract that nobody can edit or run off with." |
+| 0:22–0:30 | "Save a thousand." Yes; Stall shade goes from ₦18,500 to ₦19,500 of ₦50,000 | "Her savings sit in her own pot on Stellar, apart from her spending money. 10% of every money in is saved by itself." |
+| 0:30–0:42 | "Can I get a loan?" You receive ₦30,000, cost ₦1,800, total ₦31,800, and why. She types her PIN; the money arrives | "The full cost in naira before she agrees, and why she qualifies: her activity, her verified stall stock, her saving. 10% of each money in repays it on its own." |
+| 0:42–0:52 | "Share my record with a lender." A code on her screen. **/verify**: type it; her history, ajo, assets and loans, each "Read from Stellar", in about a second | "Any lender can check her record without trusting Plus, and never sees her name." |
+| 0:52–1:00 | "Cash out three thousand." A code; Mama Bisi types it on /agent and hands over the cash | "And cash whenever she needs it, from the agent on her street." |
+| Optional (+10 s) | Mama Bisi records ₦500 cash on /agent; Funmi: "Mama Bisi says you gave her ₦500. Is that right?" yes | "Cash in works the same way: nothing moves until she says yes." |
+| Optional, before the loan (+10 s) | Amaka: "I vouch for Funmi." Her PIN. Funmi's Loan screen: "Tunde and Amaka vouched for you … 100% collateral instead of 150%" | "Her ajo backs her. If the loan isn't repaid, they lose the right to vouch for six months, and nobody's money is touched." |
+| Optional (+5 s) | Kemi's phone: "week 4 of 6" | "And Kemi, two weeks from her first loan." |
+
+No live demo login on hand? **/verify** has **Try a sample record (Funmi, demo)** while the demo
+logins are on.
 
 ### Why the blockchain is essential in Nigeria
 
@@ -208,11 +219,12 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
 - Voice for Nigeria shows "Voice coming soon" until `ELEVENLABS_AGENT_ID_NG` is set
   (`agent/ng/README.md`).
 
-### Measured (testnet, 2026-11-10)
+### Measured (testnet, 2026-11-10; the 60-second demo 2026-11-11)
 
 | What | Time |
 | ---- | ---- |
-| Her Yes → tick (confirmed on-chain), `pnpm e2e:ng`, 8 transactions | median 4.8 s, max 7.6 s (a busier testnet hour: median 6.5 s) |
+| The 60-second demo, `pnpm e2e:ng` after `pnpm demo:reset ng`, two runs in a row (6 transactions each) | Yes → tick median 4.6 s and 3.9 s, max 6.7 s; confirm answered in 0.2–0.5 s; /verify's lookup 0.15 s |
+| Her Yes → tick (confirmed on-chain), the earlier `pnpm e2e:ng`, 8 transactions | median 4.8 s, max 7.6 s (a busier testnet hour: median 6.5 s) |
 | Contract call, Yes → confirmed, before / after the speed work | median 10.6 s → 4.6 s |
 | First confirm of the day: cold function / after `pnpm warm` | 7.5 s → 0.8 s |
 | First tap on **Simulate transfer received** after `pnpm warm` (deep warm-up of agent-tools) | 1.15 s → 0.32–0.40 s |
@@ -233,7 +245,7 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   checks only; `ng` or `in` for one market.
 - `pnpm demo:reset ng`: every Nigeria demo person back to a fixed start. Funmi: ₦26,400, no loan
   open (an open one is settled by the reset, which doesn't count toward her ladder) and the ₦30,000
-  offer, stall stock independently verified, an ajo round she hasn't paid (a new round with the
+  offer, Stall shade savings at ₦18,500 (on Stellar and in her history), no PIN, stall stock independently verified, an ajo round she hasn't paid (a new round with the
   same members if she has), her landlord's bank account saved as "Landlord". Kemi: week 4 of 6, no assets (earlier ones are released). Amaka: able
   to witness, Kemi's saved payee, able to vouch for Funmi. Tunde's vouch for Funmi waiting on
   plus_credit (any other waiting vouch withdrawn). Nothing waiting anywhere: no pending actions, cash-ins, unused
@@ -259,7 +271,8 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   their own passwords. `pnpm demo:logins` sets it (and flags those rows). The backend checks the
   Supabase secret `DEMO_LOGINS_ENABLED`; after the showcase, switch them off in one command:
   `npx supabase secrets set DEMO_LOGINS_ENABLED=false --project-ref qoqmnjzfjhpemwleipth`.
-  Money actions by a demo person are rate-limited (15 per 10 minutes, 120 a day). Run
+  Money actions by a demo person are rate-limited (15 per 10 minutes, 120 a day; `pnpm demo:reset`
+  clears the last 10 minutes so a rehearsal doesn't block the demo). Run
   `pnpm demo:ready` before every rehearsal.
 - **Deploys.** Vercel project `plus-wallet` (root `apps/web`) redeploys on every merge to `main`;
   pull requests get preview URLs (allowed by the Edge Function CORS list).
