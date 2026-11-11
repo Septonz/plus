@@ -12,6 +12,7 @@ import {
   type NgStore,
   autoSaveSplit,
   ngConfirmAction,
+  ngSetProfile,
   parsePayCode,
   ngPrepareSave,
   ngPrepareWithdrawSavings,
@@ -52,6 +53,7 @@ type World = {
   available: bigint;
   paidToday: bigint;
   limit: bigint;
+  profile?: { name?: string; language?: string };
   advance: ChainAdvance | null;
   pool: bigint;
   group: ChainGroup | null;
@@ -180,6 +182,10 @@ function fakeStore(w: World): NgStore {
     savingsGoal: () => Promise.resolve(null),
     setSavingsGoal: () => Promise.resolve({ created: true }),
     setAutoSave: () => Promise.resolve(),
+    updateProfile: (_u, p) => {
+      w.profile = p;
+      return Promise.resolve();
+    },
   };
 }
 
@@ -871,4 +877,15 @@ Deno.test("pay codes: typed, spoken or scanned forms all read as the same code",
   assertEquals(parsePayCode("https://plus-wallet.vercel.app/app/pay/K7Q2MX"), "K7Q2MX");
   assertEquals(parsePayCode("K7Q-2MO"), null); // O reads as 0, which is not in the alphabet
   assertEquals(parsePayCode("12345"), null);
+});
+
+Deno.test("set_profile: English, Pidgin or Yoruba, in her words; nothing else", async () => {
+  for (const [said, code] of [["Pidgin", "pcm"], ["yoruba", "yo"], ["Yorùbá", "yo"], ["English", "en"]]) {
+    const { w, ctx } = setup();
+    const r = await ngSetProfile(ctx({ language: said }));
+    assertEquals([r.ok, w.profile?.language], [true, code]);
+  }
+  const { ctx } = setup();
+  assertEquals((await ngSetProfile(ctx({ language: "Hausa" }))).error, "invalid_language");
+  assertEquals((await ngSetProfile(ctx({}))).error, "nothing_to_save");
 });

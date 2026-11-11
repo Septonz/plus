@@ -194,7 +194,7 @@ export const MARKETS: Record<MarketId, Market> = {
     country: "Nigeria",
     currency: { code: "NGN", symbol: "₦", onChain: true },
     // English covers Nigerian Pidgin.
-    languages: ["en", "yo", "ha", "ig"],
+    languages: ["en", "pcm", "yo"], // the languages the agent speaks (Pidgin is its own choice)
     spokenLanguages: ["English", "Pidgin", "Yoruba"],
     custody: "stellar_account",
     usdBalance: true,

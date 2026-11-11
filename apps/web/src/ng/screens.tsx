@@ -1043,13 +1043,17 @@ export function Record({ version }: Props) {
 export function Settings({ data, version, onSignOut }: Props & { onSignOut: () => void }) {
   const me = useTool('get_user', version)
   const [pin, setPin] = useState('')
+  const [pinOpen, setPinOpen] = useState(false)
   const { busy, msg, run } = useSubmit()
   const [saved, setSaved] = useState(false)
+  const [lang, setLang] = useState<string | null>(null)
   const limits = (me?.limits ?? null) as { tier: number; daily_text: string; balance_text: string; advances: boolean } | null
   const name = data.me?.name ?? ''
+  const language = lang ?? String(me?.language ?? data.me?.language ?? 'en')
   useSays(
     `Profile: ${name}${limits ? `, level ${limits.tier}. Limits: send ${limits.daily_text} a day, hold up to ${limits.balance_text}` : ''}. ` +
-      'A PIN pad to set her PIN: she types it herself, never out loud. A Sign out button.',
+      `${me?.virtual_account ? `Her account number for bank transfers: ${String(me.virtual_account)}, with a Copy button. ` : ''}` +
+      `Language: ${LANGS.find(([c]) => c === language)?.[1] ?? 'English'} (English, Pidgin or Yoruba). Rows: Stellar details, Change PIN (she types it herself, never out loud). A Sign out button.`,
   )
   return (
     <div className="space-y-6">
@@ -1061,24 +1065,47 @@ export function Settings({ data, version, onSignOut }: Props & { onSignOut: () =
         </div>
       </div>
       <Loaded r={me} rows={2}>
-        {() => limits && (
-          <Section title="Limits">
-            <ListGroup>
-              <ListRow icon="pay" title="Send per day" trailing={<span className="num font-medium">{limits.daily_text}</span>} />
-              <ListRow icon="wallet" title="Hold up to" trailing={<span className="num font-medium">{limits.balance_text}</span>} />
-              {me?.virtual_account ? <ListRow icon="bank" title="Bank transfers in" subtitle={String(me.bank_label)} trailing={<span className="num font-mono text-base">{String(me.virtual_account)}</span>} /> : null}
-            </ListGroup>
-          </Section>
+        {() => (
+          <>
+            {me?.virtual_account ? (
+              <Section title="Your account number (for bank transfers)">
+                <Card className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="num font-mono text-2xl tracking-wider">{String(me.virtual_account)}</p>
+                    <p className="text-sm text-secondary">{String(me.bank_label)}</p>
+                  </div>
+                  <CopyButton text={String(me.virtual_account)} label="Copy" />
+                </Card>
+              </Section>
+            ) : null}
+            {limits && (
+              <Section title="Limits">
+                <ListGroup>
+                  <ListRow icon="pay" title="Send per day" trailing={<span className="num font-medium">{limits.daily_text}</span>} />
+                  <ListRow icon="wallet" title="Hold up to" trailing={<span className="num font-medium">{limits.balance_text}</span>} />
+                </ListGroup>
+              </Section>
+            )}
+          </>
         )}
       </Loaded>
+      <Section title={<Bilingual main="Language" sub={yo('stepLanguage')} />}>
+        <Segmented label="Language" value={language} onChange={async (l) => {
+          setLang(l)
+          const r = await run('set_profile', { language: l })
+          if (r.ok) void data.refresh()
+        }} options={LANGS} />
+      </Section>
       <Loaded r={me} rows={1}>
         {() => <StellarDetails pub={(me?.stellar_pub as string | null) ?? null} />}
       </Loaded>
-      <Section title="PIN">
+      <ListGroup>
+        <ListRow icon="lock" title="Change PIN" subtitle={pinOpen ? undefined : `Above ${naira(BigInt(NG.pinThreshold) * 100n)} you type it to say yes`} chevron onClick={() => { setPinOpen((o) => !o); setSaved(false) }} />
+      </ListGroup>
+      {pinOpen && (
         <Card className="space-y-3">
           <p className="text-sm text-secondary">Up to {naira(BigInt(NG.pinThreshold) * 100n)} you can just say yes. Above that, type your PIN here on the screen. Never say it out loud.</p>
           <PinPad value={pin} onChange={setPin} />
-          {msg && <Notice tone="danger">{msg}</Notice>}
           {saved && <Notice tone="success">PIN saved.</Notice>}
           <Button className="w-full" loading={busy} disabled={pin.length < 4} onClick={async () => {
             const r = await run('set_pin', { pin })
@@ -1086,10 +1113,12 @@ export function Settings({ data, version, onSignOut }: Props & { onSignOut: () =
             setSaved(Boolean(r.ok))
           }}>Save PIN</Button>
         </Card>
-      </Section>
+      )}
+      {msg && <Notice tone="danger">{msg}</Notice>}
       <Button variant="destructive" className="w-full" onClick={onSignOut}><Icon name="signOut" /> {W.signOut.en}</Button>
       <p className="text-center text-sm text-secondary">Demo · test money only</p>
     </div>
   )
 }
 
+const LANGS: [string, string][] = [['en', 'English'], ['pcm', 'Pidgin'], ['yo', 'Yorùbá']]

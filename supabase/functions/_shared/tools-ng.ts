@@ -11,7 +11,7 @@ import { formatMoney, formatSpokenMoney, getMarket } from "./markets.ts";
 import type { ChainAdvance, ContractReader } from "./ng-types.ts";
 import { matchPayee, parseMajorAmount, type Payee } from "./payees.ts";
 import type { PinOutcome } from "./pin.ts";
-import { normalizePhone } from "./onboarding.ts";
+import { LANGUAGE_NAMES, matchLanguage, normalizePhone } from "./onboarding.ts";
 import { accountNumber, banks, lookupAccountName, maskAccount, parseBank, spokenAccount } from "./banks.ts";
 import type { AssetStore } from "./assets.ts";
 import { ASSET_TOOLS } from "./tools-assets.ts";
@@ -134,6 +134,8 @@ export interface NgStore {
   /** ng_savings_goal_set: set or rename her goal; the first time, her pot is created on Stellar. */
   setSavingsGoal(userId: string, name: string, goal: bigint, assetSac: string): Promise<{ created: boolean }>;
   setAutoSave(userId: string, bps: number): Promise<void>;
+  /** Her name and/or language (Profile, or by voice). */
+  updateProfile(userId: string, patch: { name?: string; language?: string }): Promise<void>;
   chain: ContractReader;
 }
 
@@ -311,7 +313,8 @@ async function cachedBalances(store: NgStore, user: User) {
 
 export const ngGetUser: NgTool = async ({ user, store }) => {
   const [cash, pending, hasPin] = await Promise.all([store.awaitingCashIns(user.id), store.pendingActions(user.id), store.hasPin(user.id)]);
-  const parts = [`This is ${user.name ?? "this caller"}. Nigeria. Speak warm, short Nigerian Pidgin English unless she speaks Yoruba. Amounts in naira.`];
+  const speak = user.language === "yo" ? "Yoruba (simple, warm)" : user.language === "pcm" ? "warm, short Nigerian Pidgin" : "simple, warm English (Pidgin if she uses it)";
+  const parts = [`This is ${user.name ?? "this caller"}. Nigeria. She chose ${LANGUAGE_NAMES[user.language] ?? "English"}: speak ${speak}. Amounts in naira.`];
   if (user.kyc_tier < 1) parts.push("Her sign-up is not finished: no money can move yet.");
   for (const c of cash) parts.push(`First, waiting for her answer: ${c.helper_name} says she gave ${say(c.amount)} cash. Ask: is that right?`);
   return {
@@ -728,6 +731,31 @@ export const ngMyPayCode: NgTool = async ({ user, store }) => {
     pay_code: code,
     pay_code_text: showPayCode(code),
     pay_link: PAY_LINK_BASE + code,
+  };
+};
+
+/** Her name or language, from Profile or by voice ("talk to me in Yoruba"). */
+export const ngSetProfile: NgTool = async ({ user, store, args }) => {
+  const patch: { name?: string; language?: string } = {};
+  if (typeof args.name === "string" && args.name.trim()) {
+    const name = args.name.trim().replace(/\s+/g, " ").slice(0, 40);
+    if (!/\p{L}/u.test(name)) return refuse("I didn't catch the name. Ask her to say it again.", "invalid_name");
+    patch.name = name;
+  }
+  if (typeof args.language === "string" && args.language.trim()) {
+    const langs = getMarket(M).languages;
+    const code = matchLanguage(langs, args.language);
+    if (!code) return refuse(`Plus speaks ${langs.map((l) => LANGUAGE_NAMES[l] ?? l).join(", ")}. Ask which one she likes.`, "invalid_language");
+    patch.language = code;
+  }
+  if (!patch.name && !patch.language) return refuse("Nothing to save: give a name or a language.", "nothing_to_save");
+  await store.updateProfile(user.id, patch);
+  const said = patch.language ? (LANGUAGE_NAMES[patch.language] ?? patch.language) : null;
+  return {
+    text: `Saved.${patch.name ? ` Her name is ${patch.name}.` : ""}${said ? ` From now on, speak ${said} with her, and her screens follow.` : ""}`,
+    ok: true,
+    ...(patch.name ? { name: patch.name } : {}),
+    ...(patch.language ? { language: patch.language, language_name: said } : {}),
   };
 };
 
@@ -1685,6 +1713,7 @@ export const NG_VOICE_TOOLS: Record<string, NgTool> = {
   prepare_bank_send: ngPrepareBankSend,
   bank_details: ngBankDetails,
   my_pay_code: ngMyPayCode,
+  set_profile: ngSetProfile,
   confirm_action: ngConfirmAction,
   reject_action: ngRejectAction,
   my_record: ngMyRecord,

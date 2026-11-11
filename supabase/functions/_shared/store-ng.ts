@@ -298,6 +298,9 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
       const r = must(await db.rpc("ng_savings_goal_set", { p_user_id: userId, p_name: name, p_goal: Number(goal), p_asset_sac: assetSac }), "ng_savings_goal_set") as { created: boolean };
       return { created: !!r.created };
     },
+    async updateProfile(userId, patch) {
+      must(await db.from("users").update(patch).eq("id", userId), "profile");
+    },
     async setAutoSave(userId, bps) {
       must(await db.from("users").update({ auto_save_bps: bps }).eq("id", userId), "auto save");
     },
