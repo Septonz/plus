@@ -658,6 +658,8 @@ function Repaying({ l, busy, run }: { l: ToolResult; busy: boolean; run: Run }) 
       <ListGroup>
         <ListRow icon="loan" title={`You received ${String(v.principal_text)}`} subtitle={`Cost ${String(v.cost_text)} · total ${String(v.total_text)}`} />
       </ListGroup>
+      {/* The agreement and every repayment are on plus_credit: any lender can read them from Stellar. */}
+      <div className="px-1"><VerifiedMark url={v.credit_tx_hash ? `${EXPLORER}/tx/${String(v.credit_tx_hash)}` : null} pending={!v.credit_tx_hash} /></div>
     </>
   )
 }

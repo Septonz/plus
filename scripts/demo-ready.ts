@@ -7,9 +7,12 @@
 //
 // Checks: every function's /health (with the agent secret), agent-tools' deep warm-up, the cron jobs
 // (ran in the last 2 minutes, and their Edge Function calls answer 2xx), the chain outbox (nothing
-// stuck), Stellar RPC and Horizon (healthy, ledger fresh), and a warmed first read as Funmi under
-// 1 second. TESTNET and the dev project only.
+// stuck), Stellar RPC and Horizon (healthy, ledger fresh), the plus_credit contract (deployed, partner
+// is its writer, Funmi's assets readable, no credit write stuck), and a warmed first read as Funmi
+// under 1 second. TESTNET and the dev project only.
 import { spawnSync } from "node:child_process";
+import { Buffer } from "node:buffer";
+import * as StellarSdk from "@stellar/stellar-sdk";
 import { createClient } from "@supabase/supabase-js";
 import { adminClient, loadLocalEnv, ROOT } from "./lib/supabase-admin.ts";
 
@@ -110,6 +113,46 @@ async function stellar() {
   if (!hzOk) problems.push(`Horizon ${HORIZON_URL}: ${age !== null ? `last ledger ${age} s ago` : "no answer"}`);
 }
 
+/** A read-only plus_credit call through RPC simulation (no key, nothing sent). */
+async function creditRead(id: string, fn: string, args: unknown[] = []) {
+  const { Account, Contract, Networks, TransactionBuilder, rpc, scValToNative } = StellarSdk;
+  const server = new rpc.Server(RPC_URL);
+  const tx = new TransactionBuilder(new Account("GBGBYS2ZQRB4F4IIUOWMS2GG4B574LGYIKP5AJA2HRHVJNX3OIYRYNN5", "0"), { fee: "100", networkPassphrase: Networks.TESTNET })
+    .addOperation(new Contract(id).call(fn, ...(args as never[]))).setTimeout(30).build();
+  const sim = await server.simulateTransaction(tx);
+  if (!rpc.Api.isSimulationSuccess(sim) || !sim.result) throw new Error(rpc.Api.isSimulationError(sim) ? sim.error : "no result");
+  return scValToNative(sim.result.retval);
+}
+
+async function credit() {
+  console.log("\n== plus_credit (loans, assets, vouches)");
+  const id = process.env.PLUS_CREDIT_CONTRACT_ID;
+  if (!id) {
+    problems.push("PLUS_CREDIT_CONTRACT_ID is not set in .env.local (docs/deployments.md has it)");
+    return line(false, "plus_credit contract", "not configured");
+  }
+  try {
+    const [cfg, ms] = await timed(() => creditRead(id, "config") as Promise<{ admin: string; partner: string }>);
+    const ok = cfg.partner === "GCHDENOIJ5JFA3JU3OPW3LZSLHR57HCOHA7ZYQSRYG6MHHOFSAM4CWWZ";
+    line(ok, "deployed; partner writes", `${id.slice(0, 8)}…, ${ms} ms`);
+    if (!ok) problems.push(`plus_credit's partner is ${cfg.partner}, not Plus's partner account`);
+    const { data: funmi } = await db.from("users").select("id").eq("stellar_pub", "GA6K725VCN45F4LWZYEL3H7J5CIGGL2IUXDWZH5X75GYWQQJNPAYGW6M").maybeSingle();
+    if (funmi) {
+      const { data: ref } = await db.rpc("credit_borrower_ref", { p_user_id: funmi.id });
+      const assets = await creditRead(id, "assets_of", [StellarSdk.xdr.ScVal.scvBytes(Buffer.from(String(ref), "hex"))]) as unknown[];
+      line(assets.length > 0, "Funmi's verified assets are on it", `${assets.length} asset(s)`);
+      if (assets.length === 0) problems.push("Funmi has no assets on plus_credit: run the backfill (select public.credit_backfill())");
+    }
+  } catch (e) {
+    problems.push(`plus_credit read failed: ${e instanceof Error ? e.message : e}`);
+    line(false, "plus_credit contract", e instanceof Error ? e.message : String(e));
+  }
+  const { data: stuck } = await db.from("chain_outbox").select("ref, status, attempts, last_error")
+    .eq("args->>contract", "credit").neq("status", "done").lt("created_at", new Date(Date.now() - 120_000).toISOString());
+  line((stuck ?? []).length === 0, "no plus_credit write waiting over 2 minutes", (stuck ?? []).map((r) => `${r.ref} ${r.status}`).join(", "));
+  if ((stuck ?? []).length) problems.push(`plus_credit writes stuck: ${(stuck ?? []).map((r) => `${r.ref} (${r.status}, ${r.attempts}x: ${r.last_error ?? ""})`).join("; ")}`);
+}
+
 async function firstTap() {
   console.log("\n== A first tap, after the warm-up");
   const c = createClient(url, process.env.VITE_SUPABASE_ANON_KEY!, { auth: { persistSession: false } });
@@ -136,6 +179,7 @@ async function main() {
   await functions();
   await cron();
   await stellar();
+  await credit();
   await firstTap();
 
   const secs = Math.round((Date.now() - t0) / 1000);

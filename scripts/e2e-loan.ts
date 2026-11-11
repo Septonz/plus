@@ -11,6 +11,10 @@
 //   5. "Repay now" ₦2,000 (under ₦5,000: a tapped Yes is enough).
 //   6. "I need more time": the next payment moves two weeks; new borrowing pauses.
 //   7. A second loan is refused while this one is open.
+//   8. plus_credit (piece 8): the agreement, both repayments and the pledged stall stock are on the
+//      contract, with only 32-byte references; "Repay all" closes it there as Repaid and frees the
+//      stall stock. Read back from Stellar (needs the stellar CLI and its `admin` identity).
+import { execFileSync } from "node:child_process";
 import { plusFetch, signUp, testNin, testPin } from "./lib/onboard.ts";
 import { adminClient, loadLocalEnv } from "./lib/supabase-admin.ts";
 
@@ -35,6 +39,27 @@ async function landed(txId: string, label: string) {
     if (data?.status === "failed" || Date.now() - t0 > 90_000) return check(false, label, `status ${data?.status}`);
     await sleep(1000);
   }
+}
+
+/** Wait until every plus_credit write for this loan is done on Stellar. */
+async function creditSettled(loanId: string) {
+  const t0 = Date.now();
+  for (;;) {
+    const { data } = await db.from("chain_outbox").select("status").eq("args->>loan_id", loanId);
+    const left = (data ?? []).filter((r) => r.status !== "done");
+    if (data?.length && left.length === 0) return;
+    if (Date.now() - t0 > 120_000) throw new Error(`plus_credit writes not done: ${left.map((r) => r.status).join(", ")}`);
+    await sleep(2000);
+  }
+}
+
+/** A read-only call to plus_credit (simulated, nothing is sent). */
+function credit(fn: string, ...args: string[]): Record<string, unknown> {
+  const id = process.env.PLUS_CREDIT_CONTRACT_ID;
+  if (!id) throw new Error("PLUS_CREDIT_CONTRACT_ID is not set (.env.local)");
+  const out = execFileSync("stellar", ["contract", "invoke", "--id", id, "--network", "testnet", "--source-account", "admin", "--send=no", "--", fn, ...args],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  return JSON.parse(out.trim().split("\n").pop()!);
 }
 
 async function main() {
@@ -91,6 +116,28 @@ async function main() {
   console.log("7. One loan at a time");
   const second = await tool("prepare_loan");
   check(second.error === "loan_open", "a second loan is refused", String(second.error));
+
+  console.log("8. On plus_credit (read from Stellar)");
+  const open = (await db.from("loans").select("id").eq("user_id", me.id).eq("status", "active").single()).data as { id: string };
+  await creditSettled(open.id);
+  const rows = (await db.from("chain_outbox").select("ref, args").eq("args->>loan_id", open.id).order("id")).data as { ref: string; args: { fn: string; args: { v: unknown }[] } }[];
+  const opened = rows.find((r) => r.args.fn === "loan_open");
+  const loanRef = String(opened?.args.args[1].v);
+  const assetRef = String(opened?.args.args[8].v);
+  const blob = JSON.stringify(rows.map((r) => r.args));
+  check(!/Loan Test|tomato|2347000000302/i.test(blob) && rows.every((r) => r.args.args.every((a) => /^([0-9a-f]{64}|G[A-Z2-7]{55}|-?\d+|null)$/.test(String(a.v)))),
+    "only references, addresses and amounts go on-chain (no name, phone or description)");
+  let onChain = credit("loan", "--loan", loanRef);
+  check(onChain.status === 0 && onChain.repaid === String(2_500n * 10_000_000n) && onChain.total === String(31_800n * 10_000_000n) && onChain.collateral === assetRef,
+    "the agreement: Active, ₦2,500 repaid of ₦31,800, the stall stock as collateral", `${rows.length} writes`);
+  check(credit("asset", "--asset", assetRef).pledged_to === loanRef, "the stall stock is pledged to it");
+  const all = await tool("prepare_loan_repay", {});
+  const ay = await tool("confirm_action", { action_id: all.action_id, pin });
+  if (typeof ay.transaction_id === "string") await landed(ay.transaction_id, "Repay all: ₦29,300");
+  await creditSettled(open.id);
+  onChain = credit("loan", "--loan", loanRef);
+  check(onChain.status === 3 && onChain.repaid === onChain.total, "Repaid on plus_credit (by the repayments themselves)");
+  check(credit("asset", "--asset", assetRef).pledged_to === null, "the stall stock is free again");
 
   console.log(failures ? `\n${failures} check(s) failed` : "\nAll checks passed.");
   process.exit(failures ? 1 : 0);
