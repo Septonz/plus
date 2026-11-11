@@ -56,7 +56,7 @@ export const W = {
   waiting: { en: 'Waiting for your answer', yo: 'Ó ń dúró dè ọ́' },
 
   // Pay
-  whoPay: { en: 'Who you wan pay?', yo: 'Ta ni o fẹ́ san fún?' },
+  whoPay: { en: 'Who are you paying?', pcm: 'Who you wan pay?', yo: 'Ta ni o fẹ́ san fún?' },
   howMuch: { en: 'How much?', yo: 'Èló ni?' },
 
   // Ajo
@@ -152,10 +152,10 @@ export const W = {
 
   // The mic
   speak: { en: 'Talk to Plus', yo: 'Sọ̀rọ̀' },
-  micListening: { en: 'I dey listen…', yo: '' },
-  micSpeaking: { en: 'Plus dey talk…', yo: '' },
+  micListening: { en: 'Listening…', pcm: 'I dey listen…', yo: '' },
+  micSpeaking: { en: 'Plus is speaking…', pcm: 'Plus dey talk…', yo: '' },
   micConnecting: { en: 'Connecting…', yo: '' },
   micStop: { en: 'Tap to stop', yo: '' },
-  micError: { en: 'Voice no dey work now', yo: '' },
+  micError: { en: 'Voice is not working right now', pcm: 'Voice no dey work now', yo: '' },
   micSoon: { en: 'Voice coming soon', yo: 'Ohùn ń bọ̀ láìpẹ́' }, // check
 } as const
