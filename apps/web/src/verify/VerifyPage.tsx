@@ -139,7 +139,7 @@ function Summary({ r }: { r: Result }) {
             href={credit} />
           {vouchedLoans.length > 0 && <Line label="Backed by ajo vouches" value={`${vouchedLoans.length} loan${vouchedLoans.length === 1 ? '' : 's'}`}
             sub={`${vouchedLoans.reduce((n, l) => n + l.vouchers.length, 0)} vouches from ajo members in good standing (verified ID, 6+ weeks, every ajo payment on time). Each voucher is a 32-byte reference.`} href={credit} />}
-          {rec.vouches.length > 0 && <Line label="Vouches for her next loan" value={rec.vouches.length} sub={`Ajo members in good standing${rec.vouches.length >= 2 ? '; with two or more, a first loan needs 100% collateral instead of 150%' : ''}`} href={credit} />}
+          {rec.vouches.length > 0 && <Line label="Vouches for the next loan" value={rec.vouches.length} sub={`Ajo members in good standing${rec.vouches.length >= 2 ? '; with two or more, a first loan needs 100% collateral instead of 150%' : ''}`} href={credit} />}
         </ListGroup>
       </Section>
 

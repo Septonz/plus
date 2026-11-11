@@ -560,7 +560,7 @@ function AjoBody({ g, busy, msg, pay }: { g: ToolResult; busy: boolean; msg: str
 
 // ---------------------------------------------------------------------------- Vouches (piece 10)
 
-/** Vouch for an ajo member's next loan (her PIN), see who vouched for her, withdraw a waiting one. */
+/** Vouch for an ajo member's next loan (their PIN), see who vouched for them, withdraw a waiting one. */
 function Vouches() {
   const [bump, setBump] = useState(0)
   const v = useTool('my_vouches', bump)
@@ -578,8 +578,8 @@ function Vouches() {
           const mine = given.find((g) => g.other_user_id === p.user_id)
           return (
             <ListRow key={String(p.user_id)} icon="vouch" iconTone={mine ? 'success' : 'neutral'} title={String(p.name)}
-              subtitle={mine ? <span className="inline-flex flex-wrap items-center gap-2">You vouch for her next loan <VerifiedMark url={mine.credit_tx_hash ? `${EXPLORER}/tx/${String(mine.credit_tx_hash)}` : null} pending={!mine.credit_tx_hash} /></span>
-                : p.ok ? 'Her next loan needs less collateral with two vouches' : forScreen(String(p.why ?? ''))}
+              subtitle={mine ? <span className="inline-flex flex-wrap items-center gap-2">You vouch for their next loan <VerifiedMark url={mine.credit_tx_hash ? `${EXPLORER}/tx/${String(mine.credit_tx_hash)}` : null} pending={!mine.credit_tx_hash} /></span>
+                : p.ok ? 'Their next loan needs less collateral with two vouches' : forScreen(String(p.why ?? ''))}
               trailing={mine ? <Button variant="plain" size="md" loading={busy} onClick={async () => after(await run('withdraw_vouch', { vouch_id: mine.id }))}>Withdraw</Button>
                 : p.ok ? <Button size="md" loading={busy} onClick={async () => after(await run('prepare_vouch', { name: p.name }))}>Vouch</Button> : undefined} />
           )

@@ -903,7 +903,7 @@ function doneText(a: Action): string {
     case "savings_withdraw":
       return `Okay: ${amt} from her savings back to her wallet.${tail}`;
     case "vouch":
-      return `Done: she vouches for ${String(a.params.borrower_name ?? "them")}'s next loan. It is being recorded on Stellar.`;
+      return `Done: they vouch for ${String(a.params.borrower_name ?? "them")}'s next loan. It is being recorded on Stellar.`;
   }
   return "Okay." + tail;
 }
@@ -1427,13 +1427,13 @@ const names = (xs: string[]) => xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, 
 
 /** The offer's vouch line: why the collateral is lower, or how many more would lower it. */
 export function vouchLine(v: { count: number; names: string[]; needed: number | null; applied: boolean; collateral_pct: number; collateral_pct_without: number }): string {
-  if (v.applied) return `${names(v.names)} vouched for her (ajo members in good standing), so this loan needs ${v.collateral_pct}% collateral instead of ${v.collateral_pct_without}%.`;
+  if (v.applied) return `${names(v.names)} vouched for this loan (ajo members in good standing), so it needs ${v.collateral_pct}% collateral instead of ${v.collateral_pct_without}%.`;
   if (v.count > 0 && v.needed && v.count < v.needed) {
     const L = lendingRules();
     const more = v.needed - v.count;
-    return `${names(v.names)} vouched for her. ${more} more ajo member${more === 1 ? "" : "s"} vouching would lower the collateral to ${L.vouch?.collateralPct ?? 100}%.`;
+    return `${names(v.names)} vouched for the next loan. ${more} more ajo member${more === 1 ? "" : "s"} vouching would lower the collateral to ${L.vouch?.collateralPct ?? 100}%.`;
   }
-  return v.count > 0 ? `${names(v.names)} vouched for her.` : "";
+  return v.count > 0 ? `${names(v.names)} vouched for the next loan.` : "";
 }
 
 const MONTHS = () => lendingRules().vouch?.banMonths ?? 6;
@@ -1442,21 +1442,21 @@ function vouchRefusal(c: VouchCheck, who: string): ToolResult {
   const L = lendingRules();
   const weeks = L.vouch?.minWeeks ?? 6;
   switch (c.reason) {
-    case "self": return refuse("She can't vouch for herself.", "vouch_self");
-    case "not_same_ajo": return refuse(`She can vouch only for members of her own ajo, and ${who} isn't in one with her on Plus.`, "not_same_ajo");
-    case "banned": return refuse(`She can't vouch until ${spokenDate(String(c.until))}: a loan she vouched for wasn't repaid. Nothing was taken from her.`, "vouch_banned", { until: c.until });
-    case "identity": return refuse("Vouching needs a verified ID first (her NIN, in Profile).", "vouch_identity");
-    case "too_new": return refuse(`Vouching opens after ${weeks} weeks with Plus; she is in week ${(c.weeks ?? 0) + 1}.`, "vouch_too_new");
-    case "standing": return refuse("Vouching needs her own payments on track first.", "vouch_standing");
-    case "no_ajo_payments": return refuse("Vouching needs ajo payments on Stellar first: pay into her ajo, then she can vouch.", "vouch_no_ajo_payments");
+    case "self": return refuse("They can't vouch for themselves.", "vouch_self");
+    case "not_same_ajo": return refuse(`They can vouch only for members of their own ajo, and ${who} isn't in one with them on Plus.`, "not_same_ajo");
+    case "banned": return refuse(`They can't vouch until ${spokenDate(String(c.until))}: a loan they vouched for wasn't repaid. Nothing was taken from them.`, "vouch_banned", { until: c.until });
+    case "identity": return refuse("Vouching needs a verified ID first (their NIN, in Profile).", "vouch_identity");
+    case "too_new": return refuse(`Vouching opens after ${weeks} weeks with Plus; they are in week ${(c.weeks ?? 0) + 1}.`, "vouch_too_new");
+    case "standing": return refuse("Vouching needs their own payments on track first.", "vouch_standing");
+    case "no_ajo_payments": return refuse("Vouching needs ajo payments on Stellar first: pay into their ajo, then they can vouch.", "vouch_no_ajo_payments");
     case "ajo_late": return refuse("Vouching needs every ajo payment on time, and one of hers came late.", "vouch_ajo_late");
-    case "already": return refuse(`She already vouches for ${who}'s next loan.`, "vouch_already");
+    case "already": return refuse(`They already vouch for ${who}'s next loan.`, "vouch_already");
     case "too_many": return refuse(`${who} already has the most vouches a loan can carry.`, "vouch_too_many");
     default: return refuse("I couldn't find that person.", "not_found");
   }
 }
 
-/** "I vouch for Funmi": a member of her ajo, checked now; then her PIN on the screen. */
+/** "I vouch for Funmi": a member of their ajo, checked now; then their PIN on the screen. */
 export const ngPrepareVouch: NgTool = async ({ user, store, args }) => {
   if (!lendingRules().vouch) return refuse("Vouching isn't offered here yet.", "not_available");
   const peers = await store.ajoPeers(user.id);
@@ -1466,7 +1466,7 @@ export const ngPrepareVouch: NgTool = async ({ user, store, args }) => {
     : name ? peers.filter((p) => (p.name ?? "").toLowerCase() === name || (p.name ?? "").toLowerCase().split(/\s+/).includes(name)) : [];
   if (found.length === 0) {
     const list = names(peers.map((p) => p.name ?? "").filter(Boolean));
-    return refuse(peers.length ? `Who? She can vouch for members of her ajo on Plus: ${list}.` : "She can vouch only for members of her ajo who are on Plus, and none are yet.", "who", { peers });
+    return refuse(peers.length ? `Who? They can vouch for members of their ajo on Plus: ${list}.` : "They can vouch only for members of their ajo who are on Plus, and none are yet.", "who", { peers });
   }
   if (found.length > 1) return refuse(`Which one? ${names(found.map((p) => `${p.name} (${p.group_name})`))}.`, "which", { peers: found });
   const b = found[0];
@@ -1483,14 +1483,14 @@ export const ngPrepareVouch: NgTool = async ({ user, store, args }) => {
     ttl_secs: ACTION_TTL_SECS,
   });
   return {
-    text: `Read back: she vouches for ${who}'s next loan. No money is ever taken from her; if ${who} doesn't repay, she can't vouch for anyone for ${months} months. ${PIN_ON_SCREEN}`,
+    text: `Read back: they vouch for ${who}'s next loan. No money is ever taken from them; if ${who} doesn't repay, they can't vouch for anyone for ${months} months. ${PIN_ON_SCREEN}`,
     ok: true,
     ...actionFields(a),
     borrower_name: b.name,
   };
 };
 
-/** Vouches she gave (waiting, used on a loan, withdrawn, defaulted) and vouches for her, plus who she can vouch for. */
+/** Vouches they gave (waiting, used on a loan, withdrawn, defaulted) and vouches for them, plus who they can vouch for. */
 export const ngMyVouches: NgTool = async ({ user, store, now = new Date() }) => {
   const [v, peers] = await Promise.all([store.vouches(user.id), store.ajoPeers(user.id)]);
   const waitingFor = v.received.filter((x) => x.status === "active");
@@ -1498,9 +1498,9 @@ export const ngMyVouches: NgTool = async ({ user, store, now = new Date() }) => 
   const can = await Promise.all(peers.map(async (p) => ({ ...p, check: await store.vouchCheck(user.id, p.user_id) })));
   const banned = can.find((p) => p.check.reason === "banned" && p.check.until && new Date(p.check.until) > now)?.check.until ?? null;
   const parts = [
-    mine.length ? `She vouches for ${names(mine.map((x) => x.other_name ?? "an ajo member"))}'s next loan.` : "She isn't vouching for anyone right now.",
-    waitingFor.length ? `${names(waitingFor.map((x) => x.other_name ?? "An ajo member"))} vouched for her next loan.` : "",
-    banned ? `She can't vouch until ${spokenDate(banned)}.` : "",
+    mine.length ? `They vouch for ${names(mine.map((x) => x.other_name ?? "an ajo member"))}'s next loan.` : "They aren't vouching for anyone right now.",
+    waitingFor.length ? `${names(waitingFor.map((x) => x.other_name ?? "An ajo member"))} vouched for their next loan.` : "",
+    banned ? `They can't vouch until ${spokenDate(banned)}.` : "",
   ];
   return {
     text: parts.filter(Boolean).join(" "),
@@ -1519,10 +1519,10 @@ export const ngWithdrawVouch: NgTool = async ({ user, store, args }) => {
   const id = typeof args.vouch_id === "string" ? args.vouch_id : null;
   const name = typeof args.name === "string" ? args.name.trim().toLowerCase() : "";
   const t = id ? waiting.filter((x) => x.id === id) : name ? waiting.filter((x) => (x.other_name ?? "").toLowerCase().split(/\s+/).includes(name) || (x.other_name ?? "").toLowerCase() === name) : waiting;
-  if (t.length === 0) return refuse(given.some((x) => x.status === "used") && !waiting.length ? "Her vouch is already on a loan; it can't be withdrawn now." : "She has no waiting vouch to withdraw.", "nothing_to_withdraw");
+  if (t.length === 0) return refuse(given.some((x) => x.status === "used") && !waiting.length ? "Their vouch is already on a loan; it can't be withdrawn now." : "They have no waiting vouch to withdraw.", "nothing_to_withdraw");
   if (t.length > 1) return refuse(`Which one? ${names(t.map((x) => x.other_name ?? "an ajo member"))}.`, "which");
   const ok = await store.withdrawVouch(user.id, t[0].id);
-  return ok ? { text: `Done: she no longer vouches for ${t[0].other_name ?? "them"}. Recorded on Stellar.`, ok: true, vouch_id: t[0].id }
+  return ok ? { text: `Done: they no longer vouch for ${t[0].other_name ?? "them"}. Recorded on Stellar.`, ok: true, vouch_id: t[0].id }
     : refuse("That vouch is already on a loan or withdrawn.", "nothing_to_withdraw");
 };
 
