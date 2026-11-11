@@ -89,6 +89,13 @@ export interface Lending {
   restructuredMinimum: number;
   /** The partner lender, as she sees it. */
   lenderLabel: string;
+  /**
+   * Ajo vouches (piece 10): members in good standing (verified ID, `minWeeks`+ with Plus, every
+   * ajo payment on time) vouch for another member's next loan. With `min` or more, the collateral
+   * her offer needs is at most `collateralPct`. A voucher whose vouched loan defaults can't vouch
+   * for `banMonths` months; no money is ever taken from her.
+   */
+  vouch?: { min: number; collateralPct: number; minWeeks: number; banMonths: number; max: number };
 }
 
 export type AssetLevel = "registered" | "evidence_verified" | "community_verified" | "independently_verified";
@@ -213,6 +220,7 @@ export const MARKETS: Record<MarketId, Market> = {
       extensionDays: 14,
       restructuredMinimum: 1500,
       lenderLabel: "Partner lender (simulated)",
+      vouch: { min: 2, collateralPct: 100, minWeeks: 6, banMonths: 6, max: 10 },
     },
     cashOutCode: { digits: 6, returnAfterDays: 7, maxAttempts: 5 },
     cashInExpiryHours: 24,
