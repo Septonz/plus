@@ -43,7 +43,7 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
     },
     verifyPin: (userId, pin) => verifyPinRow(db, userId, pin),
     async payees(userId) {
-      return must(await db.from("payees").select("id, name, stellar_address, phone").eq("user_id", userId).order("name"), "payees");
+      return must(await db.from("payees").select("id, name, stellar_address, phone, bank_code, account_number, account_name").eq("user_id", userId).order("name"), "payees");
     },
     async paidSince(userId, sinceIso) {
       const rows = must(
@@ -173,6 +173,13 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
         await db.from("payees").upsert({ user_id: userId, name: p.name, phone: p.phone, stellar_address: p.stellar_address }, { onConflict: "user_id,phone" })
           .select("id, name, stellar_address, phone").single(),
         "savePayee",
+      ) as Payee;
+    },
+    async saveBankPayee(userId, p) {
+      return must(
+        await db.from("payees").upsert({ user_id: userId, ...p }, { onConflict: "user_id,name" })
+          .select("id, name, stellar_address, phone, bank_code, account_number, account_name").single(),
+        "saveBankPayee",
       ) as Payee;
     },
     async bankTransferIn(userId, amount, repay, ref, sender) {

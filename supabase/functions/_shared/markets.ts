@@ -49,6 +49,11 @@ export interface Market {
   onboarding: { phoneCodeDigits: number; phoneCodeTtlSecs: number; maxCodeAttempts: number; maxCodesPerSession: number; demoPhonePrefix: string; phonePattern: string; phoneHint: string };
   /** Bank transfer in: each wallet gets a virtual account number at the partner bank (simulated). */
   virtualAccount: { bankLabel: string; digits: number } | null;
+  /**
+   * Send to a bank account (simulated): NGNT goes to the partner's anchor, which pays the account.
+   * The bank list is generic and fictional; the account-name lookup is simulated.
+   */
+  bankSend: { banks: { code: string; name: string }[]; accountDigits: number } | null;
   /** Voice-agent tools. */
   services: string[];
   /** Services used by helpers (group leaders, correspondents, agents), never by the voice agent. */
@@ -173,6 +178,7 @@ export const MARKETS: Record<MarketId, Market> = {
     },
     onboarding: { phoneCodeDigits: 6, phoneCodeTtlSecs: 600, maxCodeAttempts: 5, maxCodesPerSession: 5, demoPhonePrefix: "+9170000", phonePattern: "^\\+91[0-9]{10}$", phoneHint: "+91 70000 00101" },
     virtualAccount: null,
+    bankSend: null,
     services: [...SERVICES],
     helperServices: [...HELPER_SERVICES],
   },
@@ -230,6 +236,18 @@ export const MARKETS: Record<MarketId, Market> = {
     },
     onboarding: { phoneCodeDigits: 6, phoneCodeTtlSecs: 600, maxCodeAttempts: 5, maxCodesPerSession: 5, demoPhonePrefix: "+2347000000", phonePattern: "^\\+234[0-9]{10}$", phoneHint: "0700 000 0101" },
     virtualAccount: { bankLabel: "Partner bank (simulated)", digits: 10 },
+    // Fictional banks for the demo (codes D01-D06 are not real bank codes).
+    bankSend: {
+      accountDigits: 10,
+      banks: [
+        { code: "D01", name: "Ironwood Bank" },
+        { code: "D02", name: "Harmattan Bank" },
+        { code: "D03", name: "Lagoon Trust Bank" },
+        { code: "D04", name: "Kolanut Bank" },
+        { code: "D05", name: "Savanna Microfinance Bank" },
+        { code: "D06", name: "Market Women's Cooperative Bank" },
+      ],
+    },
     services: [...SERVICES],
     helperServices: [...HELPER_SERVICES],
   },

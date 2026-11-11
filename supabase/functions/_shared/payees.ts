@@ -13,6 +13,10 @@ export interface Payee {
   stellar_address?: string | null;
   /** A payee saved by phone (a Plus user or not). */
   phone?: string | null;
+  /** Nigeria: a bank account (piece 7): bank code, 10-digit number, the name the bank gave. */
+  bank_code?: string | null;
+  account_number?: string | null;
+  account_name?: string | null;
 }
 
 export type PayeeMatch =
