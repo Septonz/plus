@@ -76,12 +76,16 @@ Two demo users (naira, illustrative numbers), both with demo login buttons.
 
 ## Piece 7: Send to a bank account (Nigeria)
 
-- [ ] On Pay: a 10-digit account number and a bank from a generic list. A simulated account-name
+- [x] On Pay: a 10-digit account number and a bank from a generic list. A simulated account-name
   lookup ("Account name: ADEBAYO STORES") is shown before she confirms.
-- [ ] On confirm, NGNT goes from her wallet to `anchor_ng` through the outbox, as an anchor
+- [x] On confirm, NGNT goes from her wallet to `anchor_ng` through the outbox, as an anchor
   withdrawal, shown as "Sent to bank (partner, simulated)" with the Stellar tick.
-- [ ] Voice: "Send ₦8,000 to my landlord's bank account". Same confirm rules. No real bank or
+- [x] Voice: "Send ₦8,000 to my landlord's bank account". Same confirm rules. No real bank or
   company names except a generic bank list.
+- Done 2026-11-10: Pay has a "To a bank" tab (six fictional banks, 10-digit number, the name shown
+  as soon as the number is complete, optional "Save it as"); saved bank accounts sit in her saved
+  list. Voice tools `bank_lookup` and `prepare_bank_send`; above ₦5,000 needs her PIN. `pnpm e2e:bank`
+  passes on testnet: ₦2,000 Yes → on Stellar to `anchor_ng` in 8.4 s, a retried Yes sends nothing twice.
 
 ## Piece 8 (Wednesday, after the rest): `plus_credit` contract
 

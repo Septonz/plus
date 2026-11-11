@@ -124,6 +124,12 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   flag only), text messages (codes shown on screen), the partner bank behind the virtual account
   numbers and its anchor account; in India the partner bank, UPI and KYC (`payout-sim`,
   `partner_kyc_mock`). No real company names or logos are used.
+- Send to a bank account (Nigeria): the banks (Ironwood, Harmattan, Lagoon Trust, Kolanut, Savanna
+  Microfinance, Market Women's Cooperative) and the account-name lookup are fictional. Her NGNT really
+  moves on Stellar to the partner's anchor account (`anchor_ng`) as a withdrawal, and the anchor's record
+  keeps the account (`bank_withdrawals`); the payout to the bank is simulated. In production this is a
+  SEP-24/SEP-6 withdrawal with a memo and the bank's real name enquiry. Ironwood Bank `0123456789` is
+  ADEBAYO STORES (Funmi's saved "Landlord"); `0000000000` and numbers starting `999` are "not found".
 - Custodial keys sit in Supabase secrets (demo people) or Vault (new sign-ups, `anchor_ng`); in
   production they would be in a KMS/HSM or held by the user (passkeys).
 - Demo people (Funmi, Kemi, Amaka, Selvi, Mama Bisi, Meena) sign in with a demo password; new users sign up with a
@@ -163,6 +169,7 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
 | First payment ₦500 to a Plus user by phone | 4.3 s, 5.0 s |
 | Pay by code ₦300 / agent pays it out | 4.0–4.6 s / 3.1–3.8 s |
 | Sign-up to first payment, all of it | 28 to 31 s |
+| Send ₦2,000 to a bank account (`pnpm e2e:bank`): Yes → on Stellar to the partner's anchor | 8.4 s |
 
 ### Demo tools
 
@@ -171,7 +178,7 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
 - `pnpm demo:reset ng`: every Nigeria demo person back to a fixed start. Funmi: ₦26,400, no loan
   open (an open one is settled by the reset, which doesn't count toward her ladder) and the ₦30,000
   offer, stall stock independently verified, an ajo round she hasn't paid (a new round with the
-  same members if she has). Kemi: week 4 of 6, no assets (earlier ones are released). Amaka: able
+  same members if she has), her landlord's bank account saved as "Landlord". Kemi: week 4 of 6, no assets (earlier ones are released). Amaka: able
   to witness, Kemi's saved payee. Nothing waiting anywhere: no pending actions, cash-ins, unused
   cash-out codes or witness requests for Funmi, Kemi, Amaka or Mama Bisi; Mama Bisi's float
   ₦200,000. `pnpm demo:reset in`: Selvi at ₹2,350 to spend and ₹1,415 saved, no advance, seettu
@@ -357,6 +364,7 @@ This is a Testnet prototype. Where it cuts corners, it does so in ways that do n
 - `pnpm e2e` (by hand, not CI): runs the India flow against the dev project by voice session and app: state transfer, auto-save, what arrived, pay the flower wholesaler ₹300, seettu, helper cash-in confirmed, my record. Then waits for the chain outbox and checks each contract event on Stellar, printing confirm → on-chain times.
 - `pnpm e2e:ng` (by hand, not CI): the Nigeria demo through the real functions: Mama Bisi records ₦500 and Funmi says Yes, pay Iya Tunde, ajo, advance (and auto-repay from a cash-in), cash-out code redeemed by the agent, my record. Prints Yes → tick seconds and a Stellar Expert link per step. `pnpm e2e:ng --read` only reads (balances, ajo, advance, record, agent float). Step 8 (also alone with `pnpm e2e:ng --new-user`): a new person on test number +234 700 000 0301 from sign-up to first payment: a wrong NIN refused, the wallet opened, a bank transfer in, ₦500 to Funmi by phone, ₦300 by code to someone not on Plus that Mama Bisi pays out, the tier limit refusing ₦250,000, and signing in again with phone + PIN.
 - `pnpm e2e:assets` (by hand, not CI; run `pnpm demo:reset ng` first): a test person on +234 700 000 0303 registers a sewing machine, takes the live photo, asks Amaka and Mama Bisi, both confirm, Mama Bisi inspects it; checks that only the hash and a rounded place are stored, the photo is private, the confidence score never reaches her, and stolen/found statuses. 22 checks.
+- `pnpm e2e:bank` (by hand, not CI; run `pnpm demo:reset ng` afterwards): as Funmi, the name lookup (Ironwood Bank 0123456789 → ADEBAYO STORES, a 999… number refused), ₦2,000 to the account (her Yes is enough; a retried Yes sends nothing twice), NGNT on Stellar to `anchor_ng` and the anchor's withdrawal record, "sent to bank (partner, simulated)" in her record, and ₦8,000 refused without her PIN.
 
 ### Secrets (Supabase secrets, never committed)
 
