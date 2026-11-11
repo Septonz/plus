@@ -664,9 +664,13 @@ function Offer({ l, busy, run }: { l: ToolResult; busy: boolean; run: Run }) {
     <>
       <Card>
         <AmountDisplay text={String(o.amount_text)} size="lg" label={<Bilingual main={W.youReceive.en} sub={yo('youReceive')} />} />
-        <p className="mt-3 text-lg">You receive <b className="num">{String(o.amount_text)}</b>, cost <b className="num">{String(o.cost_text)}</b>, total <b className="num">{String(o.total_text)}</b>.</p>
-        <p className="mt-1 text-sm text-secondary">From {String(l.lender)}. Repay {String(o.repay_pct)}% of every money-in, and at least {String(o.minimum_text)} every two weeks.</p>
+        <dl className="mt-4 divide-y divide-hairline text-lg">
+          <div className="flex justify-between py-2"><dt className="text-secondary">Cost</dt><dd className="num font-medium">{String(o.cost_text)}</dd></div>
+          <div className="flex justify-between py-2"><dt className="font-medium">Total to repay</dt><dd className="num font-semibold">{String(o.total_text)}</dd></div>
+        </dl>
+        <p className="mt-2 text-sm text-secondary">From {String(l.lender)}. Repay {String(o.repay_pct)}% of every money-in, and at least {String(o.minimum_text)} every two weeks.</p>
       </Card>
+      <RepayExample pct={Number(o.repay_pct)} />
       <VouchNote l={l} />
       <Section title={<Bilingual main={W.whyThisOffer.en} sub={yo('whyThisOffer')} />}>
         <ListGroup>
@@ -687,6 +691,16 @@ function Offer({ l, busy, run }: { l: ToolResult; busy: boolean; run: Run }) {
         {W.acceptLoan.en}
       </Button>
     </>
+  )
+}
+
+/** How repaying feels: a sale, and the loan's share of it, automatically. */
+function RepayExample({ pct }: { pct: number }) {
+  const sale = 10_000n * 100n
+  return (
+    <Notice tone="info">
+      Sell <b className="num">{naira(sale)}</b> → <b className="num">{naira((sale * BigInt(Math.round(pct * 100))) / 10_000n)}</b> goes to the loan automatically.
+    </Notice>
   )
 }
 
@@ -717,6 +731,7 @@ function Repaying({ l, busy, run }: { l: ToolResult; busy: boolean; run: Run }) 
         </p>
         {v.grace_until ? <p className="mt-1 text-sm text-secondary">You have a few days' grace. No extra cost.</p> : null}
       </Card>
+      <RepayExample pct={Number(v.repay_pct)} />
       {v.status === 'late' && <Notice tone="warning">A payment is late. You can ask for smaller payments below. Borrowing more waits until this is repaid.</Notice>}
       {v.borrowing_paused ? <Notice>New borrowing is paused until this loan is repaid.</Notice> : null}
       <div className="grid gap-3">

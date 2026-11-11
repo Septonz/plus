@@ -79,7 +79,7 @@ export interface Lending {
   /** Why she got it: weights (percent) of the score shown on the offer. */
   weights: { activity: number; assets: number; savings: number };
   /** The rewards ladder: each repaid loan moves her up one step (the last step repeats). */
-  ladder: { max: number; costBps: number; collateralPct: number; approval: string }[];
+  ladder: { max: number; costBps: number; collateralPct: number; approval: string; laterCollateralPct?: number }[];
   /** Repayment: repayBps of every money-in, plus at least `minimum` every `everyDays`. */
   repay: { fromMoneyInBps: number; minimum: number; everyDays: number };
   /** Affordability: what she can repay over `weeks` from repayBps of her typical weekly money-in, plus the minimums. Rounded down to `roundTo`. */
@@ -217,8 +217,8 @@ export const MARKETS: Record<MarketId, Market> = {
       ladder: [
         { max: 30000, costBps: 600, collateralPct: 150, approval: "within a day" },
         { max: 50000, costBps: 500, collateralPct: 125, approval: "within hours" },
-        { max: 80000, costBps: 450, collateralPct: 100, approval: "in minutes" },
-        { max: 80000, costBps: 450, collateralPct: 50, approval: "in minutes" },
+        // The top step repeats; from its second loan on, the collateral drops to laterCollateralPct.
+        { max: 80000, costBps: 450, collateralPct: 100, laterCollateralPct: 50, approval: "in minutes" },
       ],
       repay: { fromMoneyInBps: 1000, minimum: 2500, everyDays: 14 },
       affordability: { weeks: 12, roundTo: 5000 },

@@ -146,7 +146,9 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
   // The ladder: each loan she repaid herself moves her up (a demo reset's settlement doesn't count).
   const repaidLoans = input.loans.filter((l) => l.status === "repaid" && !l.closed_by_reset).length;
   const stepIndex = Math.min(repaidLoans, L.ladder.length - 1);
-  const step = L.ladder[stepIndex];
+  const top = L.ladder[stepIndex];
+  // The top step repeats: from its second loan on, its collateral drops (laterCollateralPct).
+  const step = repaidLoans >= L.ladder.length && top.laterCollateralPct !== undefined ? { ...top, collateralPct: top.laterCollateralPct } : top;
   // Piece 10: enough ajo vouches lower the collateral this step needs (never raise it).
   const vouches = input.vouches ?? [];
   const vouched = L.vouch !== undefined && vouches.length >= L.vouch.min && L.vouch.collateralPct < step.collateralPct;
@@ -204,7 +206,10 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
     collateral_asset: verified[0] ?? null,
     why,
     score: why.reduce((s, w) => s + w.points, 0),
-    ladder: L.ladder.map((s, i) => ({ step: i, max: BigInt(s.max) * N, cost_bps: s.costBps, collateral_pct: s.collateralPct, approval: s.approval, current: i === stepIndex })),
+    ladder: L.ladder.map((s, i) => ({
+      step: i, max: BigInt(s.max) * N, cost_bps: s.costBps, collateral_pct: i === stepIndex ? step.collateralPct : s.collateralPct,
+      later_collateral_pct: s.laterCollateralPct ?? null, approval: s.approval, current: i === stepIndex,
+    })),
   };
 }
 
@@ -215,7 +220,8 @@ export function levelWords(level: AssetLevel | string): string {
     : "registered";
 }
 
-/** Collateral as she reads it on the ladder: 150%, 125%, 100%, then partial. */
-export function collateralWords(pct: number): string {
-  return pct < 100 ? "partial" : `${pct}%`;
+/** Collateral as she reads it on the ladder: 150%, 125%, "100%, then 50%" (the top step repeats). */
+export function collateralWords(pct: number, later: number | null = null): string {
+  const w = (p: number) => (p < 100 ? `partial (${p}%)` : `${p}%`);
+  return later !== null && later !== pct ? `${w(pct)}, then ${w(later)}` : w(pct);
 }

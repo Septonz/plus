@@ -1063,7 +1063,7 @@ export const ngLoanStatus: NgTool = async ({ user, store, now = new Date() }) =>
   const { c, p, v } = await picture(store, user, now);
   const L = lendingRules();
   const repayLine = `${L.repay.fromMoneyInBps / 100}% of every money-in, and at least ${say(BigInt(L.repay.minimum) * 100n)} every two weeks`;
-  const ladder = p.ladder.map((s) => ({ ...s, max: String(s.max), max_text: show(s.max), cost_pct: s.cost_bps / 100, collateral_text: collateralWords(s.collateral_pct) }));
+  const ladder = p.ladder.map((s) => ({ ...s, max: String(s.max), max_text: show(s.max), cost_pct: s.cost_bps / 100, collateral_text: collateralWords(s.collateral_pct, s.later_collateral_pct) }));
   const why = p.why;
   const base = {
     ok: true,
