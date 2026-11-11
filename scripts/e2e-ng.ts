@@ -1,27 +1,29 @@
 // pnpm e2e:ng — the Nigeria demo end to end on testnet, through the real Edge Functions, as the app
 // does it (Funmi's and Mama Bisi's demo logins). Run by hand; it moves testnet money.
 //
-//   1. Mama Bisi records ₦500 cash; Funmi says Yes; NGNT moves from Mama Bisi's float to Funmi.
-//   2. Funmi pays Iya Tunde ₦5,000.
-//   3. Funmi pays her Bodija Market Ajo contribution (₦1,000, contract call).
-//   4. Funmi takes a ₦20,000 advance (fee ₦300).
-//   5. Mama Bisi records ₦3,000 cash; Funmi's Yes sends it and repays 10% (₦300) of her advance.
-//   6. Funmi cashes out ₦2,000: a claimable balance plus a code; Mama Bisi redeems the code.
-//   7. Every transaction is checked on Horizon and listed with its Stellar Expert link.
-//   8. A new person, from sign-up to first payment: the real sign-up on a test number (re-runnable:
-//      the earlier test person is archived), a wrong NIN refused, the wallet opened on Stellar, a
-//      bank transfer in, her first payment (to Funmi, a Plus user, by phone), a payment by code to
-//      someone not on Plus that Mama Bisi pays out, and signing in again with phone + PIN.
+//   The 60-second demo (README "Demo"), as the app does it:
+//   1. Balance.  2. Pay Iya Tunde ₦2,000.  3. Pay ajo.  4. Save ₦1,000 (the Stall shade pot).
+//   5. Loan offer.  6. Accept with the PIN (a test PIN, set for the run and removed after it;
+//      refused without it and with a wrong one; confirming twice returns the same result).
+//   7. Share her record.  8. A lender verifies the code through /verify's public call.
+//   9. A ₦3,000 cash-out code; Mama Bisi checks and redeems it.
+//   Then every transaction is checked on Horizon and listed with its Stellar Expert link.
+//
+//   --all adds a new person, from sign-up to first payment (a test number, re-runnable: the
+//   earlier test person is archived; wrong NIN refused, wallet opened, bank transfer in, first
+//   payment, a payment by code that Mama Bisi pays out, signing in again with phone + PIN).
 //
 // Timing: "Yes -> tick" is from sending confirm_action until the transactions row is completed
 // (the app's tick: chain-worker saw it in a closed ledger and refreshed the balance cache).
 //
-//   pnpm e2e:ng            the whole demo
-//   pnpm e2e:ng --read     read-only tools and timings (balance, ajo, advance, record); moves nothing
-//   pnpm e2e:ng --new-user only step 8 (sign-up to first payment)
+//   pnpm e2e:ng            the 60-second demo (run pnpm demo:reset ng first: it needs the loan
+//                          offer, an unpaid ajo round, and Funmi without a PIN)
+//   pnpm e2e:ng --all      the demo, then a new person from sign-up to first payment
+//   pnpm e2e:ng --read     read-only tools and timings; moves nothing
+//   pnpm e2e:ng --new-user only the new person
 //
 // Needs: pnpm seed && pnpm seed:db; Supabase secrets STELLAR_SECRET_FUNMI, STELLAR_SECRET_AGENT_NG,
-// CASHOUT_CODE_SECRET; Funmi's ajo round not yet paid; no advance open (for steps 3 and 4).
+// CASHOUT_CODE_SECRET; pnpm demo:reset ng just before.
 // Prints no secrets (the cash-out code is a one-time testnet code and is shown masked).
 import { createClient } from "@supabase/supabase-js";
 import { adminClient, loadLocalEnv } from "./lib/supabase-admin.ts";
@@ -115,7 +117,7 @@ async function main() {
   console.log("Read paths (app -> agent-tools; balances from the cache, contract views by simulation)");
   const sched = await job("scheduler");
   console.log(`  scheduler: ${JSON.stringify(sched.balances)} (Horizon read for every Nigeria wallet), ${sched.ms} ms`);
-  for (const t of ["get_balance", "what_arrived", "group_status", "advance_status", "my_record"]) {
+  for (const t of ["get_balance", "what_arrived", "group_status", "savings_status", "loan_status", "my_record"]) {
     const r = await funmi(t);
     console.log(`  ${t.padEnd(15)} ${String(r.ms).padStart(5)} ms  ${r.text}`);
   }
@@ -123,70 +125,111 @@ async function main() {
   console.log(`  agent me        ${String(me.ms).padStart(5)} ms  float ${me.float_text} (${me.float_free_text} free; Horizon ${me.horizon_ms} ms), left today ${me.left_today_text}`);
   if (readOnly) return;
 
-  console.log("\n1. Mama Bisi records ₦500 cash; Funmi says Yes");
-  const key = () => `e2e-ng-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  must(await bisi("record_cash_in", { phone: FUNMI_PHONE, amount: "500", idempotency_key: key() }), "record_cash_in");
-  const waiting = (await funmi("what_arrived")).awaiting_confirmation as Json[];
-  console.log(`  Funmi hears: ${(await funmi("what_arrived")).text.split(". ")[0]}.`);
-  const ci = waiting[0];
-  let t0 = Date.now();
-  let c = must(await funmi("confirm_action", { action_id: ci.pending_action_id }), "confirm cash-in");
-  console.log(`  confirm answered in ${c.ms} ms: ${c.text}`);
-  done("cash-in ₦500 (Mama Bisi float -> Funmi, payment via Horizon)", await tick(c.transaction_id, t0));
+  const funmiId = (await admin.from("users").select("id").eq("wa_phone", FUNMI_PHONE).is("archived_at", null).single()).data!.id as string;
+  const pins = (await admin.from("user_credentials").select("user_id", { count: "exact", head: true }).eq("user_id", funmiId)).count ?? 0;
+  if (pins > 0) throw new Error("Funmi already has a PIN: run pnpm demo:reset ng first (the e2e sets a test PIN and removes it again)");
+  try {
+    await demo(funmi, bisi, funmiId);
+  } finally {
+    // As found: the demo login has no PIN (the app asks for one the first time it is needed).
+    await admin.from("user_credentials").delete().eq("user_id", funmiId);
+  }
+  if (process.argv.includes("--all")) await newUser(bisi);
+  await report();
+}
 
-  console.log("\n2. Pay Iya Tunde ₦5,000");
-  const p = must(await funmi("prepare_pay", { payee: "Iya Tunde", amount: "5000" }), "prepare_pay");
+/** The 60-second demo (README "Demo"), by the same tool calls the app makes. */
+async function demo(funmi: ReturnType<typeof caller>, bisi: ReturnType<typeof caller>, funmiId: string) {
+  const pin = testPin(); // a fresh test PIN for this run; never printed
+  const yes = async (actionId: string, what: string) => {
+    let c = await funmi("confirm_action", { action_id: actionId });
+    if (c.error === "pin_required") c = await funmi("confirm_action", { action_id: actionId, pin });
+    return must(c, what);
+  };
+
+  console.log("\n1. Balance");
+  const b = must(await funmi("get_balance"), "get_balance");
+  console.log(`  ${b.text} (${b.ms} ms)`);
+
+  console.log("\n2. Pay Iya Tunde ₦2,000");
+  const p = must(await funmi("prepare_pay", { payee: "Iya Tunde", amount: "2000" }), "prepare_pay");
   console.log(`  read-back: ${p.text}`);
-  t0 = Date.now();
-  c = must(await funmi("confirm_action", { action_id: p.action_id }), "confirm pay");
-  done("pay Iya Tunde ₦5,000 (payment, fee-bumped by partner)", await tick(c.transaction_id, t0));
+  let t0 = Date.now();
+  let c = await yes(p.action_id, "confirm pay");
+  console.log(`  confirm answered in ${c.ms} ms`);
+  done("pay Iya Tunde ₦2,000 (payment, fee-bumped by partner)", await tick(c.transaction_id, t0));
 
-  console.log("\n3. Ajo contribution");
+  console.log("\n3. Pay ajo");
   const g = must(await funmi("prepare_ajo_contribution"), "prepare_ajo_contribution");
   console.log(`  read-back: ${g.text}`);
   t0 = Date.now();
-  c = must(await funmi("confirm_action", { action_id: g.action_id }), "confirm ajo");
-  done("Bodija Market Ajo ₦1,000 (group_contribute, contract call via RPC)", await tick(c.transaction_id, t0));
-  console.log(`  ${(await funmi("group_status")).text}`);
+  c = await yes(g.action_id, "confirm ajo");
+  done("Bodija Market Ajo (group_contribute, contract call)", await tick(c.transaction_id, t0));
 
-  console.log("\n4. Advance ₦20,000");
-  const a = must(await funmi("prepare_advance", { amount: "20000" }), "prepare_advance");
-  console.log(`  read-back: ${a.text}`);
+  console.log("\n4. Save ₦1,000");
+  const sv = must(await funmi("prepare_save", { amount: "1000" }), "prepare_save");
+  console.log(`  read-back: ${sv.text}`);
   t0 = Date.now();
-  c = must(await funmi("confirm_action", { action_id: a.action_id }), "confirm advance");
-  done("advance ₦20,000 (request_advance, contract call)", await tick(c.transaction_id, t0));
-  console.log(`  ${(await funmi("advance_status")).text}`);
+  c = await yes(sv.action_id, "confirm save");
+  done("save ₦1,000 into Stall shade (pot_fund, contract call)", await tick(c.transaction_id, t0));
+  console.log(`  ${(await funmi("savings_status")).text}`);
 
-  console.log("\n5. Next cash-in repays 10%");
-  must(await bisi("record_cash_in", { phone: FUNMI_PHONE, amount: "3000", idempotency_key: key() }), "record_cash_in 2");
-  const ci2 = ((await funmi("what_arrived")).awaiting_confirmation as Json[])[0];
+  console.log("\n5. Loan offer");
+  const ls = must(await funmi("loan_status"), "loan_status");
+  if (ls.view !== "offer") throw new Error(`loan_status: expected an offer, got ${ls.view}: ${ls.text}`);
+  console.log(`  ${ls.text}`);
+
+  console.log("\n6. Accept (PIN)");
+  must(await funmi("set_pin", { pin }), "set_pin");
+  console.log("  a test PIN set on the screen (removed again after the run)");
+  const l = must(await funmi("prepare_loan"), "prepare_loan");
+  console.log(`  read-back: ${l.text}`);
+  const noPin = await funmi("confirm_action", { action_id: l.action_id });
+  if (noPin.error !== "pin_required") throw new Error(`a loan must need the PIN, got ${noPin.error ?? noPin.status}`);
+  const bad = await funmi("confirm_action", { action_id: l.action_id, pin: pin === "2580" ? "2581" : "2580" });
+  if (bad.ok !== false) throw new Error("a wrong PIN was accepted");
+  console.log(`  without the PIN -> ${noPin.error}; a wrong PIN -> ${bad.error}`);
   t0 = Date.now();
-  c = must(await funmi("confirm_action", { action_id: ci2.pending_action_id }), "confirm cash-in 2");
-  console.log(`  ${c.text}`);
-  done("cash-in ₦3,000 (payment)", await tick(c.transaction_id, t0));
-  done("auto-repay ₦300 (repay, contract call, waits for the cash-in)", await tick(c.result.repay_transaction_id, t0));
-  console.log(`  ${(await funmi("advance_status")).text}`);
+  c = must(await funmi("confirm_action", { action_id: l.action_id, pin }), "confirm loan");
+  console.log(`  confirm answered in ${c.ms} ms: ${c.text}`);
+  done("loan paid out (lending_ng -> Funmi; loan_open on plus_credit)", await tick(c.transaction_id, t0));
+  const again = await funmi("confirm_action", { action_id: l.action_id, pin });
+  if (again.transaction_id !== c.transaction_id) throw new Error("confirming the loan twice did not return the same result");
+  console.log(`  ${(await funmi("loan_status")).text}`);
 
-  console.log("\n6. Cash out ₦2,000 with a code; Mama Bisi redeems it");
-  const o = must(await funmi("prepare_cashout", { amount: "2000" }), "prepare_cashout");
+  console.log("\n7. Share her record");
+  const sh = must(await funmi("share_record"), "share_record");
+  c = await yes(sh.action_id, "confirm share");
+  const shareCode = String(c.share_code ?? "");
+  if (!/^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(shareCode)) throw new Error(`no share code on the screen: ${JSON.stringify(c.share_code)}`);
+  console.log(`  code on Funmi's screen: ${shareCode.slice(0, 2)}**-****, until ${c.share_expires_at}`);
+
+  console.log("\n8. A lender verifies it (/verify: the public verify_record call, no login)");
+  const anon = createClient(url, process.env.VITE_SUPABASE_ANON_KEY!, { auth: { persistSession: false } });
+  t0 = Date.now();
+  const { data: v, error: ve } = await anon.rpc("verify_record", { p_code: shareCode });
+  if (ve) throw new Error(`verify_record: ${ve.message}`);
+  const wallet = (await admin.from("users").select("stellar_pub").eq("id", funmiId).single()).data!.stellar_pub;
+  if (!v?.ok || v.wallet !== wallet || !/^[0-9a-f]{64}$/.test(String(v.borrower_ref))) throw new Error(`verify_record: ${JSON.stringify(v)}`);
+  console.log(`  ✓ ${Date.now() - t0} ms: her wallet and a 32-byte reference (no name, no phone); the page reads the rest from Stellar`);
+  const wrong = await anon.rpc("verify_record", { p_code: "AAAA-AAAA" });
+  console.log(`  a wrong code -> ${wrong.data?.error ?? wrong.error?.message}`);
+
+  console.log("\n9. Cash-out code for ₦3,000; Mama Bisi pays it out");
+  const o = must(await funmi("prepare_cashout", { amount: "3000" }), "prepare_cashout");
   console.log(`  read-back: ${o.text}`);
   t0 = Date.now();
-  c = must(await funmi("confirm_action", { action_id: o.action_id }), "confirm cash-out");
+  c = await yes(o.action_id, "confirm cash-out");
   const code = String(c.cash_out_code);
+  if (!/^\d{6}$/.test(code)) throw new Error("no cash-out code on the screen");
   console.log(`  code on Funmi's screen: ${code.slice(0, 2)}****`);
-  done("cash-out ₦2,000 (claimable balance, reserve sponsored by partner)", await tick(c.transaction_id, t0));
-  const wrong = await bisi("check_code", { phone: FUNMI_PHONE, code: code === "000000" ? "111111" : "000000" });
-  console.log(`  wrong code -> ${wrong.error} (${wrong.attempts_left} tries left)`);
+  done("cash-out ₦3,000 (claimable balance, reserve sponsored by partner)", await tick(c.transaction_id, t0));
   must(await bisi("check_code", { phone: FUNMI_PHONE, code }), "check_code");
   t0 = Date.now();
   must(await bisi("redeem_code", { phone: FUNMI_PHONE, code }), "redeem_code");
-  const { data: co } = await admin.from("cash_out_codes").select("claim_outbox_id, status").eq("action_id", o.action_id).single();
+  const { data: co } = await admin.from("cash_out_codes").select("claim_outbox_id").eq("action_id", o.action_id).single();
   done("Mama Bisi claims the cash-out (claimable balance claim)", await outboxDone(co!.claim_outbox_id, t0));
-  const again = await bisi("redeem_code", { phone: FUNMI_PHONE, code });
-  console.log(`  same code again -> ${again.error ?? "ok"}`);
-
-  await newUser(bisi);
-  await report();
+  console.log(`\n  ${(await funmi("get_balance")).text}`);
 }
 
 async function newUser(bisi: ReturnType<typeof caller>) {
@@ -252,7 +295,7 @@ async function newUser(bisi: ReturnType<typeof caller>) {
 }
 
 async function report() {
-  console.log("\n7. Verify on Stellar (Horizon)");
+  console.log("\nVerify on Stellar (Horizon)");
   for (const r of rows) console.log(`  ${(await onHorizon(r.hash)) ? "✓" : "✗"} ${r.step}  ${EXPERT}/tx/${r.hash}`);
   const ms = rows.map((r) => r.ms).sort((x, y) => x - y);
   console.log(`\nYes -> tick: median ${(ms[Math.floor(ms.length / 2)] / 1000).toFixed(1)} s, max ${(ms.at(-1)! / 1000).toFixed(1)} s over ${ms.length} transactions`);
