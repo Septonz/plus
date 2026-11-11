@@ -2,7 +2,7 @@
   "tool_config": {
     "type": "webhook",
     "name": "save_payee",
-    "description": "Save someone she paid by phone so she can pay them by name next time.",
+    "description": "Save someone so she can pay them by name next time: by phone (someone she paid), or a bank account (bank and 10-digit account number, e.g. her landlord's).",
     "response_timeout_secs": 10,
     "api_schema": {
       "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/save_payee",
@@ -30,12 +30,19 @@
           },
           "phone": {
             "type": "string",
-            "description": "Their phone number."
+            "description": "Their phone number (leave out for a bank account)."
+          },
+          "bank": {
+            "type": "string",
+            "description": "For a bank account: the bank."
+          },
+          "account_number": {
+            "type": "string",
+            "description": "For a bank account: the 10-digit account number."
           }
         },
         "required": [
-          "name",
-          "phone"
+          "name"
         ]
       }
     }
