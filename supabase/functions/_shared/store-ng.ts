@@ -6,7 +6,7 @@ import { contractReader, refreshBalances } from "./ng-chain.ts";
 import { verifyPin as verifyPinRow } from "./pin.ts";
 import type { Payee } from "./payees.ts";
 import type { CreditAsset, CreditLoan, CreditWeek } from "./lending.ts";
-import type { CashOut, NgGroup, NgStore, NgTx, PlusPeer, RecordShare } from "./tools-ng.ts";
+import type { CashOut, NgGroup, NgStore, NgTx, PlusPeer, RecordShare, Vouch, VouchCheck } from "./tools-ng.ts";
 import type { Action, CashIn } from "./tools.ts";
 
 const ACTION_COLS = "id, user_id, kind, params, readback, status, result, expires_at, created_by, created_at";
@@ -160,6 +160,48 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
         "revokeRecordShare",
       ) as { id: string }[];
       return rows.length === 1;
+    },
+    async vouches(userId) {
+      type Row = { id: string; status: Vouch["status"]; voucher_user_id: string; borrower_user_id: string; loan_id: string | null; credit_tx_hash: string | null; created_at: string; groups: { name: string } | null };
+      const cols = "id, status, voucher_user_id, borrower_user_id, loan_id, credit_tx_hash, created_at, groups(name)";
+      const [g, r] = await Promise.all([
+        db.from("vouches").select(cols).eq("voucher_user_id", userId).order("created_at", { ascending: false }).limit(50),
+        db.from("vouches").select(cols).eq("borrower_user_id", userId).order("created_at", { ascending: false }).limit(50),
+      ]);
+      const given = must(g, "vouches given") as unknown as Row[];
+      const received = must(r, "vouches received") as unknown as Row[];
+      const ids = [...new Set([...given.map((x) => x.borrower_user_id), ...received.map((x) => x.voucher_user_id)])];
+      const people = ids.length ? must(await db.from("users").select("id, name").in("id", ids), "vouch names") as { id: string; name: string | null }[] : [];
+      const first = (id: string) => people.find((p) => p.id === id)?.name?.split(" ")[0] ?? null;
+      const view = (x: Row, other: string): Vouch => ({
+        id: x.id, status: x.status, other_user_id: other, other_name: first(other), group_name: x.groups?.name ?? null,
+        loan_id: x.loan_id, credit_tx_hash: x.credit_tx_hash, created_at: x.created_at,
+      });
+      return { given: given.map((x) => view(x, x.borrower_user_id)), received: received.map((x) => view(x, x.voucher_user_id)) };
+    },
+    async ajoPeers(userId) {
+      const mine = must(await db.from("group_members").select("group_id, groups!inner(name, created_at)").eq("user_id", userId), "my ajos") as unknown as
+        { group_id: string; groups: { name: string; created_at: string } }[];
+      if (!mine.length) return [];
+      const rows = must(
+        await db.from("group_members").select("group_id, user_id, users!inner(id, name, archived_at)").in("group_id", mine.map((m) => m.group_id))
+          .not("user_id", "is", null).neq("user_id", userId).is("users.archived_at", null),
+        "ajo peers",
+      ) as unknown as { group_id: string; user_id: string; users: { name: string | null } }[];
+      // Newest ajo first; each person once.
+      const order = [...mine].sort((a, b) => b.groups.created_at.localeCompare(a.groups.created_at));
+      const out = new Map<string, { user_id: string; name: string | null; group_name: string }>();
+      for (const m of order) for (const r of rows.filter((x) => x.group_id === m.group_id)) {
+        if (!out.has(r.user_id)) out.set(r.user_id, { user_id: r.user_id, name: r.users.name, group_name: m.groups.name });
+      }
+      return [...out.values()];
+    },
+    async vouchCheck(voucherId, borrowerId) {
+      return must(await db.rpc("vouch_check", { p_voucher: voucherId, p_borrower: borrowerId }), "vouch_check") as VouchCheck;
+    },
+    async withdrawVouch(voucherId, vouchId) {
+      if (!/^[0-9a-f-]{36}$/i.test(vouchId)) return false;
+      return must(await db.rpc("vouch_withdraw", { p_voucher: voucherId, p_vouch_id: vouchId }), "vouch_withdraw") as boolean;
     },
     async setCashOutCode(userId, cashOutId, codeHash) {
       const rows = must(

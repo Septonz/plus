@@ -33,6 +33,8 @@ import {
   NG_VOICE_TOOLS,
   type PlusPeer,
   type RecordShare,
+  type Vouch,
+  type VouchCheck,
 } from "./tools-ng.ts";
 
 const FUNMI = "GA6K725VCN45F4LWZYEL3H7J5CIGGL2IUXDWZH5X75GYWQQJNPAYGW6M";
@@ -58,6 +60,11 @@ type World = {
   credit: { frozen_until: string | null; weeks: CreditWeek[]; assets: CreditAsset[]; loans: CreditLoan[] };
   /** Record shares (piece 9). */
   shares?: RecordShare[];
+  /** Piece 10: vouches, her ajo peers, and why each one can't be vouched for (absent: can). */
+  vouches?: { given: Vouch[]; received: Vouch[] };
+  ajoPeers?: { user_id: string; name: string | null; group_name: string }[];
+  vouchBlock?: Record<string, VouchCheck>;
+  withdrawn?: string[];
 };
 
 function fakeStore(w: World): NgStore {
@@ -124,6 +131,14 @@ function fakeStore(w: World): NgStore {
       const s = shares.find((x) => x.id === id && !x.revoked_at);
       if (s) s.revoked_at = new Date().toISOString();
       return Promise.resolve(Boolean(s));
+    },
+    vouches: () => Promise.resolve(w.vouches ?? { given: [], received: [] }),
+    ajoPeers: () => Promise.resolve(w.ajoPeers ?? []),
+    vouchCheck: (_v, b) => Promise.resolve(w.vouchBlock?.[b] ?? { ok: true, group_name: "Bodija Market Ajo" }),
+    withdrawVouch: (_v, id) => {
+      const v = w.vouches?.given.find((x) => x.id === id && x.status === "active");
+      if (v) { v.status = "revoked"; (w.withdrawn ??= []).push(id); }
+      return Promise.resolve(Boolean(v));
     },
     plusUserByPhone: (phone) => {
       const p = w.peers.get(phone);
@@ -705,4 +720,83 @@ Deno.test("record_shares and revoke_record_share: her log, revoke one or all", a
   const all = await NG_VOICE_TOOLS.revoke_record_share(ctx({}));
   assertEquals(all.revoked, 1, "only s1 was still open");
   assertEquals((await NG_VOICE_TOOLS.revoke_record_share(ctx({}))).error, "nothing_to_revoke");
+});
+
+// ---------------------------------------------------------------------------- Piece 10: vouches
+
+const vouch = (o: Partial<Vouch>): Vouch => ({
+  id: "v1", status: "active", other_user_id: "u2", other_name: "Amaka", group_name: "Bodija Market Ajo", loan_id: null,
+  credit_tx_hash: null, created_at: new Date().toISOString(), ...o,
+});
+const PEERS = [{ user_id: "u1", name: "Funmi", group_name: "Bodija Market Ajo" }, { user_id: "u3", name: "Tunde", group_name: "Bodija Market Ajo" }];
+
+Deno.test("prepare_vouch: an ajo member by name; always her PIN, never by voice; the read back says no money is taken", async () => {
+  const { ctx, w } = setup({ ajoPeers: PEERS });
+  const amaka = { id: "u2", name: "Amaka" };
+  const r = await NG_VOICE_TOOLS.prepare_vouch(ctx({ name: "funmi" }, "voice", amaka));
+  assert(r.ok, r.text);
+  assertEquals(r.requires_pin, true);
+  assertMatch(String(r.text), /No money is ever taken from her; if Funmi doesn't repay, she can't vouch for anyone for 6 months/);
+  const a = w.actions.get(String(r.action_id))!;
+  assertEquals([a.kind, a.params.borrower_user_id], ["vouch", "u1"]);
+  assertEquals((await NG_VOICE_TOOLS.confirm_action(ctx({ action_id: r.action_id }, "voice", amaka))).error, "pin_required_on_screen");
+  const yes = await NG_VOICE_TOOLS.confirm_action(ctx({ action_id: r.action_id, pin: "1234" }, "app", amaka));
+  assert(yes.ok, yes.text);
+  assertMatch(String(yes.text), /vouches for Funmi's next loan/);
+  // Someone not in her ajo: she hears who she can vouch for.
+  const who = await NG_VOICE_TOOLS.prepare_vouch(ctx({ name: "Bola" }, "voice", amaka));
+  assertEquals(who.error, "who");
+  assertMatch(String(who.text), /Funmi and Tunde/);
+});
+
+Deno.test("prepare_vouch: the reasons she can't vouch, in plain words (and no action is created)", async () => {
+  const cases: [VouchCheck, string, RegExp][] = [
+    [{ ok: false, reason: "too_new", weeks: 3 }, "vouch_too_new", /after 6 weeks with Plus; she is in week 4/],
+    [{ ok: false, reason: "identity" }, "vouch_identity", /verified ID/],
+    [{ ok: false, reason: "ajo_late", late: 1 }, "vouch_ajo_late", /every ajo payment on time/],
+    [{ ok: false, reason: "banned", until: "2027-05-10T00:00:00Z" }, "vouch_banned", /Nothing was taken from her/],
+    [{ ok: false, reason: "already" }, "vouch_already", /already vouches for Funmi/],
+  ];
+  for (const [check, error, text] of cases) {
+    const { ctx, w } = setup({ ajoPeers: PEERS, vouchBlock: { u1: check } });
+    const r = await NG_VOICE_TOOLS.prepare_vouch(ctx({ name: "Funmi" }, "voice", { id: "u2", name: "Amaka" }));
+    assertEquals(r.error, error);
+    assertMatch(String(r.text), text);
+    assertEquals(w.actions.size, 0);
+  }
+});
+
+Deno.test("loans: two vouches lower the offer's collateral to 100%, the offer says why, and the loan counts on them", async () => {
+  // Newest first, as the store returns them: Tunde vouched after Amaka.
+  const received = [vouch({ id: "v2", other_user_id: "u3", other_name: "Tunde" }), vouch({ id: "v1", other_name: "Amaka" })];
+  const { ctx, w } = setup({ credit: { frozen_until: null, weeks: fullWeeks(24), assets: [STOCK], loans: [] }, vouches: { given: [], received } });
+  const s = await ngLoanStatus(ctx());
+  assertEquals((s.offer as Record<string, unknown>).collateral_pct, 100);
+  assertMatch(String(s.text), /Amaka and Tunde vouched for her \(ajo members in good standing\), so this loan needs 100% collateral instead of 150%/);
+  assertEquals((s.vouch as Record<string, unknown>).applied, true);
+  const p = await ngPrepareLoan(ctx());
+  const a = w.actions.get(String(p.action_id))!;
+  assertEquals([a.params.collateral_pct, a.params.vouches_needed], [100, 2]);
+  assertMatch(a.readback, /Backed by Amaka and Tunde's vouches: collateral 100% instead of 150%/);
+  // One vouch: still 150%, and she hears one more would lower it.
+  const one = setup({ credit: { frozen_until: null, weeks: fullWeeks(24), assets: [STOCK], loans: [] }, vouches: { given: [], received: [received[1]] } });
+  const s1 = await ngLoanStatus(one.ctx());
+  assertEquals((s1.offer as Record<string, unknown>).collateral_pct, 150);
+  assertMatch(String(s1.text), /Amaka vouched for her. 1 more ajo member vouching would lower the collateral to 100%/);
+  const p1 = await ngPrepareLoan(one.ctx());
+  assertEquals(one.w.actions.get(String(p1.action_id))!.params.vouches_needed, 0);
+});
+
+Deno.test("my_vouches and withdraw_vouch: what she gave, who vouched for her; withdraw only a waiting one", async () => {
+  const given = [vouch({ id: "v1", other_user_id: "u1", other_name: "Funmi" }), vouch({ id: "v0", other_user_id: "u9", other_name: "Kemi", status: "used", loan_id: "l1" })];
+  const { ctx, w } = setup({ ajoPeers: PEERS, vouches: { given, received: [] }, vouchBlock: { u1: { ok: false, reason: "already" } } });
+  const me = { id: "u2", name: "Amaka" };
+  const m = await NG_VOICE_TOOLS.my_vouches(ctx({}, "voice", me));
+  assertMatch(String(m.text), /She vouches for Funmi's next loan/);
+  const can = m.can_vouch_for as { name: string; ok: boolean }[];
+  assertEquals(can.map((c) => [c.name, c.ok]), [["Funmi", false], ["Tunde", true]]);
+  const r = await NG_VOICE_TOOLS.withdraw_vouch(ctx({ name: "Funmi" }, "voice", me));
+  assert(r.ok, r.text);
+  assertEquals(w.withdrawn, ["v1"]);
+  assertEquals((await NG_VOICE_TOOLS.withdraw_vouch(ctx({ name: "Kemi" }, "voice", me))).error, "nothing_to_withdraw");
 });
