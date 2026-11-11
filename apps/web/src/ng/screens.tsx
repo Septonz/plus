@@ -174,7 +174,7 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
 export function WalletDetail({ wallet, version, onOpen }: { wallet: Wallet | null; version: number; onOpen: (d: Detail) => void }) {
   const rec = useTool('my_record', version)
   const recent = ((rec?.recent ?? []) as Row[]).filter((t) => t.kind !== 'adjustment').slice(0, 10)
-  useSays(`Wallet: ${wallet ? naira(wallet.NGNT) : 'loading'} available. Buttons: Add money, Cash out. Below: her recent activity, each with its Verified on Stellar tick.`)
+  useSays(`Wallet: ${wallet ? naira(wallet.NGNT) : 'loading'} available. Buttons: Add (money in), Cash out. Below: her recent activity, each with its Verified on Stellar tick.`)
   return (
     <>
       <div className="rounded-card p-6 text-white shadow-lift" style={{ background: 'var(--wallet)' }}>
@@ -182,8 +182,8 @@ export function WalletDetail({ wallet, version, onOpen }: { wallet: Wallet | nul
         <p className="mt-3 text-sm text-white/75">Naira in your Plus wallet. Only you can spend it.</p>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Button variant="secondary" onClick={() => onOpen('add_cash')}><Icon name="add" /> {W.addMoney.en}</Button>
-        <Button variant="secondary" onClick={() => onOpen('cash_out')}><Icon name="cash" /> {W.cashOut.en}</Button>
+        <Button variant="secondary" className="whitespace-nowrap" onClick={() => onOpen('add_cash')}><Icon name="add" /> {W.add.en}</Button>
+        <Button variant="secondary" className="whitespace-nowrap" onClick={() => onOpen('cash_out')}><Icon name="cash" /> {W.cashOut.en}</Button>
       </div>
       <Section title="Recent activity">
         <Loaded r={rec} rows={4}>
@@ -357,8 +357,8 @@ export function Pay({ data, onShop }: Props & { onShop?: (d: 'scan' | 'receive')
     <div className="space-y-6">
       {onShop && (
         <div className="grid grid-cols-2 gap-3">
-          <Button variant="secondary" onClick={() => onShop('scan')}><Icon name="code" /> Scan to pay</Button>
-          <Button variant="secondary" onClick={() => onShop('receive')}><Icon name="in" /> My code</Button>
+          <Button variant="secondary" className="whitespace-nowrap" onClick={() => onShop('scan')}><Icon name="code" /> Scan</Button>
+          <Button variant="secondary" className="whitespace-nowrap" onClick={() => onShop('receive')}><Icon name="in" /> My code</Button>
         </div>
       )}
       <Segmented label="Pay" value={tab} onChange={(t) => { setTab(t); setAmount('') }}

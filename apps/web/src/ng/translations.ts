@@ -121,6 +121,7 @@ export const W = {
 
   // Money in and pay by phone
   addMoney: { en: 'Add money', yo: 'Fi owó sí' },
+  add: { en: 'Add', yo: 'Fi kún' }, // check
   bankTransfer: { en: 'Bank transfer', yo: 'Owó láti báǹkì' }, // check
   agentCash: { en: 'Cash with an agent', yo: 'Owó lọ́wọ́ aṣojú' }, // check
   savedPeople: { en: 'Saved people', yo: 'Àwọn tí o fi pamọ́' }, // check
