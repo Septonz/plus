@@ -34,7 +34,7 @@ first tap as Funmi, and prints a green **READY** or exactly what is wrong (about
 | --- | ----- | -------------- |
 | **Funmi** (Nigeria) | demo button | The unlocked borrower: no bank account, a wallet on Stellar, ₦26,400, an ajo round to pay, verified stall stock and a ₦30,000 loan offer. |
 | **Kemi** (Nigeria) | demo button | New to Plus: "week 4 of 6", building her history toward a first loan, and verifying an asset from scratch (live photo, two witnesses, an inspection). |
-| **Amaka** (Nigeria) | demo button | A witness: 20 weeks with Plus and a verified ID, so she can confirm Kemi's asset in her own app. |
+| **Amaka** (Nigeria) | demo button | A witness: 20 weeks with Plus and a verified ID, so she can confirm Kemi's asset in her own app. In Funmi's ajo, so she can vouch for Funmi's loan ("I vouch for Funmi"). |
 | **Mama Bisi** (Nigeria) | /agent | The cash agent: records cash in, pays out codes, confirms and inspects assets. Float ₦200,000. |
 | **Selvi** (India) | demo button | The same record for someone who does have a bank account: ₹2,350 to spend, ₹1,415 saved, a seettu. Meena is her group leader (helper page). |
 
@@ -47,6 +47,7 @@ first tap as Funmi, and prints a green **READY** or exactly what is wrong (about
 | 0:25–0:45 | Funmi: "Can I get a loan?" The Loan screen: you receive ₦30,000, cost ₦1,800, total ₦31,800, and why. She types her PIN; the money arrives. Then **Simulate transfer received** on Add money: 10% repays the loan by itself | "The full cost in naira before she agrees, and why she qualifies. The next money in repays a tenth of it, on its own." |
 | 0:45–0:55 | Funmi: "Share my record with the lender." Her PIN, a code on her screen. On a second screen, **/verify**: type the code; her history, ajo, assets and loans, each "Read from Stellar", verified in about a second | "Any lender can check her record without trusting Plus, and never sees her name." |
 | 0:55–1:00 | Kemi's phone: "week 4 of 6" | "And Kemi, two weeks from her first loan." |
+| Optional, before the loan (+10 s) | Amaka's phone: "I vouch for Funmi." Her PIN. Funmi's Loan screen: "Amaka and Tunde vouched for you: 100% collateral instead of 150%" | "Her ajo backs her. If the loan isn't repaid, they lose the right to vouch for six months, and nobody's money is touched." |
 
 ### Why the blockchain is essential in Nigeria
 
@@ -101,6 +102,20 @@ Every line links to Stellar, and the page says how long it took (about a second)
 payments: each within its round (no more than 1.5 rounds after her previous one into that ajo).
 Saving: weeks with an ajo payment. Her history on Stellar starts when her wallet was opened; the
 compressed demo weeks before that are off-chain and not shown.
+
+**Ajo vouches (piece 10).** A member of an ajo in good standing vouches for another member's next
+loan, by voice ("I vouch for Funmi") or with **Vouch** on the Ajo screen, with her PIN. Good
+standing: verified ID, 6+ weeks with Plus, no late or defaulted loan, and every ajo payment on
+time, read from her `contributed` events on the plus contract (each within 1.5 rounds of her
+previous one into that ajo). Each vouch (and each withdrawal) is written to `plus_credit`
+(`vouch`, `vouch_revoke`) as two 32-byte references. When her loan opens, the waiting vouches
+attach to it, on-chain too. With two or more, a first loan needs 100% collateral instead of 150%
+(`lending.vouch` in the market pack); the offer says who vouched and why, and the loan screen
+says "Vouched for by". If a vouched loan defaults, each voucher can't vouch for 6 months (a
+`VouchedLoanDefaulted` event per voucher) and her other waiting vouches are withdrawn. Nothing is
+ever taken from a voucher. `/verify` shows loans backed by vouches and vouches waiting. Demo:
+Tunde (an ajo member, a Plus user without a login) has already vouched for Funmi. Amaka vouches
+live, the second vouch, and Funmi's offer drops to 100%.
 
 ### A new user: sign-up to first payment
 
@@ -220,7 +235,8 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   open (an open one is settled by the reset, which doesn't count toward her ladder) and the ₦30,000
   offer, stall stock independently verified, an ajo round she hasn't paid (a new round with the
   same members if she has), her landlord's bank account saved as "Landlord". Kemi: week 4 of 6, no assets (earlier ones are released). Amaka: able
-  to witness, Kemi's saved payee. Nothing waiting anywhere: no pending actions, cash-ins, unused
+  to witness, Kemi's saved payee, able to vouch for Funmi. Tunde's vouch for Funmi waiting on
+  plus_credit (any other waiting vouch withdrawn). Nothing waiting anywhere: no pending actions, cash-ins, unused
   cash-out codes or witness requests for Funmi, Kemi, Amaka or Mama Bisi; Mama Bisi's float
   ₦200,000. `pnpm demo:reset in`: Selvi at ₹2,350 to spend and ₹1,415 saved, no advance, seettu
   unpaid this round, nothing waiting for her or Meena. Never deletes anything; it only adds
@@ -407,6 +423,7 @@ This is a Testnet prototype. Where it cuts corners, it does so in ways that do n
 - `pnpm e2e:ng` (by hand, not CI): the Nigeria demo through the real functions: Mama Bisi records ₦500 and Funmi says Yes, pay Iya Tunde, ajo, advance (and auto-repay from a cash-in), cash-out code redeemed by the agent, my record. Prints Yes → tick seconds and a Stellar Expert link per step. `pnpm e2e:ng --read` only reads (balances, ajo, advance, record, agent float). Step 8 (also alone with `pnpm e2e:ng --new-user`): a new person on test number +234 700 000 0301 from sign-up to first payment: a wrong NIN refused, the wallet opened, a bank transfer in, ₦500 to Funmi by phone, ₦300 by code to someone not on Plus that Mama Bisi pays out, the tier limit refusing ₦250,000, and signing in again with phone + PIN.
 - `pnpm e2e:assets` (by hand, not CI; run `pnpm demo:reset ng` first): a test person on +234 700 000 0303 registers a sewing machine, takes the live photo, asks Amaka and Mama Bisi, both confirm, Mama Bisi inspects it; checks that only the hash and a rounded place are stored, the photo is private, the confidence score never reaches her, and stolen/found statuses. 22 checks.
 - `pnpm e2e:loan` step 8: after the loan flow, reads the agreement, both repayments and the pledged stall stock back from `plus_credit` on Stellar (stellar CLI, `admin` identity), checks nothing personal went on-chain, then "Repay all" closes it there as Repaid and frees the stall stock.
+- `pnpm e2e:vouch` (by hand, not CI): a test person on +234 700 000 0305 with a verified stall stock shares an ajo with Amaka and Tunde; her offer needs 150%. Amaka vouches, withdraws and vouches again, Tunde vouches (a second vouch and a vouch without ajo payments are refused); plus_credit shows two waiting; her offer drops to 100% and says why. She takes the loan: on plus_credit it carries both vouchers at 100%. It defaults: both can't vouch for 6 months, no money moves from them, the loan is Default on Stellar. Then puts the demo state back.
 - `pnpm e2e:verify` (by hand, not CI): a test person on +234 700 000 0304 with a verified stall stock takes a loan and repays ₦2,000; shares her record (consent, PIN, code; the code is stored nowhere, only its keyed hash); a lender's anonymous lookup returns only her reference and wallet, and plus_credit on Stellar shows the loan, the repayment and the stall stock; a wrong code is refused, every view logged, revoking stops the code. `--keep` prints one more open code to try `/verify` by hand.
 - `pnpm e2e:bank` (by hand, not CI; run `pnpm demo:reset ng` afterwards): as Funmi, the name lookup (Ironwood Bank 0123456789 → ADEBAYO STORES, a 999… number refused), ₦2,000 to the account (her Yes is enough; a retried Yes sends nothing twice), NGNT on Stellar to `anchor_ng` and the anchor's withdrawal record, "sent to bank (partner, simulated)" in her record, and ₦8,000 refused without her PIN.
 
