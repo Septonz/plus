@@ -1,4 +1,4 @@
-// agent-api, helper-api and voice-session run with verify_jwt = false (approved 2026-11-10; see
+// agent-api, helper-api, voice-session and payout-sim run with verify_jwt = false (approved 2026-11-10; see
 // CLAUDE.md), so each checks her login itself. This test pins the only statements allowed before
 // that check: the public /health, the CORS preflight, reading the method or endpoint name, and (in
 // voice-session, where a sign-up's onboarding token travels in the body) reading the body. Nothing
@@ -7,6 +7,7 @@ import { assert, assertEquals } from "jsr:@std/assert@1";
 
 const ALLOWED_BEFORE_LOGIN: RegExp[] = [
   /^const up = health\(req, "[a-z-]+"\);$/,
+  /^const up = await privateHealth\(req, db, "[a-z-]+"\);$/, // payout-sim: /health needs the cron or agent secret
   /^if \(up\) return up;$/,
   /^const pre = preflight\(req\);$/,
   /^if \(pre\) return pre;$/,
@@ -18,6 +19,7 @@ const BODY_READ: RegExp[] = [/^let body: Record<string, unknown> = \{\};$/, /^tr
 const FUNCTIONS: Record<string, { first: string; body: boolean }> = {
   "agent-api": { first: "const token = bearer(req);", body: false },
   "helper-api": { first: "const token = bearer(req);", body: false },
+  "payout-sim": { first: "const token = bearer(req);", body: false },
   // A sign-up in progress has no login yet: its signed onboarding token is checked instead.
   "voice-session": { first: "if (hasSessionToken(body.onboarding_token)) {", body: true },
 };

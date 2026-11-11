@@ -19,6 +19,7 @@ const NO_GATEWAY_JWT = new Set([
   "agent-api", // the agent's login (Supabase Auth) first
   "helper-api", // the helper's login (Supabase Auth) first
   "voice-session", // her login or a signed onboarding token first
+  "payout-sim", // /health: x-plus-cron-secret or x-plus-secret (privateHealth); other routes: her login first (approved 2026-11-10)
 ]);
 
 const toml = readFileSync(join(ROOT, "supabase", "config.toml"), "utf8");
