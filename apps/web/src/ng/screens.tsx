@@ -758,6 +758,68 @@ function TxRow({ t }: { t: Row }) {
   )
 }
 
+// ---------------------------------------------------------------------------- Share with a lender (piece 9)
+
+const SHARE_STATUS: Record<string, [string, string]> = {
+  active: ['Not opened yet', 'text-secondary'],
+  used: ['Opened by a lender', 'text-success'],
+  expired: ['Expired', 'text-tertiary'],
+  revoked: ['Revoked', 'text-tertiary'],
+}
+
+/** Consent first (what the lender sees, what they never see), then her PIN in the confirm sheet. */
+function ShareRecord({ version }: { version: number }) {
+  const [asking, setAsking] = useState(false)
+  const [bump, setBump] = useState(0)
+  const list = useTool('record_shares', version + bump)
+  const { busy, msg, run } = useSubmit()
+  const shares = ((list?.shares ?? []) as Row[]).slice(0, 5)
+  const open = shares.filter((s) => s.status === 'active' || s.status === 'used')
+  return (
+    <Section title="Share with a lender">
+      {asking ? (
+        <Card className="space-y-4">
+          <div>
+            <p className="text-base font-medium">The lender sees, read from Stellar:</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-base text-secondary">
+              <li>how long you've been with Plus</li>
+              <li>your ajo payments, and how many were on time</li>
+              <li>how steadily you save</li>
+              <li>your verified assets: level and status only</li>
+              <li>loans taken and repaid, and your loan now</li>
+            </ul>
+          </div>
+          <Notice>Never your name, phone number, ID, photos or where you live or trade.</Notice>
+          <p className="text-sm text-secondary">You get a code for one lender. It works for 24 hours. You can revoke it any time.</p>
+          {msg && <Notice tone="danger">{msg}</Notice>}
+          <div className="grid gap-2">
+            <Button loading={busy} onClick={async () => { const r = await run('share_record', {}); if (r.ok) { setAsking(false); setBump((b) => b + 1) } }}>
+              <Icon name="shield" /> I agree: share with my PIN
+            </Button>
+            <Button variant="plain" onClick={() => setAsking(false)}>Not now</Button>
+          </div>
+        </Card>
+      ) : (
+        <Button variant="secondary" className="w-full" onClick={() => setAsking(true)}><Icon name="shield" /> Share my record</Button>
+      )}
+      {shares.length > 0 && (
+        <ListGroup>
+          {shares.map((s) => {
+            const [label, tone] = SHARE_STATUS[String(s.status)] ?? ['', '']
+            const live = s.status === 'active' || s.status === 'used'
+            return (
+              <ListRow key={String(s.id)} icon="shield" title={new Date(String(s.created_at)).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                subtitle={<span className={tone}>{label}{Number(s.views) > 0 ? ` · ${String(s.views)} view${Number(s.views) === 1 ? '' : 's'}` : ''}{live ? ` · until ${new Date(String(s.expires_at)).toLocaleString('en-NG', { hour: 'numeric', minute: '2-digit' })}` : ''}</span>}
+                trailing={live ? <Button variant="plain" size="md" onClick={async () => { await run('revoke_record_share', { share_id: s.id }); setBump((b) => b + 1) }}>Revoke</Button> : undefined} />
+            )
+          })}
+        </ListGroup>
+      )}
+      {open.length > 1 && <Button variant="plain" className="w-full" onClick={async () => { await run('revoke_record_share', {}); setBump((b) => b + 1) }}>Revoke all</Button>}
+    </Section>
+  )
+}
+
 export function Record({ version }: Props) {
   const r = useTool('my_record', version)
   const latest = ((r?.recent ?? []) as Row[]).filter((t) => t.kind !== 'adjustment').slice(0, 5)
@@ -780,6 +842,7 @@ export function Record({ version }: Props) {
                 {typeof r.account_url === 'string' && <VerifiedMark url={r.account_url} />}
               </div>
             </Card>
+            <ShareRecord version={version} />
             {recent.length > 0 ? (
               <ListGroup>{recent.map((t) => <TxRow key={String(t.id)} t={t} />)}</ListGroup>
             ) : (

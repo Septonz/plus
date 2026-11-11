@@ -187,6 +187,9 @@ importers:
       '@plus/markets':
         specifier: workspace:*
         version: link:../../packages/markets
+      '@stellar/stellar-sdk':
+        specifier: ^16.4.1
+        version: 16.4.1(debug@4.4.3)
       '@supabase/supabase-js':
         specifier: ^2.119.0
         version: 2.119.0

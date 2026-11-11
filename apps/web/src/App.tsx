@@ -8,6 +8,7 @@ const PAGES: [string, string, string, string][] = [
   ['/agent', 'cash', 'Cash agent', 'Mama Bisi at Bodija market'],
   ['/helper', 'person', 'Helper', 'Meena in Madurai'],
   ['/demo', 'activity', 'Demo view', 'Staff · projector'],
+  ['/verify', 'shield', 'Verify a record', 'For lenders: read from Stellar'],
 ]
 
 function App() {
