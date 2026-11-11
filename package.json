@@ -18,6 +18,7 @@
     "e2e:loan": "node scripts/e2e-loan.ts",
     "e2e:assets": "node scripts/e2e-assets.ts",
     "e2e:bank": "node scripts/e2e-bank-send.ts",
+    "e2e:verify": "node scripts/e2e-verify.ts",
     "demo:new-user": "node scripts/demo-new-user.ts",
     "screens": "node scripts/screens.ts",
     "demo:logins": "node scripts/demo-logins.ts",

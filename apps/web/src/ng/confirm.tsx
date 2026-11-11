@@ -21,7 +21,7 @@ const localNg = (p: string) => (p.startsWith('+234') ? `0${p.slice(4, 7)} ${p.sl
 
 /** Same rule as the server (tools-ng.ts): a spoken or tapped Yes up to ₦5,000, the PIN above. A loan always takes the PIN. */
 export function ngNeedsPin(a: PendingAction): boolean {
-  if (a.kind === 'loan') return true
+  if (a.kind === 'loan' || a.kind === 'record_share') return true
   if (!['pay', 'pay_code', 'group_contribution', 'cash_out', 'advance', 'loan_repay', 'bank_send'].includes(a.kind)) return false
   return BigInt(String(a.params.amount ?? 0)) > BigInt(NG.pinThreshold) * 100n
 }
@@ -51,6 +51,8 @@ function to(a: PendingAction): string {
       return 'Cash out with an agent'
     case 'confirm_cash_in':
       return `Cash you gave ${String(p.helper_name ?? 'the agent')}`
+    case 'record_share':
+      return 'Share your record with a lender'
     default:
       return ''
   }
@@ -156,6 +158,7 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
   }
 
   const code = typeof result?.cash_out_code === 'string' ? result.cash_out_code : null
+  const shareCode = typeof result?.share_code === 'string' ? result.share_code : null
   const sms = (result?.pay_code_sms ?? null) as { to: string; code: string; text: string } | null
   const phone = typeof action.params.phone === 'string' ? action.params.phone : null
   const canSave = Boolean(phone) && !action.params.payee_id && (action.kind === 'pay' || action.kind === 'pay_code')
@@ -163,6 +166,7 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
   const extras = (
     <>
       {code && <CodeBox code={code} />}
+      {shareCode && <ShareCodeBox code={shareCode} expires={typeof result?.share_expires_at === 'string' ? result.share_expires_at : null} />}
       {sms && <div className="text-left"><SmsBubble to={localNg(sms.to)} text={sms.text} /></div>}
     </>
   )
@@ -173,6 +177,7 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
   else if (action.kind === 'pay' && action.params.to_user_id) info = 'On Plus: straight to their wallet.'
   else if (action.kind === 'bank_send') info = `${String(action.params.bank_name)}, account •••• ${String(action.params.account_number).slice(-4)}${action.params.payee_name !== action.params.account_name ? ` (${String(action.params.payee_name)})` : ''}. Sent on Stellar to the partner bank, which pays the account (simulated).`
   else if (action.kind === 'loan') info = 'Sent on Stellar from the partner lender account (simulated on Testnet).'
+  else if (action.kind === 'record_share') info = `The lender sees, read from Stellar: ${((action.params.shared ?? []) as string[]).join('; ')}. Never your name, phone number, ID or photos. One code, for one lender, for 24 hours. You can revoke it any time.`
 
   return (
     <ConfirmSheet
@@ -226,6 +231,18 @@ function SaveThisPerson({ name, phone }: { name: string; phone: string }) {
       }}>
         <Icon name="userPlus" /> {W.saveThisPerson.en}
       </Button>
+    </div>
+  )
+}
+
+/** Her record share code: she gives it to the lender, who types it on /verify. */
+export function ShareCodeBox({ code, expires }: { code: string; expires: string | null }) {
+  const until = expires ? new Date(expires).toLocaleString('en-NG', { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : null
+  return (
+    <div className="rounded-card border border-dashed border-fill-strong bg-surface-2 px-4 py-5 text-center">
+      <p className="text-sm font-medium text-secondary">Give this code to the lender</p>
+      <p className="num mt-2 font-mono text-4xl font-light tracking-[0.12em] text-label" aria-label={code.replace('-', '').split('').join(' ')}>{code}</p>
+      <p className="mt-2 text-sm text-secondary">They open <b>{window.location.host}/verify</b> and type it.{until ? ` It works until ${until}, for one lender.` : ''}</p>
     </div>
   )
 }

@@ -12,7 +12,9 @@
     { "source": "/helper", "destination": "/index.html" },
     { "source": "/helper/:path*", "destination": "/index.html" },
     { "source": "/demo", "destination": "/index.html" },
-    { "source": "/demo/:path*", "destination": "/index.html" }
+    { "source": "/demo/:path*", "destination": "/index.html" },
+    { "source": "/verify", "destination": "/index.html" },
+    { "source": "/verify/:path*", "destination": "/index.html" }
   ],
   "headers": [
     { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }

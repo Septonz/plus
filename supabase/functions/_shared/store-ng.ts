@@ -6,7 +6,7 @@ import { contractReader, refreshBalances } from "./ng-chain.ts";
 import { verifyPin as verifyPinRow } from "./pin.ts";
 import type { Payee } from "./payees.ts";
 import type { CreditAsset, CreditLoan, CreditWeek } from "./lending.ts";
-import type { CashOut, NgGroup, NgStore, NgTx, PlusPeer } from "./tools-ng.ts";
+import type { CashOut, NgGroup, NgStore, NgTx, PlusPeer, RecordShare } from "./tools-ng.ts";
 import type { Action, CashIn } from "./tools.ts";
 
 const ACTION_COLS = "id, user_id, kind, params, readback, status, result, expires_at, created_by, created_at";
@@ -145,6 +145,21 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
           .order("created_at", { ascending: false }).limit(20),
         "cashOuts",
       ) as CashOut[];
+    },
+    async recordShares(userId) {
+      return must(
+        await db.from("record_shares").select("id, created_at, expires_at, revoked_at, first_viewed_at, views, last_viewed_at")
+          .eq("user_id", userId).order("created_at", { ascending: false }).limit(50),
+        "recordShares",
+      ) as RecordShare[];
+    },
+    async revokeRecordShare(userId, shareId) {
+      const rows = must(
+        await db.from("record_shares").update({ revoked_at: new Date().toISOString() }).eq("id", shareId).eq("user_id", userId)
+          .is("revoked_at", null).select("id"),
+        "revokeRecordShare",
+      ) as { id: string }[];
+      return rows.length === 1;
     },
     async setCashOutCode(userId, cashOutId, codeHash) {
       const rows = must(

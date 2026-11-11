@@ -27,8 +27,12 @@ import {
   ngAdvanceStatus,
   ngSavePayee,
   ngSimulateBankTransfer,
+  newShareCode,
+  SHARE_ALPHABET,
+  showShareCode,
   NG_VOICE_TOOLS,
   type PlusPeer,
+  type RecordShare,
 } from "./tools-ng.ts";
 
 const FUNMI = "GA6K725VCN45F4LWZYEL3H7J5CIGGL2IUXDWZH5X75GYWQQJNPAYGW6M";
@@ -52,10 +56,13 @@ type World = {
   bankPayees: { id: string; name: string; bank_code: string; account_number: string; account_name: string }[];
   bankIns: { amount: bigint; repay: bigint; ref: string }[];
   credit: { frozen_until: string | null; weeks: CreditWeek[]; assets: CreditAsset[]; loans: CreditLoan[] };
+  /** Record shares (piece 9). */
+  shares?: RecordShare[];
 };
 
 function fakeStore(w: World): NgStore {
   let n = 0;
+  const shares = (w.shares ??= []);
   return {
     balances: (id) => {
       const peer = [...w.peers.values()].find((p) => p.id === id);
@@ -112,6 +119,12 @@ function fakeStore(w: World): NgStore {
     agentWallets: () => Promise.resolve([AGENT]),
     cashOuts: () => Promise.resolve([]),
     setCashOutCode: () => Promise.resolve(true),
+    recordShares: () => Promise.resolve(shares),
+    revokeRecordShare: (_u, id) => {
+      const s = shares.find((x) => x.id === id && !x.revoked_at);
+      if (s) s.revoked_at = new Date().toISOString();
+      return Promise.resolve(Boolean(s));
+    },
     plusUserByPhone: (phone) => {
       const p = w.peers.get(phone);
       return Promise.resolve(p ? { id: p.id, name: p.name, market_id: p.market_id, kyc_tier: p.kyc_tier, stellar_pub: p.stellar_pub } : null);
@@ -640,4 +653,56 @@ Deno.test("prepare_bank_send: the daily limit and her balance still apply", asyn
   const { ctx } = setup({ available: N(1_000) });
   const r = await NG_VOICE_TOOLS.prepare_bank_send(ctx({ amount: "8000", bank: "D01", account_number: "0123456789" }));
   assert(!r.ok);
+});
+
+// ---------------------------------------------------------------------------- Share her record (piece 9)
+
+Deno.test("share codes: 8 characters a lender can type, no look-alikes, no bias", () => {
+  const seen = new Set<string>();
+  for (let i = 0; i < 2000; i++) {
+    const c = newShareCode();
+    assertMatch(c, /^[A-HJKMNP-Z2-9]{8}$/);
+    seen.add(c);
+  }
+  assertEquals(seen.size, 2000);
+  assertEquals(SHARE_ALPHABET.length, 31);
+  assertEquals(showShareCode("ABCDEFGH"), "ABCD-EFGH");
+});
+
+Deno.test("share_record: consent read back, always her PIN, code only on her screen", async () => {
+  const { ctx, w } = setup();
+  const r = await NG_VOICE_TOOLS.share_record(ctx({}));
+  assert(r.ok, r.text);
+  assertMatch(String(r.text), /Never her name, phone number, ID, photos/);
+  assertEquals(r.requires_pin, true, "sharing always takes the PIN, whatever the amount");
+  // Not by voice, and not without the PIN.
+  assertEquals((await NG_VOICE_TOOLS.confirm_action(ctx({ action_id: r.action_id }, "voice"))).error, "pin_required_on_screen");
+  assertEquals((await NG_VOICE_TOOLS.confirm_action(ctx({ action_id: r.action_id }, "app"))).error, "pin_required");
+  const yes = await NG_VOICE_TOOLS.confirm_action(ctx({ action_id: r.action_id, pin: "1234" }, "app"));
+  assert(yes.ok, yes.text);
+  assertMatch(String(yes.share_code), /^[A-HJKMNP-Z2-9]{4}-[A-HJKMNP-Z2-9]{4}$/);
+  // The plain code goes to Postgres only to be hashed there.
+  assertEquals(String(w.executed.at(-1)!.extra.code), String(yes.share_code).replace("-", ""));
+  // A retry returns the stored result, never a new or the same code.
+  const again = await NG_VOICE_TOOLS.confirm_action(ctx({ action_id: r.action_id, pin: "1234" }, "app"));
+  assertEquals(again.share_code, undefined);
+});
+
+Deno.test("record_shares and revoke_record_share: her log, revoke one or all", async () => {
+  const now = new Date();
+  const h = (x: number) => new Date(now.getTime() + x * 3_600_000).toISOString();
+  const shares = [
+    { id: "s1", created_at: h(-1), expires_at: h(23), revoked_at: null, first_viewed_at: h(-0.5), views: 2, last_viewed_at: h(-0.4) },
+    { id: "s2", created_at: h(-2), expires_at: h(22), revoked_at: null, first_viewed_at: null, views: 0, last_viewed_at: null },
+    { id: "s3", created_at: h(-30), expires_at: h(-6), revoked_at: null, first_viewed_at: null, views: 0, last_viewed_at: null },
+  ];
+  const { ctx } = setup({ shares });
+  const list = await NG_VOICE_TOOLS.record_shares(ctx({}));
+  assertEquals((list.shares as { status: string }[]).map((s) => s.status), ["used", "active", "expired"]);
+  assertMatch(String(list.text), /opened by a lender 2 times/);
+  const one = await NG_VOICE_TOOLS.revoke_record_share(ctx({ share_id: "s2" }));
+  assertEquals(one.revoked, 1);
+  const all = await NG_VOICE_TOOLS.revoke_record_share(ctx({}));
+  assertEquals(all.revoked, 1, "only s1 was still open");
+  assertEquals((await NG_VOICE_TOOLS.revoke_record_share(ctx({}))).error, "nothing_to_revoke");
 });

@@ -105,15 +105,24 @@ Two demo users (naira, illustrative numbers), both with demo login buttons.
 
 ## Piece 9 (after piece 8; reads from `plus_credit`): Verify a Plus record, the key demo moment
 
-- [ ] Funmi can say "share my record with the lender" or tap Share on My record: consent screen,
+- [x] Funmi can say "share my record with the lender" or tap Share on My record: consent screen,
   PIN, then a one-time 8-character code valid for 24 hours. Every share is logged and can be
   revoked.
-- [ ] A public page `/verify` (no login): a lender enters the code and sees, read directly from
+- [x] A public page `/verify` (no login): a lender enters the code and sees, read directly from
   Stellar (`plus_credit` contract and contract events), an anonymous summary: months of history,
   ajo payments made and on-time %, savings consistency, verified assets with level and status (no
   photos, no names), loans taken and repaid, current loan status. Every line shows "Read from
   Stellar" with a link. No personal data, no name, no ID.
-- [ ] The page shows how long the verification took.
+- [x] The page shows how long the verification took.
+- Done 2026-11-10: My record → "Share my record" (or "share my record with the lender"): what the
+  lender sees and never sees, her PIN (always), then a code like `ABCD-EFGH` on her screen only.
+  Only an HMAC of the code is stored. One-time: the first lender keeps it for an hour (refreshes),
+  anyone else is refused; 24 hours; revoke one or all; every share and attempt logged, her list
+  shows "opened by a lender, 2 views". `/verify` reads plus_credit (loans, assets, vouches), her
+  wallet's history on Horizon (ajo payments into the plus contract) and plus_credit's events in
+  the browser; Plus only turns the code into her two public references. Verified in 0.8-2.8 s.
+  Wrong codes: 10 per viewer and 300 overall per 10 minutes (viewer = Cloudflare's address, not
+  the spoofable x-forwarded-for). `pnpm e2e:verify` (`--keep` leaves a code open to try by hand).
 
 ## Piece 10 (after piece 8; reads from `plus_credit`): The ajo vouches
 

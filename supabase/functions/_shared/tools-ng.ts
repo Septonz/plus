@@ -94,6 +94,9 @@ export interface NgStore {
   /** Save (or rename) a payee by phone; a Plus user's wallet is saved with it. */
   savePayee(userId: string, p: { name: string; phone: string; stellar_address: string | null }): Promise<Payee>;
   saveBankPayee(userId: string, p: { name: string; bank_code: string; account_number: string; account_name: string }): Promise<Payee>;
+  /** Piece 9: her record shares (newest first) and revoking one. */
+  recordShares(userId: string): Promise<RecordShare[]>;
+  revokeRecordShare(userId: string, shareId: string): Promise<boolean>;
   /** ng_bank_transfer_in: the partner anchor sends NGNT to her wallet (+ advance repayment). Idempotent on ref. */
   bankTransferIn(userId: string, amount: bigint, repay: bigint, ref: string, sender: string): Promise<{ transaction_id: string; repay: bigint; loan?: boolean }>;
   /** Her credit picture's inputs: weeks with Plus (real + compressed demo history), assets, loans with balances, recent loan steps. */
@@ -138,7 +141,7 @@ const PIN_ON_SCREEN = "Ask her to check her screen and type her PIN there. Never
  */
 export const NG_PIN_KINDS = ["pay", "pay_code", "group_contribution", "cash_out", "advance", "loan_repay", "bank_send"];
 export function ngNeedsPin(a: Pick<Action, "kind" | "params">): boolean {
-  if (a.kind === "loan") return true;
+  if (a.kind === "loan" || a.kind === "record_share") return true;
   if (!NG_PIN_KINDS.includes(a.kind)) return false;
   return BigInt(String(a.params.amount ?? 0)) > BigInt(getMarket(M).pinThreshold) * 100n;
 }
@@ -186,6 +189,38 @@ export function newCashOutCode(digits = getMarket(M).cashOutCode?.digits ?? 6): 
     if (buf[0] < limit) return String(buf[0] % max).padStart(digits, "0");
   }
 }
+
+// ---------------------------------------------------------------------------
+// Record share codes (piece 9): 8 characters a lender can type, no 0/O, 1/I/L. Only a keyed hash is
+// stored (in Postgres, with the Vault key).
+// ---------------------------------------------------------------------------
+
+export const SHARE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+export function newShareCode(): string {
+  const n = SHARE_ALPHABET.length;
+  const limit = Math.floor(256 / n) * n; // rejection sampling: no modulo bias
+  const out: string[] = [];
+  const buf = new Uint8Array(16);
+  while (out.length < 8) {
+    crypto.getRandomValues(buf);
+    for (const b of buf) if (b < limit && out.length < 8) out.push(SHARE_ALPHABET[b % n]);
+  }
+  return out.join("");
+}
+
+/** "ABCD-EFGH": how the code is shown and typed. */
+export const showShareCode = (c: string) => `${c.slice(0, 4)}-${c.slice(4)}`;
+
+export type RecordShare = {
+  id: string;
+  created_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+  first_viewed_at: string | null;
+  views: number;
+  last_viewed_at: string | null;
+};
 
 export async function cashOutCodeHash(secret: string, userId: string, code: string): Promise<string> {
   if (!secret) throw new Error("CASHOUT_CODE_SECRET is not set");
@@ -816,6 +851,10 @@ export const ngConfirmAction: NgTool = async ({ user, store, args, channel, code
       code = newCashOutCode();
       extra.code_hash = await cashOutCodeHash(codeSecret, user.id, code);
     }
+    if (a.kind === "record_share") {
+      code = newShareCode();
+      extra.code = code; // hashed in Postgres; never stored as is
+    }
     if (a.kind === "confirm_cash_in" && user.stellar_pub) {
       extra.repay = String(cashInRepayment(BigInt(String(a.params.amount)), await store.chain.advanceOf(user.stellar_pub)));
     }
@@ -843,6 +882,9 @@ export const ngConfirmAction: NgTool = async ({ user, store, args, channel, code
       }
       : undefined,
     cash_out_id: done.result?.cash_out_id ?? undefined,
+    // Her record share code: on her screen only, once. She gives it to the lender herself.
+    share_code: ok && claimed && code && channel === "app" && done.kind === "record_share" ? showShareCode(code) : undefined,
+    share_expires_at: done.kind === "record_share" ? done.result?.expires_at ?? undefined : undefined,
   };
 };
 
@@ -1090,6 +1132,7 @@ export const ngHelp: NgTool = async ({ user, store }) => {
     "check her balance and what came in",
     "pay a saved person, or anyone by phone number (not on Plus: they get a code and collect cash at any agent)",
     "send to a bank account: a saved one like her landlord's, or a bank and 10-digit account number",
+    "share her record with a lender: a one-time code (24 hours) the lender types on plus-wallet.vercel.app/verify; revoke it any time",
     "pay her ajo and hear who collects this round",
     "see her loan: her progress, her offer and why, repay, or ask for more time",
     "register what she owns for her business (stock, tools, a machine, a motorcycle, livestock) and get it verified: a live photo, two witnesses, an agent's inspection",
@@ -1201,6 +1244,74 @@ export const ngPrepareBankSend: NgTool = async ({ user, store, args, now = new D
 };
 
 // ---------------------------------------------------------------------------
+// Share her record with a lender (piece 9): consent, PIN, a one-time code for /verify
+// ---------------------------------------------------------------------------
+
+const SHARED = [
+  "how long she has been with Plus (from her Stellar wallet)",
+  "ajo payments made and how many were on time",
+  "how steadily she saves",
+  "verified assets: level and status only",
+  "loans taken and repaid, and the current loan's status",
+];
+const NOT_SHARED = "Never her name, phone number, ID, photos or where she lives or trades.";
+
+function shareStatus(s: RecordShare, now: Date): "active" | "used" | "expired" | "revoked" {
+  if (s.revoked_at) return "revoked";
+  if (new Date(s.expires_at) <= now) return "expired";
+  return s.first_viewed_at ? "used" : "active";
+}
+
+/** "Share my record with the lender": what is shared and what never is, then her PIN on screen. */
+export const ngShareRecord: NgTool = async ({ user, store, now = new Date() }) => {
+  if (!user.stellar_pub) return refuse("Her wallet isn't ready yet, so there is no record to share.", "no_wallet");
+  const live = (await store.recordShares(user.id)).filter((s) => shareStatus(s, now) === "active");
+  if (live.length >= 5) return refuse("She already has 5 codes waiting. Revoke one first, in My record.", "too_many_shares");
+  const a = await store.createAction({
+    user_id: user.id,
+    kind: "record_share",
+    params: { shared: SHARED, hours: 24 },
+    readback: `Share your Plus record with a lender: ${SHARED.join("; ")}. ${NOT_SHARED} One code, for one lender, for 24 hours.`,
+    ttl_secs: ACTION_TTL_SECS,
+  });
+  return {
+    text: `Read back: the lender will see ${SHARED.join("; ")}, read from Stellar. ${NOT_SHARED} ` +
+      `She gets a code for one lender, valid 24 hours, and can revoke it any time. ${PIN_ON_SCREEN}`,
+    ok: true,
+    ...actionFields(a),
+    shared: SHARED,
+    not_shared: NOT_SHARED,
+  };
+};
+
+/** Her shares: when, still open, opened by a lender, expired or revoked. */
+export const ngRecordShares: NgTool = async ({ user, store, now = new Date() }) => {
+  const shares = (await store.recordShares(user.id)).slice(0, 20).map((s) => ({ ...s, status: shareStatus(s, now) }));
+  const open = shares.filter((s) => s.status === "active" || s.status === "used");
+  return {
+    text: shares.length === 0 ? "She hasn't shared her record yet."
+      : `${open.length} share${open.length === 1 ? "" : "s"} still open${open.length ? `: ${open.map((s) => `${s.status === "used" ? `opened by a lender ${s.views} time${s.views === 1 ? "" : "s"}` : "not opened yet"}, until ${spokenTime(s.expires_at)}`).join("; ")}` : ""}.`,
+    ok: true,
+    shares,
+  };
+};
+
+/** Revoke a share (one id, or every open one when she says "stop sharing my record"). */
+export const ngRevokeRecordShare: NgTool = async ({ user, store, args, now = new Date() }) => {
+  const shares = await store.recordShares(user.id);
+  const id = typeof args.share_id === "string" ? args.share_id : null;
+  const targets = id ? shares.filter((s) => s.id === id) : shares.filter((s) => { const st = shareStatus(s, now); return st === "active" || st === "used"; });
+  if (targets.length === 0) return refuse(id ? "That share is already closed." : "Nothing is shared right now.", "nothing_to_revoke");
+  let n = 0;
+  for (const s of targets) if (await store.revokeRecordShare(user.id, s.id)) n++;
+  return { text: n ? `Done: ${n === 1 ? "that code no longer works" : `${n} codes no longer work`}. The lender can't open her record with it.` : "Already closed.", ok: n > 0, revoked: n };
+};
+
+function spokenTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-NG", { weekday: "long", hour: "numeric", minute: "2-digit", timeZone: "Africa/Lagos" });
+}
+
+// ---------------------------------------------------------------------------
 
 export const NG_VOICE_TOOLS: Record<string, NgTool> = {
   get_user: ngGetUser,
@@ -1219,6 +1330,9 @@ export const NG_VOICE_TOOLS: Record<string, NgTool> = {
   loan_restructure: ngLoanRestructure,
   save_payee: ngSavePayee,
   bank_lookup: ngBankLookup,
+  share_record: ngShareRecord,
+  record_shares: ngRecordShares,
+  revoke_record_share: ngRevokeRecordShare,
   prepare_bank_send: ngPrepareBankSend,
   bank_details: ngBankDetails,
   confirm_action: ngConfirmAction,

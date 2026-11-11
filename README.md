@@ -45,7 +45,7 @@ first tap as Funmi, and prints a green **READY** or exactly what is wrong (about
 | 0:00–0:10 | Mama Bisi records ₦500 on /agent. Funmi's phone: "Mama Bisi says you gave her ₦500. Is that right?" She says "yes"; the tick, and the transaction on Stellar | "Funmi has no bank account. She hands cash to Mama Bisi, a Plus agent; nothing moves until Funmi says yes. There it is on Stellar." |
 | 0:10–0:25 | Funmi: "Pay my ajo." Plus reads it back, she says yes; the ajo card's pot grows | "Her ajo's pot is held by a contract that nobody can edit or run off with." |
 | 0:25–0:45 | Funmi: "Can I get a loan?" The Loan screen: you receive ₦30,000, cost ₦1,800, total ₦31,800, and why. She types her PIN; the money arrives. Then **Simulate transfer received** on Add money: 10% repays the loan by itself | "The full cost in naira before she agrees, and why she qualifies. The next money in repays a tenth of it, on its own." |
-| 0:45–0:55 | A lender verifies her record on **/verify** in seconds, read from Stellar (once piece 9 exists) | "Any lender can check her record without trusting Plus." |
+| 0:45–0:55 | Funmi: "Share my record with the lender." Her PIN, a code on her screen. On a second screen, **/verify**: type the code; her history, ajo, assets and loans, each "Read from Stellar", verified in about a second | "Any lender can check her record without trusting Plus, and never sees her name." |
 | 0:55–1:00 | Kemi's phone: "week 4 of 6" | "And Kemi, two weeks from her first loan." |
 
 ### Why the blockchain is essential in Nigeria
@@ -91,6 +91,16 @@ loans and assets were backfilled (`select public.credit_backfill()`, safe to rer
 "Verified on Stellar" tick on a loan or an asset links to its latest `plus_credit` transaction.
 21 unit tests (`cargo test -p plus_credit`) cover every function and refusal; `pnpm e2e:loan`
 step 8 reads the loan, its repayments and its collateral back from Stellar.
+
+**`/verify` (piece 9).** Public, no login. She shares her record from My record (or by voice): a
+consent screen, her PIN, then a one-time code (`ABCD-EFGH`, 24 hours, one lender; she can revoke
+it). The lender types it at `/verify`. Plus only turns the code into her plus_credit reference and
+wallet address; the page then reads, in the lender's browser: her loans, assets and vouches from
+`plus_credit`, her history and ajo payments from Horizon, and plus_credit's events from Stellar RPC.
+Every line links to Stellar, and the page says how long it took (about a second). On-time ajo
+payments: each within its round (no more than 1.5 rounds after her previous one into that ajo).
+Saving: weeks with an ajo payment. Her history on Stellar starts when her wallet was opened; the
+compressed demo weeks before that are off-chain and not shown.
 
 ### A new user: sign-up to first payment
 
@@ -153,6 +163,8 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   flag only), text messages (codes shown on screen), the partner bank behind the virtual account
   numbers and its anchor account; in India the partner bank, UPI and KYC (`payout-sim`,
   `partner_kyc_mock`). No real company names or logos are used.
+- `/verify`: lenders are not checked or registered; any holder of a code can open it once.
+  Testnet only: the "months of history" are days for the demo people.
 - Send to a bank account (Nigeria): the banks (Ironwood, Harmattan, Lagoon Trust, Kolanut, Savanna
   Microfinance, Market Women's Cooperative) and the account-name lookup are fictional. Her NGNT really
   moves on Stellar to the partner's anchor account (`anchor_ng`) as a withdrawal, and the anchor's record
@@ -395,6 +407,7 @@ This is a Testnet prototype. Where it cuts corners, it does so in ways that do n
 - `pnpm e2e:ng` (by hand, not CI): the Nigeria demo through the real functions: Mama Bisi records ₦500 and Funmi says Yes, pay Iya Tunde, ajo, advance (and auto-repay from a cash-in), cash-out code redeemed by the agent, my record. Prints Yes → tick seconds and a Stellar Expert link per step. `pnpm e2e:ng --read` only reads (balances, ajo, advance, record, agent float). Step 8 (also alone with `pnpm e2e:ng --new-user`): a new person on test number +234 700 000 0301 from sign-up to first payment: a wrong NIN refused, the wallet opened, a bank transfer in, ₦500 to Funmi by phone, ₦300 by code to someone not on Plus that Mama Bisi pays out, the tier limit refusing ₦250,000, and signing in again with phone + PIN.
 - `pnpm e2e:assets` (by hand, not CI; run `pnpm demo:reset ng` first): a test person on +234 700 000 0303 registers a sewing machine, takes the live photo, asks Amaka and Mama Bisi, both confirm, Mama Bisi inspects it; checks that only the hash and a rounded place are stored, the photo is private, the confidence score never reaches her, and stolen/found statuses. 22 checks.
 - `pnpm e2e:loan` step 8: after the loan flow, reads the agreement, both repayments and the pledged stall stock back from `plus_credit` on Stellar (stellar CLI, `admin` identity), checks nothing personal went on-chain, then "Repay all" closes it there as Repaid and frees the stall stock.
+- `pnpm e2e:verify` (by hand, not CI): a test person on +234 700 000 0304 with a verified stall stock takes a loan and repays ₦2,000; shares her record (consent, PIN, code; the code is stored nowhere, only its keyed hash); a lender's anonymous lookup returns only her reference and wallet, and plus_credit on Stellar shows the loan, the repayment and the stall stock; a wrong code is refused, every view logged, revoking stops the code. `--keep` prints one more open code to try `/verify` by hand.
 - `pnpm e2e:bank` (by hand, not CI; run `pnpm demo:reset ng` afterwards): as Funmi, the name lookup (Ironwood Bank 0123456789 → ADEBAYO STORES, a 999… number refused), ₦2,000 to the account (her Yes is enough; a retried Yes sends nothing twice), NGNT on Stellar to `anchor_ng` and the anchor's withdrawal record, "sent to bank (partner, simulated)" in her record, and ₦8,000 refused without her PIN.
 
 ### Secrets (Supabase secrets, never committed)
