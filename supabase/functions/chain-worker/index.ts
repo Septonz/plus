@@ -42,7 +42,7 @@ const CREDIT_CONTRACT_ID = Deno.env.get("PLUS_CREDIT_CONTRACT_ID") ?? "";
 const MAX_ATTEMPTS = 8;
 const RUN_BUDGET_MS = 120_000; // stay inside the Edge Function wall-clock limit
 const TX_TIMEOUT_SECS = 60;
-const POLL_MS = 1000;
+const POLL_MS = 400; // piece 11: the tick shows within ~0.4 s of the ledger closing
 const POLL_TIMEOUT_MS = 45_000;
 const LEASE_SECS = 60; // extended after every row; a killed run blocks its account for at most this long
 const FEE = "1000"; // stroops; testnet
@@ -100,7 +100,7 @@ async function horizonGet(hash: string): Promise<HorizonTx> {
   return { status: t.successful ? "SUCCESS" : "FAILED" };
 }
 
-/** Async submit + poll every second. Same rules as the RPC helper: never resend before a lookup. */
+/** Async submit + poll every POLL_MS. Same rules as the RPC helper: never resend before a lookup. */
 async function horizonSubmit(tx: { toXDR(): string; hash(): Uint8Array }): Promise<HorizonTx> {
   const hash = txHashHex(tx);
   const xdrB64 = tx.toXDR();

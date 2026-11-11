@@ -177,6 +177,56 @@ async function firstTap() {
   else if (ms >= 1000) problems.push(`a warmed first tap took ${ms} ms (target: under 1 s); run pnpm warm again`);
 }
 
+/**
+ * Piece 11: every path of the 60-second demo, timed (and so warmed). Reads as Funmi; money paths
+ * are prepared and then cancelled (nothing moves), and "Yes to tick" is a tiny XLM payment from
+ * the partner to itself through the same outbox and worker her payments use.
+ */
+const timings: [string, number][] = [];
+async function demoPaths() {
+  if (!markets.includes("ng")) return;
+  console.log("\n== The demo's paths, warmed and timed (Funmi)");
+  const c = createClient(url, process.env.VITE_SUPABASE_ANON_KEY!, { auth: { persistSession: false } });
+  const { data, error } = await c.auth.signInWithPassword({ email: "demo-funmi@example.com", password: process.env.VITE_DEMO_LOGIN_PASSWORD! });
+  if (error) return line(false, "Funmi signs in", error.message);
+  const tool = (name: string, body: Record<string, unknown> = {}) => fetch(`${url}/functions/v1/agent-tools/${name}`, {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${data.session.access_token}` }, body: JSON.stringify(body),
+  }).then((r) => r.json() as Promise<Record<string, unknown>>);
+  const time = async (label: string, f: () => Promise<Record<string, unknown> | void>) => {
+    const [r, ms] = await timed(f);
+    timings.push([label, ms]);
+    const err = r && (r as Record<string, unknown>).error;
+    line(ms < 2000 && !err, label, `${ms} ms${err ? ` (${String(err)})` : ""}`);
+    return r;
+  };
+  for (const [label, name] of [["balance", "get_balance"], ["ajo", "group_status"], ["loan offer", "loan_status"], ["savings", "savings_status"],
+    ["vouches", "my_vouches"], ["activity", "my_record"], ["cash-out codes", "cash_outs"]] as const) {
+    await time(label, () => tool(name));
+  }
+  // Prepared, then cancelled: warms the prepare and confirm paths without moving money.
+  for (const [label, name, body] of [["pay Iya Tunde (prepare)", "prepare_pay", { payee: "Iya Tunde", amount: 2000 }],
+    ["pay my ajo (prepare)", "prepare_ajo_contribution", {}], ["accept loan (prepare)", "prepare_loan", {}],
+    ["cash out (prepare)", "prepare_cashout", { amount: 3000 }], ["save (prepare)", "prepare_save", { amount: 1000 }]] as const) {
+    const r = await time(label, () => tool(name, body as Record<string, unknown>)) as Record<string, unknown> | undefined;
+    if (r?.action_id) await tool("reject_action", { action_id: r.action_id });
+  }
+  // Yes to tick: the outbox and worker, as for her payments.
+  const t0 = Date.now();
+  const { data: id, error: e } = await db.rpc("chain_enqueue_on", { p_signer: "partner", p_kind: "payment", p_ref: `demo_ready:${crypto.randomUUID()}`,
+    p_args: { asset: "XLM", to: "GCHDENOIJ5JFA3JU3OPW3LZSLHR57HCOHA7ZYQSRYG6MHHOFSAM4CWWZ", amount: "1" } });
+  if (e) return line(false, "Yes to tick", e.message);
+  await fetch(`${url}/functions/v1/chain-worker`, { method: "POST", headers: { "x-plus-secret": process.env.AGENT_SHARED_SECRET! } }).then((r) => r.body?.cancel());
+  for (;;) {
+    const { data: row } = await db.from("chain_outbox").select("status").eq("id", Number(id)).single();
+    if (row?.status === "done" || row?.status === "failed" || Date.now() - t0 > 60_000) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  const ms = Date.now() - t0;
+  timings.push(["Yes to tick (on Stellar)", ms]);
+  line(ms <= 5000, "Yes to tick (on Stellar)", `${(ms / 1000).toFixed(1)} s`);
+  if (ms > 5000) warnings.push(`Yes to tick took ${(ms / 1000).toFixed(1)} s (target ≤ 5 s); testnet ledgers close every ~5 s`);
+}
+
 async function main() {
   if ((process.env.STELLAR_NETWORK ?? "testnet") !== "testnet") throw new Error("testnet only");
   if (!onlyCheck) {
@@ -188,8 +238,13 @@ async function main() {
   await stellar();
   await credit();
   await firstTap();
+  await demoPaths();
 
   const secs = Math.round((Date.now() - t0) / 1000);
+  if (timings.length) {
+    console.log("\n  Measured:");
+    for (const [label, ms] of timings) console.log(`    ${label.padEnd(26)} ${ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${ms} ms`}`);
+  }
   console.log("");
   for (const w of warnings) console.log(yellow(`  note: ${w}`));
   if (problems.length === 0) {
