@@ -191,13 +191,23 @@ type ChainAdvance = { owed: bigint } | undefined;
 // Shared steps
 // ---------------------------------------------------------------------------
 
-async function expireWaiting(userId: string) {
+async function expireWaiting(userId: string, who = "her") {
   const now = new Date().toISOString();
   const actions = must(await db.from("pending_actions").update({ status: "expired", updated_at: now })
     .eq("user_id", userId).eq("status", "pending").select("id"), "expire actions") as unknown[];
   const cash = must(await db.from("cash_events").update({ status: "expired", updated_at: now })
     .eq("user_id", userId).eq("status", "awaiting_user").select("id"), "expire cash-ins") as unknown[];
-  console.log(`  pending actions expired: ${actions.length}; cash-ins waiting for her expired: ${cash.length}`);
+  console.log(`  ${who === "her" ? "" : `${who}: `}pending actions expired: ${actions.length}; cash-ins waiting for ${who} expired: ${cash.length}`);
+}
+
+/** Cash-ins an agent or helper recorded that still wait for someone's Yes (any customer): expired. */
+async function expireHelperCashIns(helperId: string, who: string) {
+  const now = new Date().toISOString();
+  const rows = must(await db.from("cash_events").update({ status: "expired", updated_at: now })
+    .eq("helper_id", helperId).eq("status", "awaiting_user").select("pending_action_id"), "expire helper cash-ins") as { pending_action_id: string | null }[];
+  const ids = rows.map((r) => r.pending_action_id).filter((x): x is string => !!x);
+  if (ids.length) must(await db.from("pending_actions").update({ status: "expired", updated_at: now }).in("id", ids).eq("status", "pending"), "expire their actions");
+  console.log(`  ${who}: cash-ins waiting for a customer expired: ${rows.length}`);
 }
 
 async function addTx(row: { user_id: string; kind: string; source: string; amount: bigint; hash: string }) {
@@ -344,6 +354,20 @@ async function ensureAmaka(): Promise<string> {
   return u.id;
 }
 
+/**
+ * Nothing waiting for Amaka or Mama Bisi: their witness requests, and inspections in Nigeria that no
+ * agent has taken yet (from any customer, e2e test people included), are cancelled.
+ */
+async function cancelWitnessRequests(amakaId: string, bisiId: string) {
+  const now = new Date().toISOString();
+  const open = must(await db.from("asset_witnesses").select("id, kind, witness_user_id, witness_helper_id, assets!inner(users!inner(market_id))").eq("status", "requested"), "open requests") as unknown as
+    { id: string; kind: string; witness_user_id: string | null; witness_helper_id: string | null; assets: { users: { market_id: string } } }[];
+  const ids = open.filter((r) => r.witness_user_id === amakaId || r.witness_helper_id === bisiId ||
+    (r.kind === "inspection" && !r.witness_helper_id && r.assets.users.market_id === "ng")).map((r) => r.id);
+  if (ids.length) must(await db.from("asset_witnesses").update({ status: "cancelled", answered_at: now }).in("id", ids), "cancel requests");
+  console.log(`  witness requests and inspections waiting for Amaka or Mama Bisi cancelled: ${ids.length}`);
+}
+
 /** Kemi's assets from the last demo: released, and anything still waiting for a witness cancelled. */
 async function releaseAssets(userId: string, who: string) {
   const mine = must(await db.from("assets").select("id").eq("user_id", userId).neq("status", "released"), "assets") as { id: string }[];
@@ -361,12 +385,18 @@ async function resetNigeria() {
   const NGNT_SAC = NGNT.contractId(PASSPHRASE);
   const funmi = must(await db.from("users").select("id, stellar_pub").eq("stellar_pub", pub("funmi")).single(), "Funmi") as { id: string };
 
+  const kemi = await ensureKemi();
+  const amaka = await ensureAmaka();
+  const bisi = must(await db.from("helpers").select("id").eq("stellar_pub", pub("agent_ng")).single(), "Mama Bisi") as { id: string };
+  const people: [string, string][] = [[funmi.id, "Funmi"], [kemi.id, "Kemi"], [amaka, "Amaka"]];
+
   console.log("\n1. Waiting actions");
-  await expireWaiting(funmi.id);
+  for (const [id, who] of people) await expireWaiting(id, who);
+  await expireHelperCashIns(bisi.id, "Mama Bisi");
   await waitForOutbox(["funmi", "agent_ng", "partner", "anchor_ng", "lending_ng"]);
 
   console.log("\n2. Unused cash-out codes");
-  const codes = must(await db.from("cash_out_codes").select("id, amount, create_outbox_id").eq("user_id", funmi.id).eq("status", "issued"), "codes") as
+  const codes = must(await db.from("cash_out_codes").select("id, amount, create_outbox_id").in("user_id", people.map(([id]) => id)).eq("status", "issued"), "codes") as
     { id: string; amount: number; create_outbox_id: number | null }[];
   for (const c of codes) {
     const out = c.create_outbox_id
@@ -432,8 +462,6 @@ async function resetNigeria() {
   await ensureSystem("lending_ng", LENDING_MIN, NGNT);
 
   console.log("\n4c. Kemi (new to Plus: week 4 of 6)");
-  const kemi = await ensureKemi();
-  await expireWaiting(kemi.id);
   await settleLoans(kemi.id, "Kemi");
   must(await db.from("users").update({ member_since: new Date(Date.now() - 23 * 86_400_000).toISOString() }).eq("id", kemi.id), "Kemi week 4");
   const kemiBal = must(await db.from("transactions").select("amount").eq("user_id", kemi.id).neq("status", "failed"), "Kemi txs") as { amount: number }[];
@@ -449,10 +477,8 @@ async function resetNigeria() {
   console.log(`  week 4 of 6; money in during 3 weeks; ${kn} weeks seeded; no verified asset yet`);
   await releaseAssets(kemi.id, "Kemi");
 
-  console.log("\n4d. Amaka (can witness Kemi's asset)");
-  const amaka = await ensureAmaka();
-  must(await db.from("asset_witnesses").update({ status: "cancelled", answered_at: new Date().toISOString() })
-    .eq("witness_user_id", amaka).eq("status", "requested"), "Amaka's waiting requests");
+  console.log("\n4d. Amaka and Mama Bisi (witnesses)");
+  await cancelWitnessRequests(amaka, bisi.id);
   must(await db.from("payees").upsert({ user_id: kemi.id, name: "Amaka", stellar_address: pub("amaka") }, { onConflict: "user_id,name" }), "Kemi's payee Amaka");
   const { data: ok } = await db.rpc("asset_witness_eligible", { p_user_id: amaka });
   console.log(`  ${AMAKA_EMAIL}: tier 2, 20 weeks with Plus, ${ok ? "can witness" : "NOT eligible to witness"}; Kemi's saved payee`);
@@ -519,9 +545,21 @@ async function resetNigeria() {
 
   console.log("\nKemi's starting state");
   const k = await asUser(KEMI_EMAIL);
-  const [kb, kl] = await Promise.all([k("get_balance"), k("loan_status")]);
+  const [kb, kl, ka] = await Promise.all([k("get_balance"), k("loan_status"), k("my_assets")]);
   console.log(`  wallet     ${kb.text}`);
   console.log(`  loan       ${kl.text}`);
+  console.log(`  assets     ${ka.text}`);
+
+  console.log("\nAmaka and Mama Bisi");
+  const a = await asUser(AMAKA_EMAIL);
+  const aw = await a("witness_requests");
+  const ids = people.map(([id]) => id);
+  const { count: bisiWaiting } = await db.from("cash_events").select("id", { count: "exact", head: true }).eq("helper_id", bisi.id).eq("status", "awaiting_user");
+  const { count: anyWaiting } = await db.from("pending_actions").select("id", { count: "exact", head: true }).in("user_id", ids).eq("status", "pending");
+  const { count: anyCodes } = await db.from("cash_out_codes").select("id", { count: "exact", head: true }).in("user_id", ids).eq("status", "issued");
+  console.log(`  Amaka      ${aw.text}`);
+  console.log(`  Mama Bisi  float ${naira(await assetBalance("agent_ng", NGNT))}; ${bisiWaiting ?? 0} cash-ins waiting for a customer`);
+  console.log(`  everyone   ${anyWaiting ?? 0} pending actions; ${anyCodes ?? 0} unused cash-out codes`);
 }
 
 // ---------------------------------------------------------------------------
@@ -532,8 +570,11 @@ async function resetIndia() {
   const refHex = createHash("sha256").update("plus-demo:selvi", "utf8").digest("hex");
   const selvi = must(await db.from("users").select("id, ref_hash").eq("ref_hash", refHex).single(), "Selvi") as { id: string; ref_hash: string };
 
+  const meena = must(await db.from("helpers").select("id, name").eq("market_id", "in").eq("demo_login", true).limit(1).single(), "Meena") as { id: string; name: string };
+
   console.log("\n1. Waiting actions");
-  await expireWaiting(selvi.id);
+  await expireWaiting(selvi.id, "Selvi");
+  await expireHelperCashIns(meena.id, meena.name);
 
   console.log("\n2. Advance");
   const party = { tag: "Ref", values: [Buffer.from(refHex, "hex")] } as PlusClient.Party;
@@ -578,6 +619,8 @@ async function resetIndia() {
   console.log(`  seettu     ${seettu.text}`);
   console.log(`  advance    ${advance.text}`);
   console.log(`  waiting    ${waiting ?? 0} pending actions`);
+  const { count: meenaWaiting } = await db.from("cash_events").select("id", { count: "exact", head: true }).eq("helper_id", meena.id).eq("status", "awaiting_user");
+  console.log(`  ${meena.name.padEnd(10)} ${meenaWaiting ?? 0} cash-ins waiting for a customer`);
 }
 
 // ---------------------------------------------------------------------------
@@ -585,10 +628,13 @@ async function resetIndia() {
 async function main() {
   if ((process.env.STELLAR_NETWORK ?? "testnet") !== "testnet") throw new Error("testnet only");
   lib = await import("@plus/client");
-  console.log(`Demo reset: ${market === "ng" ? "Funmi and Kemi (Nigeria)" : "Selvi (India)"} · contract ${CONTRACT_ID.slice(0, 8)}… · testnet`);
+  const t0 = Date.now();
+  console.log(`Demo reset: ${market === "ng" ? "Funmi, Kemi, Amaka and Mama Bisi (Nigeria)" : "Selvi and Meena (India)"} · contract ${CONTRACT_ID.slice(0, 8)}… · testnet`);
   await resolvePending();
   if (market === "ng") await resetNigeria();
   else await resetIndia();
+  const secs = Math.round((Date.now() - t0) / 1000);
+  console.log(`\nDone in ${secs} s${secs > 120 ? " (over the 2-minute target)" : ""}.`);
 }
 
 main().catch((e) => {

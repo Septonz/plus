@@ -179,7 +179,12 @@ async function warm() {
       return { fn, status: 0, error: e instanceof Error ? e.message : String(e), ms: Math.round(performance.now() - t) };
     }
   }));
-  return { ok: true, warmed: results };
+  // agent-tools also opens its database and Stellar RPC connections (a first tap under a second).
+  const deep = await fetch(`${base}/agent-tools/warm`, {
+    headers: { "x-plus-secret": Deno.env.get("AGENT_SHARED_SECRET") ?? "" },
+    signal: AbortSignal.timeout(10_000),
+  }).then((r) => r.status, () => 0);
+  return { ok: true, warmed: results, deep_warm: deep };
 }
 
 /** System accounts: the bank-rail anchor and the partner lender's lending account (piece 4). */

@@ -1,7 +1,7 @@
 // pnpm warm: wake every Edge Function the demo uses, so the first tap of the demo doesn't pay for a
-// cold start. Calls GET /functions/v1/<fn>/health (no database, nothing secret; scheduler and
-// sync-events want the agent secret even there) twice per
-// function and prints whether the first call found it cold.
+// cold start. Calls GET /functions/v1/<fn>/health with the agent secret (scheduler, sync-events,
+// chain-worker and payout-sim answer only with it) twice per function and prints whether the first
+// call found it cold. Then GET agent-tools/warm opens its database and Stellar RPC connections.
 //
 //   pnpm warm            once, right before the demo
 //   pnpm warm --watch    keep them warm: again every 4 minutes until Ctrl+C
@@ -12,6 +12,7 @@ import { adminClient, loadLocalEnv } from "./lib/supabase-admin.ts";
 
 loadLocalEnv();
 const { url } = adminClient();
+// Same list as DEMO_FUNCTIONS in supabase/functions/_shared/http.ts.
 const FUNCTIONS = ["agent-tools", "chain-worker", "agent-api", "voice-session", "helper-api", "payout-sim", "scheduler", "sync-events"];
 
 async function ping(fn: string): Promise<{ ms: number; cold: boolean | null; status: number }> {
@@ -44,6 +45,13 @@ async function round() {
     const state = first.status !== 200 ? `HTTP ${first.status}` : first.cold ? "was cold" : "already warm";
     console.log(`  ${ok ? "✓" : "✗"} ${fn.padEnd(14)} ${String(first.ms).padStart(5)} ms  ${state.padEnd(13)} ${String(second.ms).padStart(5)} ms`);
   }
+  const t0 = performance.now();
+  const deep = await fetch(`${url}/functions/v1/agent-tools/warm`, {
+    headers: { "x-plus-secret": process.env.AGENT_SHARED_SECRET ?? "" },
+    signal: AbortSignal.timeout(15_000),
+  }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) as { db_ms?: number; chain_ms?: number } }), () => ({ status: 0, body: {} as { db_ms?: number; chain_ms?: number } }));
+  if (deep.status !== 200) failed++;
+  console.log(`  ${deep.status === 200 ? "✓" : "✗"} agent-tools/warm ${String(Math.round(performance.now() - t0)).padStart(4)} ms  database ${deep.body.db_ms ?? "?"} ms, Stellar RPC ${deep.body.chain_ms ?? "?"} ms`);
   if (failed) {
     console.log(`  ${failed} function(s) did not answer /health; deploy them (README, Scripts).`);
     process.exitCode = 1;

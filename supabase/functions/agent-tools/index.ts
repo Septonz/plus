@@ -14,6 +14,7 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { hasValidAgentSecret } from "../_shared/auth.ts";
+import { mayRunJob } from "../_shared/cron.ts";
 import { callerFromBody } from "../_shared/caller.ts";
 import { bearer, json, kickChainWorker, preflight, readJson, health, withCors } from "../_shared/http.ts";
 import { demoLoginsEnabled, demoOff, demoRateLimited, MONEY_TOOLS } from "../_shared/demo.ts";
@@ -218,9 +219,27 @@ async function signIn(args: Record<string, unknown>): Promise<ToolResult> {
 // Router
 // ---------------------------------------------------------------------------
 
+/**
+ * GET /warm (pnpm warm, scheduler/warm; cron or agent secret only): /health wakes the isolate, this
+ * also opens what a first tap needs: the database, the Stellar SDK (loaded lazily) and the RPC
+ * connection, so a warmed first "Simulate transfer received" answers in under a second.
+ */
+async function deepWarm(req: Request): Promise<Response | null> {
+  if (req.method !== "GET" || !new URL(req.url).pathname.endsWith("/warm")) return null;
+  if (!(await mayRunJob(req, db))) return json({ error: "unauthorized" }, 401);
+  const t0 = performance.now();
+  const { data } = await db.from("system_wallets").select("pub").limit(1).maybeSingle();
+  const tDb = performance.now();
+  const pub = (data as { pub?: string } | null)?.pub;
+  if (pub) await ngStore.chain.advanceOf(pub).catch(() => null);
+  return json({ ok: true, fn: "agent-tools", db_ms: Math.round(tDb - t0), chain_ms: Math.round(performance.now() - tDb) });
+}
+
 Deno.serve(withCors(async (req) => {
   const up = health(req, "agent-tools");
   if (up) return up;
+  const warm = await deepWarm(req);
+  if (warm) return warm;
   const pre = preflight(req);
   if (pre) return pre;
   const started = performance.now();
