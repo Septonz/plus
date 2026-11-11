@@ -16,6 +16,8 @@
             "wallet",
             "add_money",
             "pay",
+            "receive",
+            "scan",
             "ajo",
             "savings",
             "loan",

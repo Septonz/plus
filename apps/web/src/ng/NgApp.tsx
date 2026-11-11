@@ -12,6 +12,7 @@ import { settle, useScreenTools } from '../plus/screen'
 import { ENGLISH, LangContext } from '../plus/ui'
 import { VoiceButton } from '../plus/voice'
 import { Assets, requestPhoto } from './assets'
+import { Receive, Scan } from './shop'
 import { NgConfirmSheet } from './confirm'
 import { AddCash, Ajo, CashOut, Home, Loan, Pay, Record, Savings, Settings, WalletDetail, type Detail } from './screens'
 import { MIC_WORDS, naira, W, yo } from './words'
@@ -57,6 +58,9 @@ const VOICE_SCREENS: Record<string, { tab?: Tab; detail?: Detail }> = {
   wallet: { detail: 'wallet' },
   add_money: { detail: 'add_cash' },
   pay: { tab: 'pay' },
+  receive: { detail: 'receive' },
+  my_code: { detail: 'receive' },
+  scan: { detail: 'scan' },
   ajo: { detail: 'group' },
   savings: { detail: 'savings' },
   loan: { detail: 'loan' },
@@ -76,12 +80,20 @@ const DETAIL_TITLE: Record<Detail, [string, string | undefined]> = {
   assets: [W.assets.en, yo('assets')],
   add_cash: [W.addMoney.en, yo('addMoney')],
   cash_out: [W.cashOut.en, yo('cashOut')],
+  receive: ['My code', undefined],
+  scan: ['Scan to pay', undefined],
 }
+
+/** A Plus pay link opened from a shop's QR (plus-wallet.vercel.app/app/pay/<code>). */
+const linkedCode = (() => {
+  const m = window.location.pathname.match(/^\/app\/pay\/([A-Za-z0-9-]{6,7})\/?$/)
+  return m ? m[1].toUpperCase().replace('-', '') : null
+})()
 
 export default function NgApp({ data }: { data: PlusData }) {
   useMarketAccent('ng')
   const [tab, setTab] = useState<Tab>('home')
-  const [open, setOpen] = useState<Detail | null>(null)
+  const [open, setOpen] = useState<Detail | null>(linkedCode ? 'scan' : null)
   const [fromPass, setFromPass] = useState(true)
   const wallet = useWallet(data.me?.id, data.version)
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set())
@@ -158,7 +170,7 @@ export default function NgApp({ data }: { data: PlusData }) {
     <LangContext.Provider value={ENGLISH}>
       <main className="mx-auto max-w-md px-4 pb-32 pt-[max(env(safe-area-inset-top),1.25rem)]">
         {tab === 'home' && <Home {...props} onAnswer={onAnswer} open={open} onOpen={(d) => openDetail(d)} />}
-        {tab === 'pay' && <div className="space-y-5"><PageHeader title={W.pay.en} /><Pay {...props} /></div>}
+        {tab === 'pay' && <div className="space-y-5"><PageHeader title={W.pay.en} /><Pay {...props} onShop={(d) => openDetail(d, false)} /></div>}
         {tab === 'record' && <div className="space-y-5"><PageHeader title="Activity" /><Record {...props} /></div>}
         {tab === 'settings' && <div className="space-y-5"><PageHeader title="Profile" /><Settings {...props} onSignOut={() => void supabase?.auth.signOut()} /></div>}
       </main>
@@ -172,6 +184,8 @@ export default function NgApp({ data }: { data: PlusData }) {
             {open === 'loan' && <Loan {...props} />}
             {open === 'assets' && <Assets version={data.version} />}
             {open === 'add_cash' && <AddCash {...props} onAnswer={onAnswer} />}
+            {open === 'receive' && <Receive version={data.version} />}
+            {open === 'scan' && <Scan initialCode={linkedCode} />}
             {open === 'cash_out' && <CashOut {...props} shownCode={shownCode} onShowCode={setShownCode} />}
           </CardDetail>
         )}

@@ -12,6 +12,7 @@ import {
   type NgStore,
   autoSaveSplit,
   ngConfirmAction,
+  parsePayCode,
   ngPrepareSave,
   ngPrepareWithdrawSavings,
   ngSavingsStatus,
@@ -144,6 +145,11 @@ function fakeStore(w: World): NgStore {
       const v = w.vouches?.given.find((x) => x.id === id && x.status === "active");
       if (v) { v.status = "revoked"; (w.withdrawn ??= []).push(id); }
       return Promise.resolve(Boolean(v));
+    },
+    payCode: () => Promise.resolve("FUNM23"),
+    plusUserByPayCode: (code) => {
+      const p = [...w.peers.values()].find((x) => (x as { pay_code?: string }).pay_code === code);
+      return Promise.resolve(p ? { id: p.id, name: p.name, market_id: p.market_id, kyc_tier: p.kyc_tier, stellar_pub: p.stellar_pub } : null);
     },
     plusUserByPhone: (phone) => {
       const p = w.peers.get(phone);
@@ -857,4 +863,12 @@ Deno.test("savings: save and take out go through prepare, PIN above ₦5,000", a
   assertEquals(tooMuch.error, "not_enough_saved");
   const auto = await ngSetAutoSave(withGoal({ percent: 15 }));
   assertEquals(auto.error, "invalid_percent");
+});
+
+Deno.test("pay codes: typed, spoken or scanned forms all read as the same code", () => {
+  assertEquals(parsePayCode("abc-def"), "ABCDEF");
+  assertEquals(parsePayCode("ABC DEF"), "ABCDEF");
+  assertEquals(parsePayCode("https://plus-wallet.vercel.app/app/pay/K7Q2MX"), "K7Q2MX");
+  assertEquals(parsePayCode("K7Q-2MO"), null); // O reads as 0, which is not in the alphabet
+  assertEquals(parsePayCode("12345"), null);
 });

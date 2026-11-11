@@ -14,6 +14,7 @@ import type { PendingAction, PlusData } from '../plus/data'
 import { useSays } from '../plus/screen'
 import { CopyButton, ErrorState, LoadingList, TextField } from '../plus/ui'
 import { WitnessRequests } from './assets'
+import { StellarDetails } from './shop'
 import { CodeBox } from './confirm'
 import { useTool, type Go, type Wallet } from './NgApp'
 import { forScreen, naira, W, when, yo } from './words'
@@ -51,7 +52,7 @@ function Waiting({ data, onAnswer }: { data: PlusData; onAnswer: (a: PendingActi
 
 // ---------------------------------------------------------------------------- Home
 
-export type Detail = 'wallet' | 'savings' | 'group' | 'loan' | 'assets' | 'add_cash' | 'cash_out'
+export type Detail = 'wallet' | 'savings' | 'group' | 'loan' | 'assets' | 'add_cash' | 'cash_out' | 'receive' | 'scan'
 
 export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Props & { onAnswer: (a: PendingAction) => void; open: Detail | null; onOpen: (d: Detail) => void }) {
   const ajo = useTool('group_status', version)
@@ -324,7 +325,7 @@ const localPhone = (e164: string | null | undefined) =>
   e164 && e164.startsWith('+234') ? `0${e164.slice(4, 7)} ${e164.slice(7, 10)} ${e164.slice(10)}` : e164 ?? ''
 
 /** Pay: a saved person, or anyone by phone number (on Plus: wallet to wallet; not on Plus: a cash code). */
-export function Pay({ data }: Props) {
+export function Pay({ data, onShop }: Props & { onShop?: (d: 'scan' | 'receive') => void }) {
   const payees = data.payees
   const [tab, setTab] = useState<'saved' | 'phone' | 'bank'>(payees.length > 0 ? 'saved' : 'phone')
   const [who, setWho] = useState<string | null>(null)
@@ -354,6 +355,12 @@ export function Pay({ data }: Props) {
   }
   return (
     <div className="space-y-6">
+      {onShop && (
+        <div className="grid grid-cols-2 gap-3">
+          <Button variant="secondary" onClick={() => onShop('scan')}><Icon name="code" /> Scan to pay</Button>
+          <Button variant="secondary" onClick={() => onShop('receive')}><Icon name="in" /> My code</Button>
+        </div>
+      )}
       <Segmented label="Pay" value={tab} onChange={(t) => { setTab(t); setAmount('') }}
         options={[['saved', W.savedPeople.en], ['phone', 'By phone'], ['bank', W.toBank.en]]} />
 
@@ -1035,6 +1042,9 @@ export function Settings({ data, version, onSignOut }: Props & { onSignOut: () =
             </ListGroup>
           </Section>
         )}
+      </Loaded>
+      <Loaded r={me} rows={1}>
+        {() => <StellarDetails pub={(me?.stellar_pub as string | null) ?? null} />}
       </Loaded>
       <Section title="PIN">
         <Card className="space-y-3">

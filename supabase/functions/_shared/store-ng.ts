@@ -6,7 +6,7 @@ import { contractReader, refreshBalances } from "./ng-chain.ts";
 import { verifyPin as verifyPinRow } from "./pin.ts";
 import type { Payee } from "./payees.ts";
 import type { CreditAsset, CreditLoan, CreditWeek } from "./lending.ts";
-import type { CashOut, NgGroup, NgStore, NgTx, PlusPeer, RecordShare, Vouch, VouchCheck } from "./tools-ng.ts";
+import { type CashOut, newPayCode, type NgGroup, type NgStore, type NgTx, type PlusPeer, type RecordShare, type Vouch, type VouchCheck } from "./tools-ng.ts";
 import type { Action, CashIn } from "./tools.ts";
 
 const ACTION_COLS = "id, user_id, kind, params, readback, status, result, expires_at, created_by, created_at";
@@ -213,6 +213,21 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
         "setCashOutCode",
       ) as { id: string }[];
       return rows.length === 1;
+    },
+    async payCode(userId) {
+      for (let i = 0; i < 5; i++) {
+        const { data } = await db.from("users").select("pay_code").eq("id", userId).single();
+        if (data?.pay_code) return data.pay_code as string;
+        const { error } = await db.from("users").update({ pay_code: newPayCode() }).eq("id", userId).is("pay_code", null);
+        if (error && !/duplicate|unique/i.test(error.message)) throw new Error(`pay code: ${error.message}`);
+      }
+      throw new Error("pay code: could not make a unique one");
+    },
+    async plusUserByPayCode(code) {
+      return must(
+        await db.from("users").select("id, name, market_id, kyc_tier, stellar_pub").eq("pay_code", code).is("archived_at", null).maybeSingle(),
+        "plusUserByPayCode",
+      ) as PlusPeer | null;
     },
     async plusUserByPhone(phone) {
       const r = must(

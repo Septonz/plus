@@ -98,6 +98,9 @@ export interface NgStore {
   cashOuts(userId: string): Promise<CashOut[]>;
   /** Replace the code of her own issued cash-out (resets wrong attempts). */
   setCashOutCode(userId: string, cashOutId: string, codeHash: string): Promise<boolean>;
+  /** Piece 11: her pay code (made on first use) and the active Plus user with a pay code. */
+  payCode(userId: string): Promise<string>;
+  plusUserByPayCode(code: string): Promise<PlusPeer | null>;
   /** The active Plus user with this phone number, if any. */
   plusUserByPhone(phone: string): Promise<PlusPeer | null>;
   /** Kobo on its way into her wallet (pending incoming rows), for the balance limit. */
@@ -233,6 +236,24 @@ export function newShareCode(): string {
   return out.join("");
 }
 
+// ---------------------------------------------------------------------------
+// Pay codes (piece 11): 6 characters from the same alphabet, shown "ABC-DEF" with a QR of a Plus
+// pay link. Not a secret; it only lets people pay her.
+// ---------------------------------------------------------------------------
+
+export const PAY_LINK_BASE = "https://plus-wallet.vercel.app/app/pay/";
+export function newPayCode(): string {
+  return newShareCode().slice(0, 6);
+}
+export const showPayCode = (c: string) => `${c.slice(0, 3)}-${c.slice(3)}`;
+/** A typed or scanned code: "abc-def", "ABC DEF" or a whole pay link -> "ABCDEF" (null if not one). */
+export function parsePayCode(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const tail = input.trim().split(/[/?#]/).filter(Boolean).pop() ?? "";
+  const c = tail.toUpperCase().replace(/[\s-]/g, "").replace(/O/g, "0").replace(/[IL]/g, "1");
+  return /^[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{6}$/.test(c) ? c : null;
+}
+
 /** "ABCD-EFGH": how the code is shown and typed. */
 export const showShareCode = (c: string) => `${c.slice(0, 4)}-${c.slice(4)}`;
 
@@ -305,6 +326,7 @@ export const ngGetUser: NgTool = async ({ user, store }) => {
     group_savings_name: getMarket(M).groupSavings.localName,
     limits: tierSummary(user),
     virtual_account: user.virtual_account ?? null,
+    stellar_pub: user.stellar_pub,
     bank_label: getMarket(M).virtualAccount?.bankLabel ?? null,
     cash_ins_waiting: cash.map((c) => ({ ...c, amount_text: show(c.amount) })),
     pending_actions: pending.map(actionFields),
@@ -568,6 +590,11 @@ function confirmText(a: Action): string {
 export const ngPreparePay: NgTool = async ({ user, store, args, now = new Date() }) => {
   const amount = parseMajorAmount(args.amount);
   if (amount === null) return refuse("How much should she pay? Ask for the amount in naira.", "invalid_amount");
+  // A shop's pay code (typed, said, or scanned from its QR): straight to that Plus wallet.
+  const code = args.code !== undefined && args.code !== null && args.code !== "" ? parsePayCode(args.code) : undefined;
+  if (code === null) return refuse("That pay code doesn't look right. It has 6 letters and numbers, like ABC-123. Ask her to read it again.", "invalid_code");
+  const byCode = code ? await store.plusUserByPayCode(code) : null;
+  if (code && !byCode) return refuse(`No Plus wallet has the pay code ${showPayCode(code)}. Ask her to check it.`, "unknown_code");
   const spoken = typeof args.payee === "string" ? args.payee.trim() : "";
   const given = typeof args.phone === "string" && args.phone.trim() ? args.phone : /^[+\d][\d\s()-]{6,}$/.test(spoken) ? spoken : "";
   let phone: string | null = null;
@@ -575,7 +602,9 @@ export const ngPreparePay: NgTool = async ({ user, store, args, now = new Date()
   let wallet: string | null = null;
   let payeeId: string | null = null;
 
-  if (given) {
+  if (byCode) {
+    name = name ?? byCode.name;
+  } else if (given) {
     phone = normalizePhone(M, given);
     if (!phone) return refuse("That phone number doesn't look right. Ask her to say it again, digit by digit.", "invalid_phone");
   } else {
@@ -599,8 +628,8 @@ export const ngPreparePay: NgTool = async ({ user, store, args, now = new Date()
     if (!phone && !wallet) return refuse(`${match.payee.name} has no phone or wallet saved.`, "payee_incomplete");
   }
 
-  const peer = phone ? await store.plusUserByPhone(phone) : null;
-  if (peer && peer.id === user.id) return refuse("That is her own number.", "own_number");
+  const peer = byCode ?? (phone ? await store.plusUserByPhone(phone) : null);
+  if (peer && peer.id === user.id) return refuse(byCode ? "That is her own pay code." : "That is her own number.", byCode ? "own_code" : "own_number");
   const blocked = await spendCheck(store, user, amount, now);
   if (blocked) return blocked;
 
@@ -612,7 +641,7 @@ export const ngPreparePay: NgTool = async ({ user, store, args, now = new Date()
     const a = await store.createAction({
       user_id: user.id,
       kind: "pay",
-      params: { amount: String(amount), to: peer.stellar_pub, to_user_id: peer.id, payee_name: who, phone, payee_id: payeeId },
+      params: { amount: String(amount), to: peer.stellar_pub, to_user_id: peer.id, payee_name: who, phone, payee_id: payeeId, ...(code ? { pay_code: code } : {}) },
       readback: `${show(amount)} to ${who} (on Plus)`,
       ttl_secs: ACTION_TTL_SECS,
     });
@@ -689,6 +718,19 @@ export const ngSavePayee: NgTool = async ({ user, store, args }) => {
 };
 
 /** Her account number at the partner bank (simulated), for bank transfers into her wallet. */
+/** Her pay code and QR link (Receive): a shop's customers scan it or type the code. */
+export const ngMyPayCode: NgTool = async ({ user, store }) => {
+  if (!user.stellar_pub) return refuse("Her wallet is not set up yet.", "no_wallet");
+  const code = await store.payCode(user.id);
+  return {
+    text: `Her pay code is ${showPayCode(code).split("").join(" ")}. Anyone on Plus can scan the QR on her Receive screen or type the code to pay her; it goes straight to her wallet on Stellar.`,
+    ok: true,
+    pay_code: code,
+    pay_code_text: showPayCode(code),
+    pay_link: PAY_LINK_BASE + code,
+  };
+};
+
 export const ngBankDetails: NgTool = async ({ user }) => {
   const bank = getMarket(M).virtualAccount;
   if (!bank || !user.virtual_account) return refuse("Her bank account number comes with her wallet; her wallet is not open yet.", "no_account_number");
@@ -1642,6 +1684,7 @@ export const NG_VOICE_TOOLS: Record<string, NgTool> = {
   withdraw_vouch: ngWithdrawVouch,
   prepare_bank_send: ngPrepareBankSend,
   bank_details: ngBankDetails,
+  my_pay_code: ngMyPayCode,
   confirm_action: ngConfirmAction,
   reject_action: ngRejectAction,
   my_record: ngMyRecord,
