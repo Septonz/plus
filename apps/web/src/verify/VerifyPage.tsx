@@ -1,6 +1,7 @@
 // /verify (public, no login): a lender types the code Funmi gave them and sees her Plus record,
 // read directly from Stellar. Plus's database only turns the code into her two public references;
 // every line below comes from the chain and links to it. No name, phone, ID, photo or place.
+import { formatTime } from '../lib/time'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Button, Card, Icon, ListGroup, Notice, Section, Spinner } from '../ds/components'
 import { supabase } from '../lib/supabase'
@@ -119,7 +120,7 @@ function Summary({ r }: { r: Result }) {
   return (
     <div className="space-y-6">
       <Notice tone="success">
-        <span className="font-medium">Verified in {(r.ms / 1000).toFixed(1)} seconds</span>, read from Stellar. Shared with you {new Date(r.sharedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}; the code stops working {new Date(r.expiresAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.
+        <span className="font-medium">Verified in {(r.ms / 1000).toFixed(1)} seconds</span>, read from Stellar. Shared with you {formatTime(r.sharedAt, { date: true, locale: 'en-GB' })}; the code stops working {formatTime(r.expiresAt, { date: true, locale: 'en-GB' })}.
       </Notice>
 
       <Section title="History">
@@ -159,7 +160,7 @@ function Summary({ r }: { r: Result }) {
           <ListGroup>
             {rec.events.slice(0, 8).map((e) => (
               <li key={`${e.tx}-${e.name}-${e.ref}`} className="flex items-center justify-between gap-3 px-4 py-3">
-                <span><span className="block text-base">{e.name}</span><span className="block text-sm text-secondary">{new Date(e.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></span>
+                <span><span className="block text-base">{e.name}</span><span className="block text-sm text-secondary">{formatTime(e.at, { date: true, locale: 'en-GB' })}</span></span>
                 <Source href={`${EXPLORER}/tx/${e.tx}`}>Transaction</Source>
               </li>
             ))}

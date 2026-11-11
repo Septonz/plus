@@ -1,5 +1,6 @@
 // Plus Nigeria wording helpers: simple English (Pidgin-friendly) in big type, Yoruba underneath.
 // Every label lives in translations.ts (one file, for the Yoruba review).
+import { formatTime } from '../lib/time'
 import { formatMoney } from '@plus/markets'
 import type { MicWords } from '../plus/voice'
 import { W } from './translations'
@@ -40,7 +41,7 @@ export function when(iso: string): string {
   // Calendar days (yesterday at 23:00 is "yesterday", not "today").
   const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
   const days = Math.round((day(new Date()) - day(d)) / 86_400_000)
-  const time = d.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })
+  const time = formatTime(d)
   if (days <= 0) return `today ${time}`
   if (days === 1) return `yesterday ${time}`
   return `${days} days ago`

@@ -1463,7 +1463,7 @@ export const ngWithdrawVouch: NgTool = async ({ user, store, args }) => {
 };
 
 function spokenTime(iso: string): string {
-  return new Date(iso).toLocaleString("en-NG", { weekday: "long", hour: "numeric", minute: "2-digit", timeZone: "Africa/Lagos" });
+  return new Date(iso).toLocaleString("en-NG", { weekday: "long", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Africa/Lagos" });
 }
 
 // ---------------------------------------------------------------------------

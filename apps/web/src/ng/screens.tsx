@@ -2,6 +2,7 @@
 // from the balance cache and the agent-tools read tools (the same tools the voice agent uses).
 // Each screen has a loading state (skeletons), an empty state and an error state with a retry.
 // Home is a stack of passes (Wallet, Ajo, Loan); a pass opens full-screen (NgApp's CardDetail).
+import { formatTime } from '../lib/time'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { getMarket } from '@plus/markets'
 import {
@@ -495,7 +496,7 @@ function AjoBody({ g, busy, msg, pay }: { g: ToolResult; busy: boolean; msg: str
         </div>
         <p className="text-base">
           This round's pot goes to <b className="font-semibold">{members.find((m) => m.is_turn)?.is_me ? 'you' : String(g.turn_name)}</b> on{' '}
-          {new Date(String(g.next_due)).toLocaleString('en-NG', { weekday: 'long', hour: 'numeric', minute: '2-digit' })}.
+          {formatTime(String(g.next_due), { weekday: 'long' })}.
         </p>
         {!g.paid_this_period && !g.on_its_way && (
           <Button className="w-full" loading={busy} onClick={pay}>
@@ -858,8 +859,8 @@ function ShareRecord({ version }: { version: number }) {
             const [label, tone] = SHARE_STATUS[String(s.status)] ?? ['', '']
             const live = s.status === 'active' || s.status === 'used'
             return (
-              <ListRow key={String(s.id)} icon="shield" title={new Date(String(s.created_at)).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
-                subtitle={<span className={tone}>{label}{Number(s.views) > 0 ? ` · ${String(s.views)} view${Number(s.views) === 1 ? '' : 's'}` : ''}{live ? ` · until ${new Date(String(s.expires_at)).toLocaleString('en-NG', { hour: 'numeric', minute: '2-digit' })}` : ''}</span>}
+              <ListRow key={String(s.id)} icon="shield" title={formatTime(String(s.created_at), { date: true })}
+                subtitle={<span className={tone}>{label}{Number(s.views) > 0 ? ` · ${String(s.views)} view${Number(s.views) === 1 ? '' : 's'}` : ''}{live ? ` · until ${formatTime(String(s.expires_at))}` : ''}</span>}
                 trailing={live ? <Button variant="plain" size="md" onClick={async () => { await run('revoke_record_share', { share_id: s.id }); setBump((b) => b + 1) }}>Revoke</Button> : undefined} />
             )
           })}

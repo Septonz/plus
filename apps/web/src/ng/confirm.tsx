@@ -4,6 +4,7 @@
 // shows the tick, the seconds it took and the "Verified on Stellar" link. A cash-out shows its code
 // once. Paying a phone number that is not on Plus shows the text message they get (simulated on the
 // demo); paying a new phone number offers "Save this person" afterwards.
+import { formatTime } from '../lib/time'
 import { useEffect, useRef, useState } from 'react'
 import { getMarket } from '@plus/markets'
 import { ConfirmSheet, type ConfirmPhase, type CostLine } from '../ds/ConfirmSheet'
@@ -240,7 +241,7 @@ function SaveThisPerson({ name, phone }: { name: string; phone: string }) {
 
 /** Her record share code: she gives it to the lender, who types it on /verify. */
 export function ShareCodeBox({ code, expires }: { code: string; expires: string | null }) {
-  const until = expires ? new Date(expires).toLocaleString('en-NG', { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : null
+  const until = expires ? formatTime(expires, { weekday: 'short' }) : null
   return (
     <div className="rounded-card border border-dashed border-fill-strong bg-surface-2 px-4 py-5 text-center">
       <p className="text-sm font-medium text-secondary">Give this code to the lender</p>
