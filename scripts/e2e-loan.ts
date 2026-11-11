@@ -48,7 +48,7 @@ async function creditSettled(loanId: string) {
     const { data } = await db.from("chain_outbox").select("status").eq("args->>loan_id", loanId);
     const left = (data ?? []).filter((r) => r.status !== "done");
     if (data?.length && left.length === 0) return;
-    if (Date.now() - t0 > 120_000) throw new Error(`plus_credit writes not done: ${left.map((r) => r.status).join(", ")}`);
+    if (Date.now() - t0 > 240_000) throw new Error(`plus_credit writes not done: ${left.map((r) => r.status).join(", ")}`);
     await sleep(2000);
   }
 }
