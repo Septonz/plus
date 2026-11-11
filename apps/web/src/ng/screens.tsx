@@ -519,7 +519,42 @@ function AjoBody({ g, busy, msg, pay }: { g: ToolResult; busy: boolean; msg: str
         </ListGroup>
         <p className="px-1 text-sm text-secondary">Each tick is verified on Stellar, not just in our records.</p>
       </Section>
+      <Vouches />
     </>
+  )
+}
+
+// ---------------------------------------------------------------------------- Vouches (piece 10)
+
+/** Vouch for an ajo member's next loan (her PIN), see who vouched for her, withdraw a waiting one. */
+function Vouches() {
+  const [bump, setBump] = useState(0)
+  const v = useTool('my_vouches', bump)
+  const { busy, msg, run } = useSubmit()
+  if (!v?.ok) return null
+  const can = (v.can_vouch_for ?? []) as Row[]
+  const given = ((v.given ?? []) as Row[]).filter((x) => x.status === 'active')
+  const received = ((v.received ?? []) as Row[]).filter((x) => x.status === 'active')
+  if (!can.length && !given.length && !received.length) return null
+  const after = (r: ToolResult) => { if (r.ok) setBump((b) => b + 1) }
+  return (
+    <Section title="Vouch for a member's loan">
+      <ListGroup>
+        {can.map((p) => {
+          const mine = given.find((g) => g.other_user_id === p.user_id)
+          return (
+            <ListRow key={String(p.user_id)} icon="vouch" iconTone={mine ? 'success' : 'neutral'} title={String(p.name)}
+              subtitle={mine ? <span className="inline-flex flex-wrap items-center gap-2">You vouch for her next loan <VerifiedMark url={mine.credit_tx_hash ? `${EXPLORER}/tx/${String(mine.credit_tx_hash)}` : null} pending={!mine.credit_tx_hash} /></span>
+                : p.ok ? 'Her next loan needs less collateral with two vouches' : forScreen(String(p.why ?? ''))}
+              trailing={mine ? <Button variant="plain" size="md" loading={busy} onClick={async () => after(await run('withdraw_vouch', { vouch_id: mine.id }))}>Withdraw</Button>
+                : p.ok ? <Button size="md" loading={busy} onClick={async () => after(await run('prepare_vouch', { name: p.name }))}>Vouch</Button> : undefined} />
+          )
+        })}
+      </ListGroup>
+      {received.length > 0 && <Notice tone="success">{received.map((x) => String(x.other_name)).join(' and ')} vouched for your next loan.</Notice>}
+      {msg && <Notice tone="danger">{msg}</Notice>}
+      <p className="px-1 text-sm text-secondary">Vouching takes your PIN and is recorded on Stellar. No money is ever taken from you. If a loan you vouched for isn't repaid, you can't vouch for 6 months.</p>
+    </Section>
   )
 }
 
@@ -611,6 +646,7 @@ function Offer({ l, busy, run }: { l: ToolResult; busy: boolean; run: Run }) {
         <p className="mt-3 text-lg">You receive <b className="num">{String(o.amount_text)}</b>, cost <b className="num">{String(o.cost_text)}</b>, total <b className="num">{String(o.total_text)}</b>.</p>
         <p className="mt-1 text-sm text-secondary">From {String(l.lender)}. Repay {String(o.repay_pct)}% of every money-in, and at least {String(o.minimum_text)} every two weeks.</p>
       </Card>
+      <VouchNote l={l} />
       <Section title={<Bilingual main={W.whyThisOffer.en} sub={yo('whyThisOffer')} />}>
         <ListGroup>
           {why.map((w) => (
@@ -622,7 +658,7 @@ function Offer({ l, busy, run }: { l: ToolResult; busy: boolean; run: Run }) {
         <ListGroup>
           {a.asset ? <ListRow icon="stock" title={String(a.asset)} subtitle={`Estimated ${String(a.estimated_value_text)} · lending value ${String(a.lending_value_text)}`} /> : null}
           <ListRow icon="wallet" title={`You can afford ${String(a.affordable_text)}`} subtitle="From 10% of what usually comes in, plus the two-weekly minimums" />
-          <ListRow icon="shield" title={`Offer ${String(o.amount_text)}: the lower one wins`} subtitle={`Collateral needed now: ${String(o.collateral_pct)}% (${String(a.collateral_needed_text)})`} />
+          <ListRow icon="shield" title={`Offer ${String(o.amount_text)}: the lower one wins`} subtitle={`Collateral needed now: ${String(o.collateral_pct)}% (${String(a.collateral_needed_text)})${(l.vouch as Row | undefined)?.applied ? ` instead of ${String((l.vouch as Row).collateral_pct_without)}%, thanks to your vouches` : ''}`} />
         </ListGroup>
       </Section>
       <Ladder l={l} />
@@ -630,6 +666,19 @@ function Offer({ l, busy, run }: { l: ToolResult; busy: boolean; run: Run }) {
         {W.acceptLoan.en}
       </Button>
     </>
+  )
+}
+
+/** On the offer: who vouched, and why that lowers the collateral (or how many more would). */
+function VouchNote({ l }: { l: ToolResult }) {
+  const v = l.vouch as Row | undefined
+  if (!v || !Number(v.count)) return null
+  return (
+    <Notice tone={v.applied ? 'success' : undefined}>
+      <span className="font-medium">{((v.names ?? []) as string[]).join(' and ')} vouched for you.</span>{' '}
+      {v.applied ? `Two ajo members in good standing back this loan, so it needs ${String(v.collateral_pct)}% collateral instead of ${String(v.collateral_pct_without)}%.`
+        : `One more vouch from an ajo member in good standing would lower the collateral this loan needs (now ${String(v.collateral_pct_without)}%).`}
+    </Notice>
   )
 }
 
@@ -657,6 +706,7 @@ function Repaying({ l, busy, run }: { l: ToolResult; busy: boolean; run: Run }) 
       </div>
       <ListGroup>
         <ListRow icon="loan" title={`You received ${String(v.principal_text)}`} subtitle={`Cost ${String(v.cost_text)} · total ${String(v.total_text)}`} />
+        {((v.vouched_by ?? []) as string[]).length > 0 && <ListRow icon="vouch" title={`Vouched for by ${((v.vouched_by ?? []) as string[]).join(' and ')}`} subtitle="Ajo members; recorded on this loan on Stellar" />}
       </ListGroup>
       {/* The agreement and every repayment are on plus_credit: any lender can read them from Stellar. */}
       <div className="px-1"><VerifiedMark url={v.credit_tx_hash ? `${EXPLORER}/tx/${String(v.credit_tx_hash)}` : null} pending={!v.credit_tx_hash} /></div>

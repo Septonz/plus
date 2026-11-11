@@ -114,6 +114,7 @@ function Summary({ r }: { r: Result }) {
   const cancelled = rec.loans.length - counted.length
   const open = rec.loans.find((l) => l.status <= 2)
   const verified = rec.assets.filter((a) => a.level > 0 && a.status === 0)
+  const vouchedLoans = counted.filter((l) => l.vouchers.length > 0)
 
   return (
     <div className="space-y-6">
@@ -135,7 +136,9 @@ function Summary({ r }: { r: Result }) {
           <Line label="Now" value={open ? LOAN_STATUS[open.status] : 'No open loan'}
             sub={open ? `${naira(open.repaid)} repaid of ${naira(open.total)} (borrowed ${naira(open.principal)}, cost ${naira(open.cost)})${open.collateral ? `; secured by a verified asset (${open.collateral_pct}%)` : ''}${open.vouchers.length ? `; ${open.vouchers.length} ajo member${open.vouchers.length === 1 ? '' : 's'} vouched` : ''}` : undefined}
             href={credit} />
-          {rec.vouches.length > 0 && <Line label="Vouches for her next loan" value={rec.vouches.length} sub="Ajo members in good standing" href={credit} />}
+          {vouchedLoans.length > 0 && <Line label="Backed by ajo vouches" value={`${vouchedLoans.length} loan${vouchedLoans.length === 1 ? '' : 's'}`}
+            sub={`${vouchedLoans.reduce((n, l) => n + l.vouchers.length, 0)} vouches from ajo members in good standing (verified ID, 6+ weeks, every ajo payment on time). Each voucher is a 32-byte reference.`} href={credit} />}
+          {rec.vouches.length > 0 && <Line label="Vouches for her next loan" value={rec.vouches.length} sub={`Ajo members in good standing${rec.vouches.length >= 2 ? '; with two or more, a first loan needs 100% collateral instead of 150%' : ''}`} href={credit} />}
         </ListGroup>
       </Section>
 

@@ -2,7 +2,7 @@
 // ('pay', 'advance'); this is the only place that maps a meaning to a glyph.
 import {
   Activity, ArrowDownLeft, ArrowUpRight, Banknote, BadgeCheck, Camera, Check, ChevronLeft, ChevronRight, CircleAlert,
-  CircleUser, Clock, Copy, Delete, ExternalLink, Flower2, Globe, HandCoins, House, IdCard, Info, Landmark, Lock, LogOut,
+  CircleUser, Clock, Copy, Delete, ExternalLink, Flower2, Globe, HandCoins, Handshake, House, IdCard, Info, Landmark, Lock, LogOut,
   MessageSquare, Mic, Package, PiggyBank, Plus, QrCode, ReceiptText, RotateCw, ScanFace, Search, Settings, ShieldCheck,
   Smartphone, Sparkles, Square, Star, Stethoscope, TrendingUp, TriangleAlert, User, UserPlus, Users, Wallet, X,
   type LucideIcon,
@@ -15,6 +15,7 @@ const ICONS: Record<string, LucideIcon> = {
   pay: ArrowUpRight,
   in: ArrowDownLeft,
   group: Users,
+  vouch: Handshake,
   advance: HandCoins,
   loan: HandCoins,
   clock: Clock,
