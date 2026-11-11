@@ -2,6 +2,7 @@
 // from the balance cache and the agent-tools read tools (the same tools the voice agent uses).
 // Each screen has a loading state (skeletons), an empty state and an error state with a retry.
 // Home is a stack of passes (Wallet, Ajo, Loan); a pass opens full-screen (NgApp's CardDetail).
+import { formatTime } from '../lib/time'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { getMarket } from '@plus/markets'
 import {
@@ -13,6 +14,7 @@ import type { PendingAction, PlusData } from '../plus/data'
 import { useSays } from '../plus/screen'
 import { CopyButton, ErrorState, LoadingList, TextField } from '../plus/ui'
 import { WitnessRequests } from './assets'
+import { StellarDetails } from './shop'
 import { CodeBox } from './confirm'
 import { useTool, type Go, type Wallet } from './NgApp'
 import { forScreen, naira, W, when, yo } from './words'
@@ -50,10 +52,11 @@ function Waiting({ data, onAnswer }: { data: PlusData; onAnswer: (a: PendingActi
 
 // ---------------------------------------------------------------------------- Home
 
-export type Detail = 'wallet' | 'group' | 'loan' | 'assets' | 'add_cash' | 'cash_out'
+export type Detail = 'wallet' | 'savings' | 'group' | 'loan' | 'assets' | 'add_cash' | 'cash_out' | 'receive' | 'scan'
 
 export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Props & { onAnswer: (a: PendingAction) => void; open: Detail | null; onOpen: (d: Detail) => void }) {
   const ajo = useTool('group_status', version)
+  const sav = useTool('savings_status', version)
   const loan = useTool('loan_status', version)
   const assets = useTool('my_assets', version)
   const owned = ((assets?.assets ?? []) as Row[]).filter((a) => a.status !== 'released')
@@ -68,11 +71,12 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
   useSays(
     `Home. Wallet: ${wallet ? naira(wallet.NGNT) : 'loading'}${sending ? `, ${sending} sending` : ''}. ` +
       (ajo ? (ajo.in_group ? `Ajo ${String(ajo.name)}: ${paid} of ${members.length} paid this round; her part ${ajo.paid_this_period ? 'is paid' : ajo.on_its_way ? 'is sending' : `is not paid (${String(ajo.amount_text)})`}. ` : 'Not in an ajo. ') : '') +
+      (sav?.has_goal ? `Savings: ${String(sav.saved_text)} of ${String(sav.goal_text)} for ${String(sav.goal_name)}. ` : '') +
       (loan?.ok ? `Loan: ${loanLine(loan)}. ` : '') +
       (cashIns.length ? `Waiting for her answer: ${cashIns.map((a) => a.readback).join('; ')}. ` : '') +
       (latest.length ? `Latest: ${latest.slice(0, 3).map((t) => `${String(t.label)} ${t.outgoing ? '-' : '+'}${String(t.amount_text)}`).join(', ')}. ` : '') +
       (assets?.ok ? `Assets: ${owned.length} registered, ${verified} verified. ` : '') +
-      'Cards: Wallet, Ajo, Loan, Assets. Tabs: Home, Pay, Activity, Profile.',
+      'Cards: Wallet, Savings, Ajo, Loan, Assets. Tabs: Home, Pay, Activity, Profile.',
   )
 
   return (
@@ -101,6 +105,17 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
           note={sending > 0 ? `${sending} sending…` : 'Add money · Cash out'}
         >
           {wallet ? <AmountDisplay text={naira(wallet.NGNT)} size="lg" /> : <Skeleton className="h-12 w-48 opacity-30" />}
+        </Pass>
+        <Pass
+          id="savings"
+          icon="savings"
+          title={W.savings.en}
+          sub={sav ? (sav.has_goal ? `${W.goal.en}: ${String(sav.goal_name)} ${String(sav.goal_text)}` : 'Set a goal') : ' '}
+          value={sav?.has_goal ? String(sav.saved_text) : undefined}
+          hidden={open === 'savings'}
+          onOpen={() => onOpen('savings')}
+        >
+          {sav?.has_goal ? <Progress pct={savedPct(sav)} label={`${String(sav.left_text)} to go`} /> : null}
         </Pass>
         <Pass
           id="group"
@@ -159,7 +174,7 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
 export function WalletDetail({ wallet, version, onOpen }: { wallet: Wallet | null; version: number; onOpen: (d: Detail) => void }) {
   const rec = useTool('my_record', version)
   const recent = ((rec?.recent ?? []) as Row[]).filter((t) => t.kind !== 'adjustment').slice(0, 10)
-  useSays(`Wallet: ${wallet ? naira(wallet.NGNT) : 'loading'} available. Buttons: Add money, Cash out. Below: her recent activity, each with its Verified on Stellar tick.`)
+  useSays(`Wallet: ${wallet ? naira(wallet.NGNT) : 'loading'} available. Buttons: Add (money in), Cash out. Below: her recent activity, each with its Verified on Stellar tick.`)
   return (
     <>
       <div className="rounded-card p-6 text-white shadow-lift" style={{ background: 'var(--wallet)' }}>
@@ -167,8 +182,8 @@ export function WalletDetail({ wallet, version, onOpen }: { wallet: Wallet | nul
         <p className="mt-3 text-sm text-white/75">Naira in your Plus wallet. Only you can spend it.</p>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Button variant="secondary" onClick={() => onOpen('add_cash')}><Icon name="add" /> {W.addMoney.en}</Button>
-        <Button variant="secondary" onClick={() => onOpen('cash_out')}><Icon name="cash" /> {W.cashOut.en}</Button>
+        <Button variant="secondary" className="whitespace-nowrap" onClick={() => onOpen('add_cash')}><Icon name="add" /> {W.add.en}</Button>
+        <Button variant="secondary" className="whitespace-nowrap" onClick={() => onOpen('cash_out')}><Icon name="cash" /> {W.cashOut.en}</Button>
       </div>
       <Section title="Recent activity">
         <Loaded r={rec} rows={4}>
@@ -310,7 +325,7 @@ const localPhone = (e164: string | null | undefined) =>
   e164 && e164.startsWith('+234') ? `0${e164.slice(4, 7)} ${e164.slice(7, 10)} ${e164.slice(10)}` : e164 ?? ''
 
 /** Pay: a saved person, or anyone by phone number (on Plus: wallet to wallet; not on Plus: a cash code). */
-export function Pay({ data }: Props) {
+export function Pay({ data, onShop }: Props & { onShop?: (d: 'scan' | 'receive') => void }) {
   const payees = data.payees
   const [tab, setTab] = useState<'saved' | 'phone' | 'bank'>(payees.length > 0 ? 'saved' : 'phone')
   const [who, setWho] = useState<string | null>(null)
@@ -340,6 +355,12 @@ export function Pay({ data }: Props) {
   }
   return (
     <div className="space-y-6">
+      {onShop && (
+        <div className="grid grid-cols-2 gap-3">
+          <Button variant="secondary" className="whitespace-nowrap" onClick={() => onShop('scan')}><Icon name="code" /> Scan</Button>
+          <Button variant="secondary" className="whitespace-nowrap" onClick={() => onShop('receive')}><Icon name="in" /> My code</Button>
+        </div>
+      )}
       <Segmented label="Pay" value={tab} onChange={(t) => { setTab(t); setAmount('') }}
         options={[['saved', W.savedPeople.en], ['phone', 'By phone'], ['bank', W.toBank.en]]} />
 
@@ -480,6 +501,13 @@ export function Ajo({ version }: Props) {
 function AjoBody({ g, busy, msg, pay }: { g: ToolResult; busy: boolean; msg: string | null; pay: () => void }) {
   const members = (g.members ?? []) as Row[]
   const paid = members.filter((m) => m.paid_this_round).length
+  const n = members.length
+  const me = members.find((m) => m.is_me)
+  const days = Number(g.period_days)
+  // Her turn: rounds from now (0 = this round), on the date that round pays out.
+  const ahead = me && n ? (Number(me.position) - Number(g.turn) + n) % n : null
+  const herDay = ahead === null ? null : new Date(new Date(String(g.next_due)).getTime() + ahead * days * 86_400_000)
+  const pot = BigInt(String(g.amount_minor ?? 0)) * BigInt(n)
   return (
     <>
       <Card className="space-y-4">
@@ -493,9 +521,15 @@ function AjoBody({ g, busy, msg, pay }: { g: ToolResult; busy: boolean; msg: str
             <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${members.length ? (paid / members.length) * 100 : 0}%` }} />
           </div>
         </div>
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div><dt className="text-sm text-secondary">Contribution</dt><dd className="num text-lg font-medium">{String(g.amount_text)} / {days === 1 ? 'day' : `${days} days`}</dd></div>
+          <div><dt className="text-sm text-secondary">{W.members.en}</dt><dd className="num text-lg font-medium">{n}</dd></div>
+          <div><dt className="text-sm text-secondary">Payout</dt><dd className="num text-lg font-medium">{naira(pot)}</dd></div>
+          <div><dt className="text-sm text-secondary">Your turn</dt><dd className="text-lg font-medium">{ahead === null ? '—' : ahead === 0 ? 'This round' : `${herDay!.toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' })}`}</dd></div>
+        </dl>
         <p className="text-base">
           This round's pot goes to <b className="font-semibold">{members.find((m) => m.is_turn)?.is_me ? 'you' : String(g.turn_name)}</b> on{' '}
-          {new Date(String(g.next_due)).toLocaleString('en-NG', { weekday: 'long', hour: 'numeric', minute: '2-digit' })}.
+          {formatTime(String(g.next_due), { weekday: 'long' })}.
         </p>
         {!g.paid_this_period && !g.on_its_way && (
           <Button className="w-full" loading={busy} onClick={pay}>
@@ -526,7 +560,7 @@ function AjoBody({ g, busy, msg, pay }: { g: ToolResult; busy: boolean; msg: str
 
 // ---------------------------------------------------------------------------- Vouches (piece 10)
 
-/** Vouch for an ajo member's next loan (her PIN), see who vouched for her, withdraw a waiting one. */
+/** Vouch for an ajo member's next loan (their PIN), see who vouched for them, withdraw a waiting one. */
 function Vouches() {
   const [bump, setBump] = useState(0)
   const v = useTool('my_vouches', bump)
@@ -544,8 +578,8 @@ function Vouches() {
           const mine = given.find((g) => g.other_user_id === p.user_id)
           return (
             <ListRow key={String(p.user_id)} icon="vouch" iconTone={mine ? 'success' : 'neutral'} title={String(p.name)}
-              subtitle={mine ? <span className="inline-flex flex-wrap items-center gap-2">You vouch for her next loan <VerifiedMark url={mine.credit_tx_hash ? `${EXPLORER}/tx/${String(mine.credit_tx_hash)}` : null} pending={!mine.credit_tx_hash} /></span>
-                : p.ok ? 'Her next loan needs less collateral with two vouches' : forScreen(String(p.why ?? ''))}
+              subtitle={mine ? <span className="inline-flex flex-wrap items-center gap-2">You vouch for their next loan <VerifiedMark url={mine.credit_tx_hash ? `${EXPLORER}/tx/${String(mine.credit_tx_hash)}` : null} pending={!mine.credit_tx_hash} /></span>
+                : p.ok ? 'Their next loan needs less collateral with two vouches' : forScreen(String(p.why ?? ''))}
               trailing={mine ? <Button variant="plain" size="md" loading={busy} onClick={async () => after(await run('withdraw_vouch', { vouch_id: mine.id }))}>Withdraw</Button>
                 : p.ok ? <Button size="md" loading={busy} onClick={async () => after(await run('prepare_vouch', { name: p.name }))}>Vouch</Button> : undefined} />
           )
@@ -643,9 +677,13 @@ function Offer({ l, busy, run }: { l: ToolResult; busy: boolean; run: Run }) {
     <>
       <Card>
         <AmountDisplay text={String(o.amount_text)} size="lg" label={<Bilingual main={W.youReceive.en} sub={yo('youReceive')} />} />
-        <p className="mt-3 text-lg">You receive <b className="num">{String(o.amount_text)}</b>, cost <b className="num">{String(o.cost_text)}</b>, total <b className="num">{String(o.total_text)}</b>.</p>
-        <p className="mt-1 text-sm text-secondary">From {String(l.lender)}. Repay {String(o.repay_pct)}% of every money-in, and at least {String(o.minimum_text)} every two weeks.</p>
+        <dl className="mt-4 divide-y divide-hairline text-lg">
+          <div className="flex justify-between py-2"><dt className="text-secondary">Cost</dt><dd className="num font-medium">{String(o.cost_text)}</dd></div>
+          <div className="flex justify-between py-2"><dt className="font-medium">Total to repay</dt><dd className="num font-semibold">{String(o.total_text)}</dd></div>
+        </dl>
+        <p className="mt-2 text-sm text-secondary">From {String(l.lender)}. Repay {String(o.repay_pct)}% of every money-in, and at least {String(o.minimum_text)} every two weeks.</p>
       </Card>
+      <RepayExample pct={Number(o.repay_pct)} />
       <VouchNote l={l} />
       <Section title={<Bilingual main={W.whyThisOffer.en} sub={yo('whyThisOffer')} />}>
         <ListGroup>
@@ -666,6 +704,16 @@ function Offer({ l, busy, run }: { l: ToolResult; busy: boolean; run: Run }) {
         {W.acceptLoan.en}
       </Button>
     </>
+  )
+}
+
+/** How repaying feels: a sale, and the loan's share of it, automatically. */
+function RepayExample({ pct }: { pct: number }) {
+  const sale = 10_000n * 100n
+  return (
+    <Notice tone="info">
+      Sell <b className="num">{naira(sale)}</b> → <b className="num">{naira((sale * BigInt(Math.round(pct * 100))) / 10_000n)}</b> goes to the loan automatically.
+    </Notice>
   )
 }
 
@@ -696,6 +744,7 @@ function Repaying({ l, busy, run }: { l: ToolResult; busy: boolean; run: Run }) 
         </p>
         {v.grace_until ? <p className="mt-1 text-sm text-secondary">You have a few days' grace. No extra cost.</p> : null}
       </Card>
+      <RepayExample pct={Number(v.repay_pct)} />
       {v.status === 'late' && <Notice tone="warning">A payment is late. You can ask for smaller payments below. Borrowing more waits until this is repaid.</Notice>}
       {v.borrowing_paused ? <Notice>New borrowing is paused until this loan is repaid.</Notice> : null}
       <div className="grid gap-3">
@@ -732,6 +781,90 @@ export function Loan({ version }: Props) {
       <Notice><Bilingual main={W.nobodyElse.en} sub={yo('nobodyElse')} /></Notice>
       <p className="px-1 text-sm text-secondary">Loans come from a partner lender (simulated). The money moves on Stellar Testnet.</p>
     </>
+  )
+}
+
+// ---------------------------------------------------------------------------- Savings (piece 11)
+
+const kobo = (text: unknown) => BigInt(String(text ?? '').replace(/[^0-9]/g, '') || '0')
+function savedPct(s: ToolResult): number {
+  const goal = kobo(s.goal_text)
+  return goal > 0n ? Math.min(100, Number((kobo(s.saved_text) * 100n) / goal)) : 0
+}
+
+/** Her savings goal: a pot on the plus contract that pays back only to her. */
+export function Savings({ data, version }: Props) {
+  const s = useTool('savings_status', version)
+  const rec = useTool('my_record', version)
+  const [mode, setMode] = useState<'add' | 'out'>('add')
+  const [amount, setAmount] = useState('')
+  const [goalName, setGoalName] = useState('')
+  const [goalAmount, setGoalAmount] = useState('')
+  const { busy, msg, run } = useSubmit()
+  const [autoBusy, setAutoBusy] = useState(false)
+  const moves = ((rec?.recent ?? []) as Row[]).filter((t) => t.kind === 'saved' || t.kind === 'savings_out').slice(0, 5)
+  const auto = Number(s?.auto_save_pct ?? (data.me?.auto_save_bps ?? 0) / 100)
+  useSays(s ? `Savings. ${forScreen(String(s.text))}` +
+    (s.has_goal ? ` Buttons: ${W.addToSavings.en}, ${W.takeOut.en}. Auto-save choices: 0, 5, 10, 20 percent.` : ` Fields: what she is saving for, the goal amount; button ${W.setGoal.en}.`) : 'Savings, loading.')
+  const setAuto = async (pct: number) => {
+    setAutoBusy(true)
+    await tool('set_auto_save', { percent: pct }).catch(() => null)
+    setAutoBusy(false)
+    void data.refresh()
+  }
+  return (
+    <Loaded r={s} rows={3}>
+      {(s) => !s.has_goal ? (
+        <Card className="space-y-4">
+          <p className="text-lg">What are you saving for?</p>
+          <TextField label="Your goal" value={goalName} onChange={setGoalName} placeholder="New stall shade" />
+          <TextField label="How much (₦)" value={goalAmount} onChange={(v) => setGoalAmount(v.replace(/[^0-9]/g, '').slice(0, 7))} inputMode="numeric" placeholder="50000" />
+          {msg && <Notice tone="danger">{msg}</Notice>}
+          <Button className="w-full" loading={busy} disabled={!goalName.trim() || !goalAmount} onClick={async () => {
+            const r = await run('set_savings_goal', { name: goalName.trim(), amount: goalAmount })
+            if (r.ok) void data.refresh()
+          }}>{W.setGoal.en}</Button>
+        </Card>
+      ) : (
+        <>
+          <Card className="space-y-4">
+            <div>
+              <p className="text-base text-secondary">{W.goal.en}: {String(s.goal_name)}</p>
+              <AmountDisplay text={String(s.saved_text)} size="lg" />
+              <p className="text-base text-secondary">of {String(s.goal_text)}</p>
+            </div>
+            <Progress pct={savedPct(s)} label={`${String(s.left_text)} to go`} />
+            <p className="flex items-center gap-2 text-sm text-secondary"><Icon name="lock" /> <Bilingual main={W.onlyYou.en} sub={yo('onlyYou')} /></p>
+          </Card>
+          {s.ready ? (
+            <Card className="space-y-4">
+              <Segmented<'add' | 'out'> label="Add or take out" value={mode} onChange={(m) => { setMode(m); setAmount('') }}
+                options={[['add', W.addToSavings.en], ['out', W.takeOut.en]]} />
+              <AmountEntry value={amount} onChange={setAmount} max={6} />
+              {mode === 'out' && <p className="text-sm text-secondary">Above {naira(BigInt(NG.pinThreshold) * 100n)} you type your PIN.</p>}
+              {msg && <Notice tone="danger">{msg}</Notice>}
+              <Button className="w-full" loading={busy} disabled={!amount} onClick={async () => {
+                const r = await run(mode === 'add' ? 'prepare_save' : 'prepare_withdraw_savings', { amount })
+                if (r.ok) setAmount('')
+              }}>{W.next.en}</Button>
+            </Card>
+          ) : (
+            <Notice>Your savings pot is being set up on Stellar. A few seconds.</Notice>
+          )}
+          <Section title={W.autoSave.en}>
+            <Card className="space-y-3">
+              <Segmented<string> label={W.autoSave.en} value={String(auto)} onChange={(v) => void setAuto(Number(v))}
+                options={[0, 5, 10, 20].map((p) => [String(p), p === 0 ? 'Off' : `${p}%`] as [string, string])} />
+              <p className="text-sm text-secondary">{autoBusy ? 'Saving…' : <Bilingual main={W.autoSaveHow.en} sub={yo('autoSaveHow')} />}</p>
+            </Card>
+          </Section>
+          <Section title={W.latest.en}>
+            {moves.length > 0 ? <ListGroup>{moves.map((t) => <TxRow key={String(t.id)} t={t} />)}</ListGroup>
+              : <EmptyState icon="savings" title="Nothing saved yet">What you save shows here, each one on Stellar.</EmptyState>}
+          </Section>
+        </>
+      )}
+    </Loaded>
   )
 }
 
@@ -788,7 +921,7 @@ export function CashOut({ version, shownCode, onShowCode }: Props & { shownCode:
 // ---------------------------------------------------------------------------- Activity
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
-const KIND_ICON: Record<string, string> = { incoming: 'in', pay: 'pay', group_contribution: 'group', advance: 'advance', repay: 'advance', loan: 'loan', loan_repay: 'loan', cash_out: 'cash' }
+const KIND_ICON: Record<string, string> = { incoming: 'in', pay: 'pay', group_contribution: 'group', advance: 'advance', repay: 'advance', loan: 'loan', loan_repay: 'loan', cash_out: 'cash', saved: 'savings', savings_out: 'savings' }
 
 /** One transaction with its "Verified on Stellar" tick, which links to the transaction. */
 function TxRow({ t }: { t: Row }) {
@@ -858,8 +991,8 @@ function ShareRecord({ version }: { version: number }) {
             const [label, tone] = SHARE_STATUS[String(s.status)] ?? ['', '']
             const live = s.status === 'active' || s.status === 'used'
             return (
-              <ListRow key={String(s.id)} icon="shield" title={new Date(String(s.created_at)).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
-                subtitle={<span className={tone}>{label}{Number(s.views) > 0 ? ` · ${String(s.views)} view${Number(s.views) === 1 ? '' : 's'}` : ''}{live ? ` · until ${new Date(String(s.expires_at)).toLocaleString('en-NG', { hour: 'numeric', minute: '2-digit' })}` : ''}</span>}
+              <ListRow key={String(s.id)} icon="shield" title={formatTime(String(s.created_at), { date: true })}
+                subtitle={<span className={tone}>{label}{Number(s.views) > 0 ? ` · ${String(s.views)} view${Number(s.views) === 1 ? '' : 's'}` : ''}{live ? ` · until ${formatTime(String(s.expires_at))}` : ''}</span>}
                 trailing={live ? <Button variant="plain" size="md" onClick={async () => { await run('revoke_record_share', { share_id: s.id }); setBump((b) => b + 1) }}>Revoke</Button> : undefined} />
             )
           })}
@@ -888,7 +1021,7 @@ export function Record({ version }: Props) {
                 ))}
               </dl>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-hairline pt-3">
-                <p className="text-sm text-secondary">{String(r.confirmed_on_stellar)} records, each checkable. Your name is never on it.</p>
+                <p className="text-sm text-secondary">{String(r.confirmed_on_stellar)} transactions on Stellar since your wallet opened, each checkable. Your name is never on it.</p>
                 {typeof r.account_url === 'string' && <VerifiedMark url={r.account_url} />}
               </div>
             </Card>
@@ -910,13 +1043,17 @@ export function Record({ version }: Props) {
 export function Settings({ data, version, onSignOut }: Props & { onSignOut: () => void }) {
   const me = useTool('get_user', version)
   const [pin, setPin] = useState('')
+  const [pinOpen, setPinOpen] = useState(false)
   const { busy, msg, run } = useSubmit()
   const [saved, setSaved] = useState(false)
+  const [lang, setLang] = useState<string | null>(null)
   const limits = (me?.limits ?? null) as { tier: number; daily_text: string; balance_text: string; advances: boolean } | null
   const name = data.me?.name ?? ''
+  const language = lang ?? String(me?.language ?? data.me?.language ?? 'en')
   useSays(
     `Profile: ${name}${limits ? `, level ${limits.tier}. Limits: send ${limits.daily_text} a day, hold up to ${limits.balance_text}` : ''}. ` +
-      'A PIN pad to set her PIN: she types it herself, never out loud. A Sign out button.',
+      `${me?.virtual_account ? `Her account number for bank transfers: ${String(me.virtual_account)}, with a Copy button. ` : ''}` +
+      `Language: ${LANGS.find(([c]) => c === language)?.[1] ?? 'English'} (English, Pidgin or Yoruba). Rows: Stellar details, Change PIN (she types it herself, never out loud). A Sign out button.`,
   )
   return (
     <div className="space-y-6">
@@ -928,21 +1065,47 @@ export function Settings({ data, version, onSignOut }: Props & { onSignOut: () =
         </div>
       </div>
       <Loaded r={me} rows={2}>
-        {() => limits && (
-          <Section title="Limits">
-            <ListGroup>
-              <ListRow icon="pay" title="Send per day" trailing={<span className="num font-medium">{limits.daily_text}</span>} />
-              <ListRow icon="wallet" title="Hold up to" trailing={<span className="num font-medium">{limits.balance_text}</span>} />
-              {me?.virtual_account ? <ListRow icon="bank" title="Bank transfers in" subtitle={String(me.bank_label)} trailing={<span className="num font-mono text-base">{String(me.virtual_account)}</span>} /> : null}
-            </ListGroup>
-          </Section>
+        {() => (
+          <>
+            {me?.virtual_account ? (
+              <Section title="Your account number (for bank transfers)">
+                <Card className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="num font-mono text-2xl tracking-wider">{String(me.virtual_account)}</p>
+                    <p className="text-sm text-secondary">{String(me.bank_label)}</p>
+                  </div>
+                  <CopyButton text={String(me.virtual_account)} label="Copy" />
+                </Card>
+              </Section>
+            ) : null}
+            {limits && (
+              <Section title="Limits">
+                <ListGroup>
+                  <ListRow icon="pay" title="Send per day" trailing={<span className="num font-medium">{limits.daily_text}</span>} />
+                  <ListRow icon="wallet" title="Hold up to" trailing={<span className="num font-medium">{limits.balance_text}</span>} />
+                </ListGroup>
+              </Section>
+            )}
+          </>
         )}
       </Loaded>
-      <Section title="PIN">
+      <Section title={<Bilingual main="Language" sub={yo('stepLanguage')} />}>
+        <Segmented label="Language" value={language} onChange={async (l) => {
+          setLang(l)
+          const r = await run('set_profile', { language: l })
+          if (r.ok) void data.refresh()
+        }} options={LANGS} />
+      </Section>
+      <Loaded r={me} rows={1}>
+        {() => <StellarDetails pub={(me?.stellar_pub as string | null) ?? null} />}
+      </Loaded>
+      <ListGroup>
+        <ListRow icon="lock" title="Change PIN" subtitle={pinOpen ? undefined : `Above ${naira(BigInt(NG.pinThreshold) * 100n)} you type it to say yes`} chevron onClick={() => { setPinOpen((o) => !o); setSaved(false) }} />
+      </ListGroup>
+      {pinOpen && (
         <Card className="space-y-3">
           <p className="text-sm text-secondary">Up to {naira(BigInt(NG.pinThreshold) * 100n)} you can just say yes. Above that, type your PIN here on the screen. Never say it out loud.</p>
           <PinPad value={pin} onChange={setPin} />
-          {msg && <Notice tone="danger">{msg}</Notice>}
           {saved && <Notice tone="success">PIN saved.</Notice>}
           <Button className="w-full" loading={busy} disabled={pin.length < 4} onClick={async () => {
             const r = await run('set_pin', { pin })
@@ -950,10 +1113,12 @@ export function Settings({ data, version, onSignOut }: Props & { onSignOut: () =
             setSaved(Boolean(r.ok))
           }}>Save PIN</Button>
         </Card>
-      </Section>
+      )}
+      {msg && <Notice tone="danger">{msg}</Notice>}
       <Button variant="destructive" className="w-full" onClick={onSignOut}><Icon name="signOut" /> {W.signOut.en}</Button>
       <p className="text-center text-sm text-secondary">Demo · test money only</p>
     </div>
   )
 }
 
+const LANGS: [string, string][] = [['en', 'English'], ['pcm', 'Pidgin'], ['yo', 'Yorùbá']]

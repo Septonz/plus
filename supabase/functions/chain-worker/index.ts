@@ -42,7 +42,7 @@ const CREDIT_CONTRACT_ID = Deno.env.get("PLUS_CREDIT_CONTRACT_ID") ?? "";
 const MAX_ATTEMPTS = 8;
 const RUN_BUDGET_MS = 120_000; // stay inside the Edge Function wall-clock limit
 const TX_TIMEOUT_SECS = 60;
-const POLL_MS = 1000;
+const POLL_MS = 400; // piece 11: the tick shows within ~0.4 s of the ledger closing
 const POLL_TIMEOUT_MS = 45_000;
 const LEASE_SECS = 60; // extended after every row; a killed run blocks its account for at most this long
 const FEE = "1000"; // stroops; testnet
@@ -100,7 +100,7 @@ async function horizonGet(hash: string): Promise<HorizonTx> {
   return { status: t.successful ? "SUCCESS" : "FAILED" };
 }
 
-/** Async submit + poll every second. Same rules as the RPC helper: never resend before a lookup. */
+/** Async submit + poll every POLL_MS. Same rules as the RPC helper: never resend before a lookup. */
 async function horizonSubmit(tx: { toXDR(): string; hash(): Uint8Array }): Promise<HorizonTx> {
   const hash = txHashHex(tx);
   const xdrB64 = tx.toXDR();
@@ -160,8 +160,23 @@ async function update(id: number, patch: Record<string, unknown>) {
 
 const backoffMs = (attempts: number) => Math.min(30 * 60_000, 15_000 * 2 ** Math.max(0, attempts - 1));
 
-async function markDone(row: OutboxRow, hash: string) {
-  await update(row.id, { status: "done", tx_hash: hash, done_at: new Date().toISOString(), last_error: null });
+/** A contract call's return value (e.g. pot_create's pot id), kept when it is a plain scalar. */
+function returned(res: unknown): { returned: string | number | boolean } | null {
+  const rv = (res as { returnValue?: unknown })?.returnValue;
+  if (!rv) return null;
+  try {
+    const v = StellarSdk.scValToNative(rv as Parameters<typeof StellarSdk.scValToNative>[0]);
+    if (typeof v === "number" || typeof v === "boolean" || typeof v === "string") return { returned: v };
+    if (typeof v === "bigint") return { returned: v.toString() };
+  } catch { /* not decodable: nothing to keep */ }
+  return null;
+}
+
+async function markDone(row: OutboxRow, hash: string, extra: Record<string, unknown> | null = null) {
+  await update(row.id, {
+    status: "done", tx_hash: hash, done_at: new Date().toISOString(), last_error: null,
+    ...(extra ? { result: { ...(row.result as Record<string, unknown> ?? {}), ...extra } } : {}),
+  });
   const txId = row.args.transaction_id ? String(row.args.transaction_id) : null;
   // Paying another Plus user: her incoming row is the same Stellar transaction.
   const peerId = row.args.peer_transaction_id ? String(row.args.peer_transaction_id) : null;
@@ -311,7 +326,7 @@ async function submitRow(kp: InstanceType<typeof Keypair>, seq: { next: bigint |
     }
     if (res.status === "SUCCESS") {
       seq.next = seq.next + 1n;
-      await markDone(row, hash);
+      await markDone(row, hash, row.kind === "contract" ? returned(res) : null);
       stats.done++;
       stats.ms.push(Date.now() - t0);
     } else {

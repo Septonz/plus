@@ -1,0 +1,43 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "set_savings_goal",
+    "description": "Set or rename her savings goal: what she is saving for and how much. The first time, her savings pot is created on Stellar (a few seconds). Moves no money.",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/set_savings_goal",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "name": {
+            "type": "string",
+            "description": "What she is saving for, in a few words (\"new stall shade\")."
+          },
+          "amount": {
+            "type": "number",
+            "description": "The goal in naira, a whole number she said (\"5k\" is 5000). Never guess."
+          }
+        },
+        "required": [
+          "name",
+          "amount"
+        ]
+      }
+    }
+  }
+}

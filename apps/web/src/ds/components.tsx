@@ -1,7 +1,7 @@
 // Plus core components. Every screen (app, agent, helper, onboarding, /demo) is built from these
 // and the tokens in tokens.css. Motion: gentle springs (motion/react); "reduce motion" is honoured
 // globally by <MotionConfig reducedMotion="user"> in main.tsx.
-import { AnimatePresence, motion, useDragControls, type PanInfo } from 'motion/react'
+import { AnimatePresence, motion, useDragControls, useIsPresent, type PanInfo } from 'motion/react'
 import { useEffect, useId, type ReactNode } from 'react'
 import { Icon } from './Icon'
 
@@ -12,8 +12,16 @@ export const softSpring = { type: 'spring', stiffness: 260, damping: 30 } as con
 // ---------------------------------------------------------------------------- text
 
 /** English (or the main language) with an optional second language in a smaller muted line beneath. */
+/** The same words once tone marks and case are set aside ("Ajo" and "Àjọ"): no subtitle needed. */
+export function sameWords(a: ReactNode, b: ReactNode): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false
+  const n = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  return n(a) === n(b)
+}
+
 export function Bilingual({ main, sub, className = '', subClass = '' }: { main: ReactNode; sub?: ReactNode; className?: string; subClass?: string }) {
-  if (!sub) return <span className={className}>{main}</span>
+  // Global rule: a subtitle that only repeats the title (in any sheet header or label) is left out.
+  if (!sub || sameWords(main, sub)) return <span className={className}>{main}</span>
   return (
     <span className={`inline-flex flex-col leading-tight ${className}`}>
       <span>{main}</span>
@@ -110,6 +118,9 @@ export function Pass({
 export function CardDetail({ id, title, sub, onClose, children, fromPass = true }: { id: string; title: ReactNode; sub?: ReactNode; onClose: () => void; children: ReactNode; fromPass?: boolean }) {
   const controls = useDragControls()
   const titleId = useId()
+  // Leaving (another sheet is opening over it, or it is closing): it takes no taps while it animates
+  // out, so a tap meant for the new sheet can't land on a button underneath.
+  const present = useIsPresent()
   useEscape(onClose)
   useLockScroll()
   function end(_: unknown, info: PanInfo) {
@@ -131,6 +142,7 @@ export function CardDetail({ id, title, sub, onClose, children, fromPass = true 
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
+      style={present ? undefined : { pointerEvents: 'none' }}
       className="fixed inset-0 z-50 overflow-hidden rounded-none bg-canvas"
     >
       <div className="h-full overflow-y-auto overscroll-contain">
@@ -146,7 +158,7 @@ export function CardDetail({ id, title, sub, onClose, children, fromPass = true 
             <IconButton icon="x" label="Close" onClick={onClose} />
           </div>
         </header>
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.08 }} className="mx-auto max-w-md space-y-6 px-4 pb-40 pt-5">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.08 }} className="mx-auto max-w-md space-y-6 px-4 pb-28 pt-5">
           {children}
         </motion.div>
       </div>
@@ -162,7 +174,7 @@ export function Sheet({
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true" aria-label={label}>
+        <SheetFrame label={label}>
           <motion.div
             className="absolute inset-0 bg-scrim backdrop-blur-sm"
             initial={{ opacity: 0 }}
@@ -189,9 +201,20 @@ export function Sheet({
             </div>
             <div className="px-5">{children}</div>
           </motion.div>
-        </div>
+        </SheetFrame>
       )}
     </AnimatePresence>
+  )
+}
+
+/** The sheet's full-screen layer; while it animates out it takes no taps (see CardDetail). */
+function SheetFrame({ label, children }: { label: string; children: ReactNode }) {
+  const present = useIsPresent()
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true" aria-label={label}
+      style={present ? undefined : { pointerEvents: 'none' }}>
+      {children}
+    </div>
   )
 }
 
@@ -343,11 +366,18 @@ export function PageHeader({ title, sub, onBack, right }: { title: ReactNode; su
 export type NavItem<K extends string> = { key: K; label: ReactNode; icon: string; aria?: string }
 
 /** Four items with thin icons, on frosted glass. */
-export function BottomNav<K extends string>({ items, active, onSelect }: { items: NavItem<K>[]; active: K | null; onSelect: (k: K) => void }) {
+/**
+ * The tab bar. `center` (the mic) docks in the middle as a raised button, so it can never sit on
+ * top of a keypad or a list: voice is the main way in.
+ */
+export function BottomNav<K extends string>({ items, active, onSelect, center }: { items: NavItem<K>[]; active: K | null; onSelect: (k: K) => void; center?: ReactNode }) {
+  const half = Math.ceil(items.length / 2)
+  const cells: (NavItem<K> | 'center')[] = center ? [...items.slice(0, half), 'center', ...items.slice(half)] : items
   return (
     <nav className="glass fixed inset-x-0 bottom-0 z-40 border-t border-hairline/70 pb-[env(safe-area-inset-bottom)]" aria-label="Main">
-      <ul className="mx-auto grid max-w-md" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0,1fr))` }}>
-        {items.map((it) => {
+      <ul className="mx-auto grid max-w-md" style={{ gridTemplateColumns: `repeat(${cells.length}, minmax(0,1fr))` }}>
+        {cells.map((it) => {
+          if (it === 'center') return <li key="center" className="relative flex justify-center">{center}</li>
           const on = active === it.key
           return (
             <li key={it.key}>

@@ -359,6 +359,42 @@ fn manual_pot_send_and_cancel() {
     assert_eq!(s.plus.try_pot(&pid), Err(Ok(Error::NotFound)));
 }
 
+/// Piece 11: a savings goal is a manual pot she pays herself out of. The contract holds the money
+/// (out of daily spending), only she can take it out, and it goes back to her own wallet.
+#[test]
+fn savings_goal_pot_pays_back_to_herself() {
+    let s = Setup::new();
+    let saver = s.user(100 * U);
+    let goal = 50 * U;
+    let pid = s.plus.pot_create(&saver, &saver, &s.usdc, &goal, &0);
+    s.plus.pot_fund(&saver, &pid, &(18 * U));
+    s.plus.pot_fund(&saver, &pid, &(2 * U));
+    assert_eq!(s.plus.pot(&pid).balance, 20 * U);
+    assert_eq!(s.bal(&saver), 80 * U);
+    assert_eq!(s.bal(&s.plus.address), 20 * U);
+
+    // Taking some out pays her own wallet; never more than is saved.
+    s.plus.pot_send(&saver, &pid, &(5 * U));
+    assert_eq!(s.bal(&saver), 85 * U);
+    assert_eq!(s.plus.pot(&pid).balance, 15 * U);
+    assert_eq!(
+        s.plus.try_pot_send(&saver, &pid, &(16 * U)),
+        Err(Ok(Error::InsufficientBalance))
+    );
+    assert_eq!(s.plus.try_pot_release(&pid), Err(Ok(Error::WrongMode)));
+
+    // Someone else can't move it.
+    let other = s.user(0);
+    assert_eq!(
+        s.plus.try_pot_send(&other, &pid, &U),
+        Err(Ok(Error::NotAuthorized))
+    );
+
+    // Closing the goal gives the rest back to her.
+    s.plus.pot_cancel(&saver, &pid);
+    assert_eq!(s.bal(&saver), 100 * U);
+}
+
 #[test]
 fn request_advance_rules() {
     let s = Setup::new();

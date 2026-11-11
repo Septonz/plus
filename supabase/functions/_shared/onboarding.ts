@@ -100,7 +100,8 @@ export type ObTool = (ctx: ObContext) => Promise<ToolResult>;
 // ---------------------------------------------------------------------------
 
 export const LANGUAGE_NAMES: Record<string, string> = {
-  en: "English / Pidgin",
+  en: "English",
+  pcm: "Pidgin",
   yo: "Yorùbá",
   ha: "Hausa",
   ig: "Igbo",
@@ -258,6 +259,15 @@ async function status(ctx: ObContext, extra: Partial<ToolResult> = {}): Promise<
 
 export const obStatus: ObTool = (ctx) => status(ctx);
 
+/** "Pidgin", "yoruba", "Yorùbá", "pcm" -> the market's language code (or undefined). */
+export function matchLanguage(langs: string[], said: string): string | undefined {
+  const plain = (x: string) => x.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
+  const lang = plain(said);
+  if (!lang) return undefined;
+  return langs.find((l) => l === lang || plain(LANGUAGE_NAMES[l] ?? "") === lang) ??
+    langs.find((l) => plain(LANGUAGE_NAMES[l] ?? "").includes(lang) || (lang === "tamil" && l === "ta"));
+}
+
 export const obSetProfile: ObTool = async (ctx) => {
   const { store, args } = ctx;
   let s = ctx.session;
@@ -271,7 +281,7 @@ export const obSetProfile: ObTool = async (ctx) => {
     const plain = (x: string) => x.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
     const lang = plain(String(args.language));
     const langs = getMarket(s.market_id).languages;
-    const code = langs.find((l) => l === lang || plain(LANGUAGE_NAMES[l] ?? "").includes(lang) || (lang === "pidgin" && l === "en") || (lang === "tamil" && l === "ta"));
+    const code = matchLanguage(langs, String(args.language));
     if (!code) return refuse(`Plus speaks ${langs.map((l) => LANGUAGE_NAMES[l] ?? l).join(", ")}. Ask which one she likes.`, "invalid_language");
     patch.language = code;
   }

@@ -178,7 +178,7 @@ function Signed({ authUserId }: { authUserId: string }) {
 
   return (
     <>
-      <main className="mx-auto max-w-md px-4 pb-44 pt-[max(env(safe-area-inset-top),1.25rem)]">
+      <main className="mx-auto max-w-md px-4 pb-32 pt-[max(env(safe-area-inset-top),1.25rem)]">
         {data.error && data.error !== 'no_plus_account' && <div className="mb-4"><Notice tone="chili">{data.error}</Notice></div>}
         {tab === 'home' && <Home {...props} open={open} onOpen={(d) => openDetail(d)} />}
         {tab === 'pay' && <div className="space-y-5">{head('pay')}<Pay {...props} /></div>}
@@ -197,9 +197,8 @@ function Signed({ authUserId }: { authUserId: string }) {
         )}
       </AnimatePresence>
 
-      <VoiceButton />
-
       <BottomNav<Tab>
+        center={<VoiceButton size="dock" />}
         active={open ? null : tab}
         onSelect={(k) => go(k)}
         items={[

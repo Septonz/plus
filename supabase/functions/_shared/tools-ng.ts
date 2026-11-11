@@ -11,7 +11,7 @@ import { formatMoney, formatSpokenMoney, getMarket } from "./markets.ts";
 import type { ChainAdvance, ContractReader } from "./ng-types.ts";
 import { matchPayee, parseMajorAmount, type Payee } from "./payees.ts";
 import type { PinOutcome } from "./pin.ts";
-import { normalizePhone } from "./onboarding.ts";
+import { LANGUAGE_NAMES, matchLanguage, normalizePhone } from "./onboarding.ts";
 import { accountNumber, banks, lookupAccountName, maskAccount, parseBank, spokenAccount } from "./banks.ts";
 import type { AssetStore } from "./assets.ts";
 import { ASSET_TOOLS } from "./tools-assets.ts";
@@ -59,6 +59,16 @@ export interface CashOut {
   recipient_name?: string | null;
 }
 
+/** Piece 11: her savings goal (a pot on the plus contract that pays back to her). */
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  goal: bigint;
+  onchain_pot_id: number | null;
+  /** What Plus's ledger says she has saved (completed and on-its-way deposits, minus withdrawals). */
+  saved: bigint;
+}
+
 export interface NgStore {
   /** From the wallet_balances cache (never Horizon directly). */
   balances(userId: string): Promise<{ NGNT: bigint; USDC: bigint; updated_at: string | null }>;
@@ -78,7 +88,8 @@ export interface NgStore {
   execute(id: string, userId: string, extra: Record<string, unknown>): Promise<{ action: Action; claimed: boolean }>;
   rejectAction(id: string, userId: string): Promise<Action>;
   awaitingCashIns(userId: string): Promise<CashIn[]>;
-  transactions(userId: string, limit: number): Promise<NgTx[]>;
+  /** Newest first; rows hidden from her history are left out unless includeHidden. */
+  transactions(userId: string, limit: number, includeHidden?: boolean): Promise<NgTx[]>;
   myGroup(userId: string): Promise<NgGroup | null>;
   /** Latest contribution transaction per member address in an on-chain group (contract events). */
   contributionTxs(onchainId: number): Promise<Map<string, string>>;
@@ -87,6 +98,9 @@ export interface NgStore {
   cashOuts(userId: string): Promise<CashOut[]>;
   /** Replace the code of her own issued cash-out (resets wrong attempts). */
   setCashOutCode(userId: string, cashOutId: string, codeHash: string): Promise<boolean>;
+  /** Piece 11: her pay code (made on first use) and the active Plus user with a pay code. */
+  payCode(userId: string): Promise<string>;
+  plusUserByPayCode(code: string): Promise<PlusPeer | null>;
   /** The active Plus user with this phone number, if any. */
   plusUserByPhone(phone: string): Promise<PlusPeer | null>;
   /** Kobo on its way into her wallet (pending incoming rows), for the balance limit. */
@@ -115,6 +129,13 @@ export interface NgStore {
     loans: CreditLoan[];
     events: { kind: string; amount: number | null; note: string | null; created_at: string }[];
   }>;
+  /** Piece 11: her active savings goal, if any. */
+  savingsGoal(userId: string): Promise<SavingsGoal | null>;
+  /** ng_savings_goal_set: set or rename her goal; the first time, her pot is created on Stellar. */
+  setSavingsGoal(userId: string, name: string, goal: bigint, assetSac: string): Promise<{ created: boolean }>;
+  setAutoSave(userId: string, bps: number): Promise<void>;
+  /** Her name and/or language (Profile, or by voice). */
+  updateProfile(userId: string, patch: { name?: string; language?: string }): Promise<void>;
   chain: ContractReader;
 }
 
@@ -147,7 +168,7 @@ const PIN_ON_SCREEN = "Ask her to check her screen and type her PIN there. Never
  * Money moves up to the market's PIN threshold (₦5,000) take a spoken or tapped Yes; above it, the
  * PIN, typed in the app. Accepting a loan always takes the PIN.
  */
-export const NG_PIN_KINDS = ["pay", "pay_code", "group_contribution", "cash_out", "advance", "loan_repay", "bank_send"];
+export const NG_PIN_KINDS = ["pay", "pay_code", "group_contribution", "cash_out", "advance", "loan_repay", "bank_send", "save", "savings_withdraw"];
 export function ngNeedsPin(a: Pick<Action, "kind" | "params">): boolean {
   if (a.kind === "loan" || a.kind === "record_share" || a.kind === "vouch") return true;
   if (!NG_PIN_KINDS.includes(a.kind)) return false;
@@ -217,6 +238,24 @@ export function newShareCode(): string {
   return out.join("");
 }
 
+// ---------------------------------------------------------------------------
+// Pay codes (piece 11): 6 characters from the same alphabet, shown "ABC-DEF" with a QR of a Plus
+// pay link. Not a secret; it only lets people pay her.
+// ---------------------------------------------------------------------------
+
+export const PAY_LINK_BASE = "https://plus-wallet.vercel.app/app/pay/";
+export function newPayCode(): string {
+  return newShareCode().slice(0, 6);
+}
+export const showPayCode = (c: string) => `${c.slice(0, 3)}-${c.slice(3)}`;
+/** A typed or scanned code: "abc-def", "ABC DEF" or a whole pay link -> "ABCDEF" (null if not one). */
+export function parsePayCode(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const tail = input.trim().split(/[/?#]/).filter(Boolean).pop() ?? "";
+  const c = tail.toUpperCase().replace(/[\s-]/g, "").replace(/O/g, "0").replace(/[IL]/g, "1");
+  return /^[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{6}$/.test(c) ? c : null;
+}
+
 /** "ABCD-EFGH": how the code is shown and typed. */
 export const showShareCode = (c: string) => `${c.slice(0, 4)}-${c.slice(4)}`;
 
@@ -274,7 +313,8 @@ async function cachedBalances(store: NgStore, user: User) {
 
 export const ngGetUser: NgTool = async ({ user, store }) => {
   const [cash, pending, hasPin] = await Promise.all([store.awaitingCashIns(user.id), store.pendingActions(user.id), store.hasPin(user.id)]);
-  const parts = [`This is ${user.name ?? "this caller"}. Nigeria. Speak warm, short Nigerian Pidgin English unless she speaks Yoruba. Amounts in naira.`];
+  const speak = user.language === "yo" ? "Yoruba (simple, warm)" : user.language === "pcm" ? "warm, short Nigerian Pidgin" : "simple, warm English (Pidgin if she uses it)";
+  const parts = [`This is ${user.name ?? "this caller"}. Nigeria. She chose ${LANGUAGE_NAMES[user.language] ?? "English"}: speak ${speak}. Amounts in naira.`];
   if (user.kyc_tier < 1) parts.push("Her sign-up is not finished: no money can move yet.");
   for (const c of cash) parts.push(`First, waiting for her answer: ${c.helper_name} says she gave ${say(c.amount)} cash. Ask: is that right?`);
   return {
@@ -289,6 +329,7 @@ export const ngGetUser: NgTool = async ({ user, store }) => {
     group_savings_name: getMarket(M).groupSavings.localName,
     limits: tierSummary(user),
     virtual_account: user.virtual_account ?? null,
+    stellar_pub: user.stellar_pub,
     bank_label: getMarket(M).virtualAccount?.bankLabel ?? null,
     cash_ins_waiting: cash.map((c) => ({ ...c, amount_text: show(c.amount) })),
     pending_actions: pending.map(actionFields),
@@ -364,21 +405,24 @@ const KIND_WORDS: Record<string, string> = {
   loan: "loan received",
   loan_repay: "loan repayment",
   cash_out: "cash out",
+  saved: "saved",
+  savings_out: "from savings",
   adjustment: "demo reset (testnet)",
 };
 
 export const ngMyRecord: NgTool = async ({ user, store, explorer }) => {
-  const txs = await store.transactions(user.id, 500);
+  // Totals and the Stellar count cover everything she did; the list shows her recent history only.
+  const [txs, visible] = await Promise.all([store.transactions(user.id, 500, true), store.transactions(user.id, 40)]);
   let received = 0n, paid = 0n, ajo = 0n, cashedOut = 0n;
   for (const t of txs) {
-    if (t.status !== "completed") continue;
+    if (t.status !== "completed" || t.kind === "adjustment") continue;
     const a = BigInt(t.amount);
     if (t.kind === "incoming") received += a;
     else if (t.kind === "pay") paid += -a;
     else if (t.kind === "group_contribution") ajo += -a;
     else if (t.kind === "cash_out") cashedOut += -a;
   }
-  const onChain = txs.filter((t) => t.chain_tx_hash);
+  const onChain = txs.filter((t) => t.chain_tx_hash && t.kind !== "adjustment");
   const waiting = txs.filter((t) => t.status === "pending").length;
   const cashIns = txs.filter((t) => t.kind === "incoming" && t.source === "cash" && t.status === "completed").length;
   const link = (h: string) => (explorer ? `${explorer}/tx/${h}` : null);
@@ -395,12 +439,13 @@ export const ngMyRecord: NgTool = async ({ user, store, explorer }) => {
     cash_ins: cashIns,
     confirmed_on_stellar: onChain.length,
     waiting_for_stellar: waiting,
-    recent: txs.slice(0, 40).map((t) => ({
+    recent: visible.filter((t) => t.kind !== "adjustment").map((t) => ({
       id: t.id,
       kind: t.kind,
       label: t.kind === "pay" && t.source === "code" ? "paid by code"
         : t.kind === "pay" && t.source === "bank" ? "sent to bank (partner, simulated)"
-        : t.kind === "incoming" && t.source === "bank" ? "bank transfer" : KIND_WORDS[t.kind] ?? t.kind,
+        : t.kind === "incoming" && t.source === "bank" ? "bank transfer"
+        : t.kind === "saved" && t.source === "auto_save" ? "auto-saved" : KIND_WORDS[t.kind] ?? t.kind,
       counterparty: t.counterparty ?? null,
       source: t.source,
       amount_minor: String(t.amount),
@@ -548,6 +593,11 @@ function confirmText(a: Action): string {
 export const ngPreparePay: NgTool = async ({ user, store, args, now = new Date() }) => {
   const amount = parseMajorAmount(args.amount);
   if (amount === null) return refuse("How much should she pay? Ask for the amount in naira.", "invalid_amount");
+  // A shop's pay code (typed, said, or scanned from its QR): straight to that Plus wallet.
+  const code = args.code !== undefined && args.code !== null && args.code !== "" ? parsePayCode(args.code) : undefined;
+  if (code === null) return refuse("That pay code doesn't look right. It has 6 letters and numbers, like ABC-123. Ask her to read it again.", "invalid_code");
+  const byCode = code ? await store.plusUserByPayCode(code) : null;
+  if (code && !byCode) return refuse(`No Plus wallet has the pay code ${showPayCode(code)}. Ask her to check it.`, "unknown_code");
   const spoken = typeof args.payee === "string" ? args.payee.trim() : "";
   const given = typeof args.phone === "string" && args.phone.trim() ? args.phone : /^[+\d][\d\s()-]{6,}$/.test(spoken) ? spoken : "";
   let phone: string | null = null;
@@ -555,7 +605,9 @@ export const ngPreparePay: NgTool = async ({ user, store, args, now = new Date()
   let wallet: string | null = null;
   let payeeId: string | null = null;
 
-  if (given) {
+  if (byCode) {
+    name = name ?? byCode.name;
+  } else if (given) {
     phone = normalizePhone(M, given);
     if (!phone) return refuse("That phone number doesn't look right. Ask her to say it again, digit by digit.", "invalid_phone");
   } else {
@@ -579,8 +631,8 @@ export const ngPreparePay: NgTool = async ({ user, store, args, now = new Date()
     if (!phone && !wallet) return refuse(`${match.payee.name} has no phone or wallet saved.`, "payee_incomplete");
   }
 
-  const peer = phone ? await store.plusUserByPhone(phone) : null;
-  if (peer && peer.id === user.id) return refuse("That is her own number.", "own_number");
+  const peer = byCode ?? (phone ? await store.plusUserByPhone(phone) : null);
+  if (peer && peer.id === user.id) return refuse(byCode ? "That is her own pay code." : "That is her own number.", byCode ? "own_code" : "own_number");
   const blocked = await spendCheck(store, user, amount, now);
   if (blocked) return blocked;
 
@@ -592,7 +644,7 @@ export const ngPreparePay: NgTool = async ({ user, store, args, now = new Date()
     const a = await store.createAction({
       user_id: user.id,
       kind: "pay",
-      params: { amount: String(amount), to: peer.stellar_pub, to_user_id: peer.id, payee_name: who, phone, payee_id: payeeId },
+      params: { amount: String(amount), to: peer.stellar_pub, to_user_id: peer.id, payee_name: who, phone, payee_id: payeeId, ...(code ? { pay_code: code } : {}) },
       readback: `${show(amount)} to ${who} (on Plus)`,
       ttl_secs: ACTION_TTL_SECS,
     });
@@ -669,6 +721,44 @@ export const ngSavePayee: NgTool = async ({ user, store, args }) => {
 };
 
 /** Her account number at the partner bank (simulated), for bank transfers into her wallet. */
+/** Her pay code and QR link (Receive): a shop's customers scan it or type the code. */
+export const ngMyPayCode: NgTool = async ({ user, store }) => {
+  if (!user.stellar_pub) return refuse("Her wallet is not set up yet.", "no_wallet");
+  const code = await store.payCode(user.id);
+  return {
+    text: `Her pay code is ${showPayCode(code).split("").join(" ")}. Anyone on Plus can scan the QR on her Receive screen or type the code to pay her; it goes straight to her wallet on Stellar.`,
+    ok: true,
+    pay_code: code,
+    pay_code_text: showPayCode(code),
+    pay_link: PAY_LINK_BASE + code,
+  };
+};
+
+/** Her name or language, from Profile or by voice ("talk to me in Yoruba"). */
+export const ngSetProfile: NgTool = async ({ user, store, args }) => {
+  const patch: { name?: string; language?: string } = {};
+  if (typeof args.name === "string" && args.name.trim()) {
+    const name = args.name.trim().replace(/\s+/g, " ").slice(0, 40);
+    if (!/\p{L}/u.test(name)) return refuse("I didn't catch the name. Ask her to say it again.", "invalid_name");
+    patch.name = name;
+  }
+  if (typeof args.language === "string" && args.language.trim()) {
+    const langs = getMarket(M).languages;
+    const code = matchLanguage(langs, args.language);
+    if (!code) return refuse(`Plus speaks ${langs.map((l) => LANGUAGE_NAMES[l] ?? l).join(", ")}. Ask which one she likes.`, "invalid_language");
+    patch.language = code;
+  }
+  if (!patch.name && !patch.language) return refuse("Nothing to save: give a name or a language.", "nothing_to_save");
+  await store.updateProfile(user.id, patch);
+  const said = patch.language ? (LANGUAGE_NAMES[patch.language] ?? patch.language) : null;
+  return {
+    text: `Saved.${patch.name ? ` Her name is ${patch.name}.` : ""}${said ? ` From now on, speak ${said} with her, and her screens follow.` : ""}`,
+    ok: true,
+    ...(patch.name ? { name: patch.name } : {}),
+    ...(patch.language ? { language: patch.language, language_name: said } : {}),
+  };
+};
+
 export const ngBankDetails: NgTool = async ({ user }) => {
   const bank = getMarket(M).virtualAccount;
   if (!bank || !user.virtual_account) return refuse("Her bank account number comes with her wallet; her wallet is not open yet.", "no_account_number");
@@ -836,8 +926,12 @@ function doneText(a: Action): string {
       return `Done: her next payment is now due ${spokenDate(String(r.next_due_at ?? a.params.new_due_at))}. New borrowing is paused until this loan is repaid.`;
     case "loan_restructure":
       return `Done: smaller payments now, ${say(String(r.minimum ?? a.params.minimum))} every two weeks.`;
+    case "save":
+      return `Okay: ${amt} into her savings, ${String(r.goal_name ?? a.params.goal_name)}. It is held on Stellar, apart from her spending money.${tail}`;
+    case "savings_withdraw":
+      return `Okay: ${amt} from her savings back to her wallet.${tail}`;
     case "vouch":
-      return `Done: she vouches for ${String(a.params.borrower_name ?? "them")}'s next loan. It is being recorded on Stellar.`;
+      return `Done: they vouch for ${String(a.params.borrower_name ?? "them")}'s next loan. It is being recorded on Stellar.`;
   }
   return "Okay." + tail;
 }
@@ -997,7 +1091,7 @@ export const ngLoanStatus: NgTool = async ({ user, store, now = new Date() }) =>
   const { c, p, v } = await picture(store, user, now);
   const L = lendingRules();
   const repayLine = `${L.repay.fromMoneyInBps / 100}% of every money-in, and at least ${say(BigInt(L.repay.minimum) * 100n)} every two weeks`;
-  const ladder = p.ladder.map((s) => ({ ...s, max: String(s.max), max_text: show(s.max), cost_pct: s.cost_bps / 100, collateral_text: collateralWords(s.collateral_pct) }));
+  const ladder = p.ladder.map((s) => ({ ...s, max: String(s.max), max_text: show(s.max), cost_pct: s.cost_bps / 100, collateral_text: collateralWords(s.collateral_pct, s.later_collateral_pct) }));
   const why = p.why;
   const base = {
     ok: true,
@@ -1361,13 +1455,13 @@ const names = (xs: string[]) => xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, 
 
 /** The offer's vouch line: why the collateral is lower, or how many more would lower it. */
 export function vouchLine(v: { count: number; names: string[]; needed: number | null; applied: boolean; collateral_pct: number; collateral_pct_without: number }): string {
-  if (v.applied) return `${names(v.names)} vouched for her (ajo members in good standing), so this loan needs ${v.collateral_pct}% collateral instead of ${v.collateral_pct_without}%.`;
+  if (v.applied) return `${names(v.names)} vouched for this loan (ajo members in good standing), so it needs ${v.collateral_pct}% collateral instead of ${v.collateral_pct_without}%.`;
   if (v.count > 0 && v.needed && v.count < v.needed) {
     const L = lendingRules();
     const more = v.needed - v.count;
-    return `${names(v.names)} vouched for her. ${more} more ajo member${more === 1 ? "" : "s"} vouching would lower the collateral to ${L.vouch?.collateralPct ?? 100}%.`;
+    return `${names(v.names)} vouched for the next loan. ${more} more ajo member${more === 1 ? "" : "s"} vouching would lower the collateral to ${L.vouch?.collateralPct ?? 100}%.`;
   }
-  return v.count > 0 ? `${names(v.names)} vouched for her.` : "";
+  return v.count > 0 ? `${names(v.names)} vouched for the next loan.` : "";
 }
 
 const MONTHS = () => lendingRules().vouch?.banMonths ?? 6;
@@ -1376,21 +1470,21 @@ function vouchRefusal(c: VouchCheck, who: string): ToolResult {
   const L = lendingRules();
   const weeks = L.vouch?.minWeeks ?? 6;
   switch (c.reason) {
-    case "self": return refuse("She can't vouch for herself.", "vouch_self");
-    case "not_same_ajo": return refuse(`She can vouch only for members of her own ajo, and ${who} isn't in one with her on Plus.`, "not_same_ajo");
-    case "banned": return refuse(`She can't vouch until ${spokenDate(String(c.until))}: a loan she vouched for wasn't repaid. Nothing was taken from her.`, "vouch_banned", { until: c.until });
-    case "identity": return refuse("Vouching needs a verified ID first (her NIN, in Profile).", "vouch_identity");
-    case "too_new": return refuse(`Vouching opens after ${weeks} weeks with Plus; she is in week ${(c.weeks ?? 0) + 1}.`, "vouch_too_new");
-    case "standing": return refuse("Vouching needs her own payments on track first.", "vouch_standing");
-    case "no_ajo_payments": return refuse("Vouching needs ajo payments on Stellar first: pay into her ajo, then she can vouch.", "vouch_no_ajo_payments");
+    case "self": return refuse("They can't vouch for themselves.", "vouch_self");
+    case "not_same_ajo": return refuse(`They can vouch only for members of their own ajo, and ${who} isn't in one with them on Plus.`, "not_same_ajo");
+    case "banned": return refuse(`They can't vouch until ${spokenDate(String(c.until))}: a loan they vouched for wasn't repaid. Nothing was taken from them.`, "vouch_banned", { until: c.until });
+    case "identity": return refuse("Vouching needs a verified ID first (their NIN, in Profile).", "vouch_identity");
+    case "too_new": return refuse(`Vouching opens after ${weeks} weeks with Plus; they are in week ${(c.weeks ?? 0) + 1}.`, "vouch_too_new");
+    case "standing": return refuse("Vouching needs their own payments on track first.", "vouch_standing");
+    case "no_ajo_payments": return refuse("Vouching needs ajo payments on Stellar first: pay into their ajo, then they can vouch.", "vouch_no_ajo_payments");
     case "ajo_late": return refuse("Vouching needs every ajo payment on time, and one of hers came late.", "vouch_ajo_late");
-    case "already": return refuse(`She already vouches for ${who}'s next loan.`, "vouch_already");
+    case "already": return refuse(`They already vouch for ${who}'s next loan.`, "vouch_already");
     case "too_many": return refuse(`${who} already has the most vouches a loan can carry.`, "vouch_too_many");
     default: return refuse("I couldn't find that person.", "not_found");
   }
 }
 
-/** "I vouch for Funmi": a member of her ajo, checked now; then her PIN on the screen. */
+/** "I vouch for Funmi": a member of their ajo, checked now; then their PIN on the screen. */
 export const ngPrepareVouch: NgTool = async ({ user, store, args }) => {
   if (!lendingRules().vouch) return refuse("Vouching isn't offered here yet.", "not_available");
   const peers = await store.ajoPeers(user.id);
@@ -1400,7 +1494,7 @@ export const ngPrepareVouch: NgTool = async ({ user, store, args }) => {
     : name ? peers.filter((p) => (p.name ?? "").toLowerCase() === name || (p.name ?? "").toLowerCase().split(/\s+/).includes(name)) : [];
   if (found.length === 0) {
     const list = names(peers.map((p) => p.name ?? "").filter(Boolean));
-    return refuse(peers.length ? `Who? She can vouch for members of her ajo on Plus: ${list}.` : "She can vouch only for members of her ajo who are on Plus, and none are yet.", "who", { peers });
+    return refuse(peers.length ? `Who? They can vouch for members of their ajo on Plus: ${list}.` : "They can vouch only for members of their ajo who are on Plus, and none are yet.", "who", { peers });
   }
   if (found.length > 1) return refuse(`Which one? ${names(found.map((p) => `${p.name} (${p.group_name})`))}.`, "which", { peers: found });
   const b = found[0];
@@ -1417,14 +1511,14 @@ export const ngPrepareVouch: NgTool = async ({ user, store, args }) => {
     ttl_secs: ACTION_TTL_SECS,
   });
   return {
-    text: `Read back: she vouches for ${who}'s next loan. No money is ever taken from her; if ${who} doesn't repay, she can't vouch for anyone for ${months} months. ${PIN_ON_SCREEN}`,
+    text: `Read back: they vouch for ${who}'s next loan. No money is ever taken from them; if ${who} doesn't repay, they can't vouch for anyone for ${months} months. ${PIN_ON_SCREEN}`,
     ok: true,
     ...actionFields(a),
     borrower_name: b.name,
   };
 };
 
-/** Vouches she gave (waiting, used on a loan, withdrawn, defaulted) and vouches for her, plus who she can vouch for. */
+/** Vouches they gave (waiting, used on a loan, withdrawn, defaulted) and vouches for them, plus who they can vouch for. */
 export const ngMyVouches: NgTool = async ({ user, store, now = new Date() }) => {
   const [v, peers] = await Promise.all([store.vouches(user.id), store.ajoPeers(user.id)]);
   const waitingFor = v.received.filter((x) => x.status === "active");
@@ -1432,9 +1526,9 @@ export const ngMyVouches: NgTool = async ({ user, store, now = new Date() }) => 
   const can = await Promise.all(peers.map(async (p) => ({ ...p, check: await store.vouchCheck(user.id, p.user_id) })));
   const banned = can.find((p) => p.check.reason === "banned" && p.check.until && new Date(p.check.until) > now)?.check.until ?? null;
   const parts = [
-    mine.length ? `She vouches for ${names(mine.map((x) => x.other_name ?? "an ajo member"))}'s next loan.` : "She isn't vouching for anyone right now.",
-    waitingFor.length ? `${names(waitingFor.map((x) => x.other_name ?? "An ajo member"))} vouched for her next loan.` : "",
-    banned ? `She can't vouch until ${spokenDate(banned)}.` : "",
+    mine.length ? `They vouch for ${names(mine.map((x) => x.other_name ?? "an ajo member"))}'s next loan.` : "They aren't vouching for anyone right now.",
+    waitingFor.length ? `${names(waitingFor.map((x) => x.other_name ?? "An ajo member"))} vouched for their next loan.` : "",
+    banned ? `They can't vouch until ${spokenDate(banned)}.` : "",
   ];
   return {
     text: parts.filter(Boolean).join(" "),
@@ -1453,15 +1547,137 @@ export const ngWithdrawVouch: NgTool = async ({ user, store, args }) => {
   const id = typeof args.vouch_id === "string" ? args.vouch_id : null;
   const name = typeof args.name === "string" ? args.name.trim().toLowerCase() : "";
   const t = id ? waiting.filter((x) => x.id === id) : name ? waiting.filter((x) => (x.other_name ?? "").toLowerCase().split(/\s+/).includes(name) || (x.other_name ?? "").toLowerCase() === name) : waiting;
-  if (t.length === 0) return refuse(given.some((x) => x.status === "used") && !waiting.length ? "Her vouch is already on a loan; it can't be withdrawn now." : "She has no waiting vouch to withdraw.", "nothing_to_withdraw");
+  if (t.length === 0) return refuse(given.some((x) => x.status === "used") && !waiting.length ? "Their vouch is already on a loan; it can't be withdrawn now." : "They have no waiting vouch to withdraw.", "nothing_to_withdraw");
   if (t.length > 1) return refuse(`Which one? ${names(t.map((x) => x.other_name ?? "an ajo member"))}.`, "which");
   const ok = await store.withdrawVouch(user.id, t[0].id);
-  return ok ? { text: `Done: she no longer vouches for ${t[0].other_name ?? "them"}. Recorded on Stellar.`, ok: true, vouch_id: t[0].id }
+  return ok ? { text: `Done: they no longer vouch for ${t[0].other_name ?? "them"}. Recorded on Stellar.`, ok: true, vouch_id: t[0].id }
     : refuse("That vouch is already on a loan or withdrawn.", "nothing_to_withdraw");
 };
 
+// ---------------------------------------------------------------------------
+// Piece 11: savings (her goal is a pot on the plus contract; only she can take it out)
+// ---------------------------------------------------------------------------
+
+/** The auto-save choices she can pick, in basis points (0, 5, 10, 20 percent). */
+export const AUTO_SAVE_CHOICES = [0, 500, 1000, 2000];
+
+/**
+ * What a money-in does, in order: the loan's share first, then auto-save from what is left. Mirrors
+ * public.ng_loan_repay_from_money_in + ng_auto_save (integer division; under ₦1 saves nothing).
+ */
+export function autoSaveSplit(moneyIn: bigint, loanShare: bigint, bps: number): { loan: bigint; saved: bigint; kept: bigint } {
+  const loan = loanShare > moneyIn ? moneyIn : loanShare < 0n ? 0n : loanShare;
+  const rest = moneyIn - loan;
+  let saved = bps > 0 ? (rest * BigInt(bps)) / 10000n : 0n;
+  if (saved < 100n) saved = 0n;
+  return { loan, saved, kept: rest - saved };
+}
+
+const pct = (bps: number) => `${bps / 100}%`;
+
+async function savingsView(store: NgStore, user: User) {
+  const g = await store.savingsGoal(user.id);
+  if (!g) return null;
+  // The pot's own balance on the contract when we can read it (the ledger otherwise).
+  const pot = g.onchain_pot_id !== null ? await store.chain.pot(g.onchain_pot_id).catch(() => null) : null;
+  const saved = pot ? pot.balance_minor : g.saved;
+  return { g, saved, onChain: pot !== null };
+}
+
+export const ngSavingsStatus: NgTool = async ({ user, store }) => {
+  const v = await savingsView(store, user);
+  const auto = user.auto_save_bps ?? 0;
+  if (!v) {
+    return { text: "She has no savings goal yet. Ask what she is saving for and how much, then use set_savings_goal.", ok: true, has_goal: false, auto_save_pct: auto / 100 };
+  }
+  const { g, saved } = v;
+  const left = g.goal > saved ? g.goal - saved : 0n;
+  const ready = g.onchain_pot_id !== null;
+  return {
+    text: `Savings for ${g.name}: ${say(saved)} of ${say(g.goal)}` + (left > 0n ? `, ${say(left)} to go.` : ". She has reached her goal!") +
+      ` Auto-save is ${auto > 0 ? `${auto / 100} percent of money in, after any loan payment` : "off"}.` +
+      (ready ? " It is held on Stellar, apart from her spending money; only she can take it out." : " Her savings pot is still being set up on Stellar; she can add money in a few seconds."),
+    ok: true,
+    has_goal: true,
+    goal_name: g.name,
+    saved_text: show(saved),
+    goal_text: show(g.goal),
+    left_text: show(left),
+    auto_save_pct: auto / 100,
+    ready,
+  };
+};
+
+export const ngSetSavingsGoal: NgTool = async ({ user, store, args, ngntSac }) => {
+  if (!user.stellar_pub) return refuse("Her wallet is not set up yet.", "no_wallet");
+  if (!/^C[A-Z2-7]{55}$/.test(ngntSac)) return refuse("Savings is not available just now. Try again later.", "not_configured");
+  const name = typeof args.name === "string" ? args.name.trim().slice(0, 60) : "";
+  const amount = parseMajorAmount(args.amount);
+  if (!name) return refuse("What is she saving for? Ask for a short name, like 'new stall shade'.", "missing_name");
+  if (amount === null || amount < 100_00n) return refuse("How much is the goal? Ask for an amount in naira (at least ₦100).", "invalid_amount");
+  const r = await store.setSavingsGoal(user.id, name, amount, ngntSac);
+  return {
+    text: r.created
+      ? `Done: her goal is ${name}, ${say(amount)}. Her savings pot is being set up on Stellar now; she can add money in a few seconds.`
+      : `Done: her goal is now ${name}, ${say(amount)}.`,
+    ok: true,
+    goal_name: name,
+    goal_text: show(amount),
+    created: r.created,
+  };
+};
+
+export const ngSetAutoSave: NgTool = async ({ user, store, args }) => {
+  const raw = Number(args.percent);
+  const bps = Math.round(raw * 100);
+  if (!Number.isFinite(raw) || !AUTO_SAVE_CHOICES.includes(bps)) {
+    return refuse("Auto-save can be 0, 5, 10 or 20 percent of money in. Ask which one.", "invalid_percent");
+  }
+  await store.setAutoSave(user.id, bps);
+  return {
+    text: bps === 0 ? "Done: auto-save is off." : `Done: ${pct(bps)} of every money-in goes to her savings, after any loan payment.`,
+    ok: true,
+    auto_save_pct: bps / 100,
+  };
+};
+
+export const ngPrepareSave: NgTool = async ({ user, store, args, now = new Date() }) => {
+  const amount = parseMajorAmount(args.amount);
+  if (amount === null) return refuse("How much does she want to save? Ask for the amount in naira.", "invalid_amount");
+  const g = await store.savingsGoal(user.id);
+  if (!g) return refuse("She has no savings goal yet. Ask what she is saving for and how much, then set it first.", "no_savings_goal");
+  if (g.onchain_pot_id === null) return refuse("Her savings pot is still being set up on Stellar. Try again in a few seconds.", "savings_not_ready");
+  const blocked = await spendCheck(store, user, amount, now);
+  if (blocked) return blocked;
+  const a = await store.createAction({
+    user_id: user.id,
+    kind: "save",
+    params: { amount: String(amount), goal_name: g.name, pot_id: g.onchain_pot_id },
+    readback: `Save ${show(amount)} for ${g.name}`,
+    ttl_secs: ACTION_TTL_SECS,
+  });
+  return { text: `Read back: save ${say(amount)} for ${g.name}. ${confirmText(a)}`, ok: true, ...actionFields(a), amount_text: show(amount) };
+};
+
+export const ngPrepareWithdrawSavings: NgTool = async ({ user, store, args }) => {
+  const amount = parseMajorAmount(args.amount);
+  if (amount === null) return refuse("How much does she want to take out of her savings? Ask for the amount in naira.", "invalid_amount");
+  const v = await savingsView(store, user);
+  if (!v || v.g.onchain_pot_id === null) return refuse("She has no savings to take out.", "no_savings_goal");
+  const saved = v.saved < v.g.saved ? v.saved : v.g.saved; // never more than both the pot and the ledger say
+  if (amount > saved) return refuse(`She has ${say(saved)} saved; she can take out up to that.`, "not_enough_saved", { saved_text: show(saved) });
+  const a = await store.createAction({
+    user_id: user.id,
+    kind: "savings_withdraw",
+    params: { amount: String(amount), goal_name: v.g.name, pot_id: v.g.onchain_pot_id },
+    readback: `Take ${show(amount)} out of savings (${v.g.name}), back to your wallet`,
+    ttl_secs: ACTION_TTL_SECS,
+  });
+  return { text: `Read back: take ${say(amount)} out of her savings, back to her wallet. ${confirmText(a)}`, ok: true, ...actionFields(a), amount_text: show(amount) };
+};
+
 function spokenTime(iso: string): string {
-  return new Date(iso).toLocaleString("en-NG", { weekday: "long", hour: "numeric", minute: "2-digit", timeZone: "Africa/Lagos" });
+  return new Date(iso).toLocaleString("en-NG", { weekday: "long", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Africa/Lagos" });
 }
 
 // ---------------------------------------------------------------------------
@@ -1475,6 +1691,11 @@ export const NG_VOICE_TOOLS: Record<string, NgTool> = {
   prepare_ajo_contribution: ngPrepareAjo,
   prepare_group_contribution: ngPrepareAjo, // same tool under the shared name
   prepare_cashout: ngPrepareCashout,
+  savings_status: ngSavingsStatus,
+  prepare_save: ngPrepareSave,
+  prepare_withdraw_savings: ngPrepareWithdrawSavings,
+  set_savings_goal: ngSetSavingsGoal,
+  set_auto_save: ngSetAutoSave,
   // The 1.5% advance is retired from the app and the agent (its contract functions stay); loans replace it.
   loan_status: ngLoanStatus,
   prepare_loan: ngPrepareLoan,
@@ -1491,6 +1712,8 @@ export const NG_VOICE_TOOLS: Record<string, NgTool> = {
   withdraw_vouch: ngWithdrawVouch,
   prepare_bank_send: ngPrepareBankSend,
   bank_details: ngBankDetails,
+  my_pay_code: ngMyPayCode,
+  set_profile: ngSetProfile,
   confirm_action: ngConfirmAction,
   reject_action: ngRejectAction,
   my_record: ngMyRecord,

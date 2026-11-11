@@ -12,8 +12,9 @@ import { settle, useScreenTools } from '../plus/screen'
 import { ENGLISH, LangContext } from '../plus/ui'
 import { VoiceButton } from '../plus/voice'
 import { Assets, requestPhoto } from './assets'
+import { Receive, Scan } from './shop'
 import { NgConfirmSheet } from './confirm'
-import { AddCash, Ajo, CashOut, Home, Loan, Pay, Record, Settings, WalletDetail, type Detail } from './screens'
+import { AddCash, Ajo, CashOut, Home, Loan, Pay, Record, Savings, Settings, WalletDetail, type Detail } from './screens'
 import { MIC_WORDS, naira, W, yo } from './words'
 
 export type Wallet = { NGNT: bigint; USDC: bigint; updated_at: string | null }
@@ -57,7 +58,11 @@ const VOICE_SCREENS: Record<string, { tab?: Tab; detail?: Detail }> = {
   wallet: { detail: 'wallet' },
   add_money: { detail: 'add_cash' },
   pay: { tab: 'pay' },
+  receive: { detail: 'receive' },
+  my_code: { detail: 'receive' },
+  scan: { detail: 'scan' },
   ajo: { detail: 'group' },
+  savings: { detail: 'savings' },
   loan: { detail: 'loan' },
   assets: { detail: 'assets' },
   cash_out: { detail: 'cash_out' },
@@ -69,17 +74,26 @@ type Tab = 'home' | 'pay' | 'record' | 'settings'
 const TABS: Tab[] = ['home', 'pay', 'record', 'settings']
 const DETAIL_TITLE: Record<Detail, [string, string | undefined]> = {
   wallet: [W.wallet.en, yo('wallet')],
+  savings: [W.savings.en, yo('savings')],
   group: [W.ajo.en, yo('ajo')],
   loan: [W.loan.en, yo('loan')],
   assets: [W.assets.en, yo('assets')],
   add_cash: [W.addMoney.en, yo('addMoney')],
   cash_out: [W.cashOut.en, yo('cashOut')],
+  receive: ['My code', undefined],
+  scan: ['Scan to pay', undefined],
 }
+
+/** A Plus pay link opened from a shop's QR (plus-wallet.vercel.app/app/pay/<code>). */
+const linkedCode = (() => {
+  const m = window.location.pathname.match(/^\/app\/pay\/([A-Za-z0-9-]{6,7})\/?$/)
+  return m ? m[1].toUpperCase().replace('-', '') : null
+})()
 
 export default function NgApp({ data }: { data: PlusData }) {
   useMarketAccent('ng')
   const [tab, setTab] = useState<Tab>('home')
-  const [open, setOpen] = useState<Detail | null>(null)
+  const [open, setOpen] = useState<Detail | null>(linkedCode ? 'scan' : null)
   const [fromPass, setFromPass] = useState(true)
   const wallet = useWallet(data.me?.id, data.version)
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set())
@@ -154,9 +168,9 @@ export default function NgApp({ data }: { data: PlusData }) {
 
   return (
     <LangContext.Provider value={ENGLISH}>
-      <main className="mx-auto max-w-md px-4 pb-44 pt-[max(env(safe-area-inset-top),1.25rem)]">
+      <main className="mx-auto max-w-md px-4 pb-32 pt-[max(env(safe-area-inset-top),1.25rem)]">
         {tab === 'home' && <Home {...props} onAnswer={onAnswer} open={open} onOpen={(d) => openDetail(d)} />}
-        {tab === 'pay' && <div className="space-y-5"><PageHeader title={W.pay.en} /><Pay {...props} /></div>}
+        {tab === 'pay' && <div className="space-y-5"><PageHeader title={W.pay.en} /><Pay {...props} onShop={(d) => openDetail(d, false)} /></div>}
         {tab === 'record' && <div className="space-y-5"><PageHeader title="Activity" /><Record {...props} /></div>}
         {tab === 'settings' && <div className="space-y-5"><PageHeader title="Profile" /><Settings {...props} onSignOut={() => void supabase?.auth.signOut()} /></div>}
       </main>
@@ -165,18 +179,20 @@ export default function NgApp({ data }: { data: PlusData }) {
         {open && (
           <CardDetail key={open} id={open} title={DETAIL_TITLE[open][0]} sub={DETAIL_TITLE[open][1]} fromPass={fromPass} onClose={() => setOpen(null)}>
             {open === 'wallet' && <WalletDetail wallet={wallet} version={data.version} onOpen={(d) => openDetail(d, false)} />}
+            {open === 'savings' && <Savings {...props} />}
             {open === 'group' && <Ajo {...props} />}
             {open === 'loan' && <Loan {...props} />}
             {open === 'assets' && <Assets version={data.version} />}
             {open === 'add_cash' && <AddCash {...props} onAnswer={onAnswer} />}
+            {open === 'receive' && <Receive version={data.version} />}
+            {open === 'scan' && <Scan initialCode={linkedCode} />}
             {open === 'cash_out' && <CashOut {...props} shownCode={shownCode} onShowCode={setShownCode} />}
           </CardDetail>
         )}
       </AnimatePresence>
 
-      <VoiceButton words={MIC_WORDS} />
-
       <BottomNav<Tab>
+        center={<VoiceButton size="dock" words={MIC_WORDS} />}
         active={open ? null : tab}
         onSelect={(k) => go(k)}
         items={[
@@ -192,6 +208,7 @@ export default function NgApp({ data }: { data: PlusData }) {
           key={held.id}
           action={held}
           txs={data.txs}
+          lang={data.me?.language ?? 'en'}
           onClose={() => {
             setDismissed((d) => new Set(d).add(held.id))
             setHeld(null)

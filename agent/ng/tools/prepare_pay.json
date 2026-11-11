@@ -2,7 +2,7 @@
   "tool_config": {
     "type": "webhook",
     "name": "prepare_pay",
-    "description": "Prepare a payment: to one of her saved people by name, or to anyone by phone number. If they are on Plus it goes to their wallet; if not, they get a code by text to collect cash at any Plus agent. If the result has options, ask her which one. Nothing moves until she taps Yes (or types her PIN) on her screen.",
+    "description": "Prepare a payment: to one of her saved people by name, or to anyone by phone number, or to a shop by its 6-character pay code (from its QR). If they are on Plus it goes to their wallet; if not, they get a code by text to collect cash at any Plus agent. If the result has options, ask her which one. Nothing moves until she taps Yes (or types her PIN) on her screen.",
     "response_timeout_secs": 10,
     "api_schema": {
       "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/prepare_pay",
@@ -39,6 +39,10 @@
           "amount": {
             "type": "number",
             "description": "Amount in naira, a whole number she said (\"20k\" is 20000). Never guess."
+          },
+          "code": {
+            "type": "string",
+            "description": "A shop's Plus pay code, 6 letters and numbers (\"K7Q-2MX\"), when she reads one out. Spell it exactly as she says."
           }
         },
         "required": [

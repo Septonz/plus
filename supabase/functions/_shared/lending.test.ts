@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { affordable, type CreditAsset, type CreditInput, type CreditLoan, creditPicture, lendingValue, weekNumber } from "./lending.ts";
+import { affordable, collateralWords, type CreditAsset, type CreditInput, type CreditLoan, creditPicture, lendingValue, weekNumber } from "./lending.ts";
 
 const N = (naira: number) => BigInt(naira) * 100n;
 const NOW = new Date("2026-11-10T12:00:00Z");
@@ -77,7 +77,7 @@ Deno.test("Funmi: ₦30,000 offer at 6%: ₦1,800 cost, ₦31,800 total; the low
   assertEquals(p.affordability.affordable, N(30_000));
   assertEquals(p.why.map((w) => w.weight), [40, 35, 25]);
   assertEquals(p.why[2].detail, "Ajo paid in 8 of 8 weeks"); // the last 8 weeks, not all 21
-  assertEquals(p.ladder.map((s) => s.max), [N(30_000), N(50_000), N(80_000), N(80_000)]);
+  assertEquals(p.ladder.map((s) => s.max), [N(30_000), N(50_000), N(80_000)]); // the top step repeats
 });
 
 Deno.test("affordability: 10% of typical weekly money-in over 12 weeks plus six minimums, floored to ₦5,000", () => {
@@ -105,6 +105,15 @@ Deno.test("the ladder: a repaid loan moves her up; a demo reset's settlement doe
   assertEquals(up.offer?.cost_bps, 500);
   const reset = creditPicture(funmi({ loans: [loan({ status: "repaid", closed_by_reset: true })] }));
   assertEquals(reset.step, 0);
+});
+
+Deno.test("the ladder's top step: 100% collateral, then 50% from its second loan on", () => {
+  const repaid = (n: number) => Array.from({ length: n }, () => loan({ status: "repaid" }));
+  const third = creditPicture(funmi({ weeks: weeks(1, 21, 40_000), loans: repaid(2) }));
+  assertEquals([third.step, third.offer?.collateral_pct], [2, 100]);
+  const fourth = creditPicture(funmi({ weeks: weeks(1, 21, 40_000), loans: repaid(3) }));
+  assertEquals([fourth.step, fourth.offer?.collateral_pct], [2, 50]);
+  assertEquals(collateralWords(100, 50), "100%, then partial (50%)");
 });
 
 Deno.test("one loan at a time; a late payment or a freeze blocks new borrowing", () => {

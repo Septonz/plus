@@ -2,7 +2,7 @@
   "tool_config": {
     "type": "webhook",
     "name": "set_profile",
-    "description": "Save her name and/or the language she likes. Pass only what she said.",
+    "description": "Save her name and/or the language she likes: English, Pidgin or Yoruba. Works while she signs up and any time after (\"talk to me in Yoruba\"). Pass only what she said.",
     "response_timeout_secs": 10,
     "api_schema": {
       "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/set_profile",
@@ -30,7 +30,7 @@
           },
           "language": {
             "type": "string",
-            "description": "The language she chose, in her words (\"Pidgin\", \"Yoruba\", \"Tamil\", \"English\")."
+            "description": "The language she chose, in her words (\"Pidgin\", \"Yoruba\", \"English\")."
           }
         },
         "required": []

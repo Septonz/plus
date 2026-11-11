@@ -7,6 +7,7 @@
 //         confirmed on-chain and a Stellar Expert link. Read through the staff-only demo_feed().
 // Always dark and cinematic (whatever the projector laptop's setting): the dark tokens are set on
 // the page's root element, so every design-system component below reads them.
+import { formatTime } from '../lib/time'
 import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
@@ -321,7 +322,7 @@ function Feed({ market }: { market: Market }) {
                 transition={spring}
                 className={`grid grid-cols-[6.5rem_7rem_1fr_6rem_6.5rem] items-baseline gap-4 border-b border-white/[0.04] px-7 py-3.5 text-base transition-colors duration-1000 ${fresh.has(r.id) ? 'bg-accent-soft' : ''}`}
               >
-                <span className="num text-secondary">{new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                <span className="num text-secondary">{formatTime(r.created_at, { seconds: true })}</span>
                 <span className="truncate text-accent-ink">{r.account}</span>
                 <span className="min-w-0 font-sans text-lg">
                   {describe(r, market)}

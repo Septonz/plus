@@ -26,6 +26,9 @@ type Me = {
   limit_text: string
   used_today_text: string
   left_today_text: string
+  earned_today_text: string | null
+  earned_simulated: boolean
+  commission_pct: number | null
   recent: Item[]
   redeemed: Item[]
   ok?: boolean
@@ -170,6 +173,16 @@ function Signed() {
         </dl>
         {me.wallet_url && <div className="mt-3"><VerifiedMark url={me.wallet_url} /></div>}
       </Card>
+
+      {me.earned_today_text && (
+        <Card className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm text-secondary">Earned today</p>
+            <p className="num text-2xl font-semibold">{me.earned_today_text}</p>
+          </div>
+          <p className="max-w-[55%] text-right text-sm text-secondary">{me.commission_pct}% of the cash you handled today{me.earned_simulated ? ' (simulated)' : ''}</p>
+        </Card>
+      )}
 
       <Segmented
         label="What do you want to do?"

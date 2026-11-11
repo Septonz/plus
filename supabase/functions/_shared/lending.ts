@@ -12,6 +12,8 @@ export interface CreditWeek {
   money_in: bigint;
   qualifying_tx: number;
   saved: bigint;
+  /** Piece 11: savings deposits (her goal pot on Stellar) that week. */
+  savings?: bigint;
 }
 
 export interface CreditAsset {
@@ -109,7 +111,11 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
   const qualifying = sofar.reduce((s, w) => s + w.qualifying_tx, 0);
   // Savings consistency looks at her last 8 weeks (or fewer, if she is newer).
   const considered = Math.max(1, Math.min(8, week));
-  const savedWeeks = sofar.filter((w) => w.week > week - considered && w.saved > 0n).length;
+  const recent = sofar.filter((w) => w.week > week - considered);
+  const ajoWeeks = recent.filter((w) => w.saved > 0n).length;
+  const potWeeks = recent.filter((w) => (w.savings ?? 0n) > 0n).length;
+  // A week counts when she put money aside at all: ajo or her savings goal.
+  const savedWeeks = recent.filter((w) => w.saved > 0n || (w.savings ?? 0n) > 0n).length;
   const identity = input.kyc_tier >= 2;
   const open = input.loans.find((l) => OPEN_STATUSES.has(l.status)) ?? null;
   // Postgres returns a freeze "until repaid" as the string "infinity".
@@ -140,7 +146,9 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
   // The ladder: each loan she repaid herself moves her up (a demo reset's settlement doesn't count).
   const repaidLoans = input.loans.filter((l) => l.status === "repaid" && !l.closed_by_reset).length;
   const stepIndex = Math.min(repaidLoans, L.ladder.length - 1);
-  const step = L.ladder[stepIndex];
+  const top = L.ladder[stepIndex];
+  // The top step repeats: from its second loan on, its collateral drops (laterCollateralPct).
+  const step = repaidLoans >= L.ladder.length && top.laterCollateralPct !== undefined ? { ...top, collateralPct: top.laterCollateralPct } : top;
   // Piece 10: enough ajo vouches lower the collateral this step needs (never raise it).
   const vouches = input.vouches ?? [];
   const vouched = L.vouch !== undefined && vouches.length >= L.vouch.min && L.vouch.collateralPct < step.collateralPct;
@@ -161,9 +169,9 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
   const assetsPart = maxBps > 0 ? bestBps / maxBps : 0;
   const savings = Math.min(1, savedWeeks / considered);
   const why = [
-    { key: "activity", label: "Activity", weight: L.weights.activity, points: Math.round(activity * L.weights.activity), detail: `${activeWeeks} active weeks, ${qualifying} qualifying transactions` },
+    { key: "activity", label: "Activity", weight: L.weights.activity, points: Math.round(activity * L.weights.activity), detail: `${activeWeeks} active weeks and ${qualifying} qualifying transactions since joining Plus` },
     { key: "assets", label: "Verified assets", weight: L.weights.assets, points: Math.round(assetsPart * L.weights.assets), detail: verified.length ? `${verified[0].description}, ${levelWords(verified[0].level)}` : "None verified yet" },
-    { key: "savings", label: "Savings consistency", weight: L.weights.savings, points: Math.round(savings * L.weights.savings), detail: `Ajo paid in ${savedWeeks} of ${considered} weeks` },
+    { key: "savings", label: "Savings consistency", weight: L.weights.savings, points: Math.round(savings * L.weights.savings), detail: `Ajo paid in ${ajoWeeks} of ${considered} weeks` + (potWeeks > 0 ? ` · saved in ${potWeeks} of ${considered} weeks` : "") },
   ];
 
   // Before unlock: an estimate, not an offer, from what she does now.
@@ -198,7 +206,10 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
     collateral_asset: verified[0] ?? null,
     why,
     score: why.reduce((s, w) => s + w.points, 0),
-    ladder: L.ladder.map((s, i) => ({ step: i, max: BigInt(s.max) * N, cost_bps: s.costBps, collateral_pct: s.collateralPct, approval: s.approval, current: i === stepIndex })),
+    ladder: L.ladder.map((s, i) => ({
+      step: i, max: BigInt(s.max) * N, cost_bps: s.costBps, collateral_pct: i === stepIndex ? step.collateralPct : s.collateralPct,
+      later_collateral_pct: s.laterCollateralPct ?? null, approval: s.approval, current: i === stepIndex,
+    })),
   };
 }
 
@@ -209,7 +220,8 @@ export function levelWords(level: AssetLevel | string): string {
     : "registered";
 }
 
-/** Collateral as she reads it on the ladder: 150%, 125%, 100%, then partial. */
-export function collateralWords(pct: number): string {
-  return pct < 100 ? "partial" : `${pct}%`;
+/** Collateral as she reads it on the ladder: 150%, 125%, "100%, then 50%" (the top step repeats). */
+export function collateralWords(pct: number, later: number | null = null): string {
+  const w = (p: number) => (p < 100 ? `partial (${p}%)` : `${p}%`);
+  return later !== null && later !== pct ? `${w(pct)}, then ${w(later)}` : w(pct);
 }

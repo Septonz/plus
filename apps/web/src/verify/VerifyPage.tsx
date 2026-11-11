@@ -1,9 +1,11 @@
 // /verify (public, no login): a lender types the code Funmi gave them and sees her Plus record,
 // read directly from Stellar. Plus's database only turns the code into her two public references;
 // every line below comes from the chain and links to it. No name, phone, ID, photo or place.
+import { formatTime } from '../lib/time'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Button, Card, Icon, ListGroup, Notice, Section, Spinner } from '../ds/components'
 import { supabase } from '../lib/supabase'
+import { tool } from '../plus/api'
 import {
   ASSET_LEVEL, ASSET_STATUS, CREDIT_CONTRACT, EXPLORER, LOAN_STATUS, PLUS_CONTRACT, ajoSummary, loadSdk, naira, readRecord,
   type Record as ChainRecord,
@@ -25,6 +27,22 @@ export default function VerifyPage() {
   const [err, setErr] = useState<string | null>(null)
   const [res, setRes] = useState<Result | null>(null)
   useEffect(() => { void loadSdk() }, [])
+  // Demo only (DEMO_LOGINS_ENABLED): a fresh sample code for Funmi's record, so anyone can try it.
+  const [sampleOn, setSampleOn] = useState(false)
+  const [sampling, setSampling] = useState(false)
+  useEffect(() => {
+    let live = true
+    void tool<{ enabled?: boolean }>('demo_logins').then((r) => live && setSampleOn(r.enabled === true)).catch(() => {})
+    return () => { live = false }
+  }, [])
+  async function sample() {
+    setSampling(true)
+    setErr(null)
+    const r = await tool<{ ok?: boolean; code?: string }>('sample_record').catch(() => null)
+    setSampling(false)
+    if (r?.ok && r.code) setCode(r.code)
+    else setErr('No sample record just now. Try again in a minute.')
+  }
 
   async function verify(e?: FormEvent) {
     e?.preventDefault()
@@ -68,6 +86,9 @@ export default function VerifyPage() {
           <p id="code-hint" className="text-sm text-secondary">8 letters and numbers. It works for 24 hours, for one lender.</p>
           {err && <Notice tone="danger">{err}</Notice>}
           <Button type="submit" className="w-full" loading={busy} disabled={code.replace(/[^A-Za-z0-9]/g, '').length !== 8}>Verify</Button>
+          {sampleOn && (
+            <Button variant="plain" className="w-full" loading={sampling} onClick={() => void sample()}>Try a sample record (Funmi, demo)</Button>
+          )}
         </form>
       </Card>
 
@@ -119,7 +140,7 @@ function Summary({ r }: { r: Result }) {
   return (
     <div className="space-y-6">
       <Notice tone="success">
-        <span className="font-medium">Verified in {(r.ms / 1000).toFixed(1)} seconds</span>, read from Stellar. Shared with you {new Date(r.sharedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}; the code stops working {new Date(r.expiresAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.
+        <span className="font-medium">Verified in {(r.ms / 1000).toFixed(1)} seconds</span>, read from Stellar. Shared with you {formatTime(r.sharedAt, { date: true, locale: 'en-GB' })}; the code stops working {formatTime(r.expiresAt, { date: true, locale: 'en-GB' })}.
       </Notice>
 
       <Section title="History">
@@ -138,7 +159,7 @@ function Summary({ r }: { r: Result }) {
             href={credit} />
           {vouchedLoans.length > 0 && <Line label="Backed by ajo vouches" value={`${vouchedLoans.length} loan${vouchedLoans.length === 1 ? '' : 's'}`}
             sub={`${vouchedLoans.reduce((n, l) => n + l.vouchers.length, 0)} vouches from ajo members in good standing (verified ID, 6+ weeks, every ajo payment on time). Each voucher is a 32-byte reference.`} href={credit} />}
-          {rec.vouches.length > 0 && <Line label="Vouches for her next loan" value={rec.vouches.length} sub={`Ajo members in good standing${rec.vouches.length >= 2 ? '; with two or more, a first loan needs 100% collateral instead of 150%' : ''}`} href={credit} />}
+          {rec.vouches.length > 0 && <Line label="Vouches for the next loan" value={rec.vouches.length} sub={`Ajo members in good standing${rec.vouches.length >= 2 ? '; with two or more, a first loan needs 100% collateral instead of 150%' : ''}`} href={credit} />}
         </ListGroup>
       </Section>
 
@@ -159,7 +180,7 @@ function Summary({ r }: { r: Result }) {
           <ListGroup>
             {rec.events.slice(0, 8).map((e) => (
               <li key={`${e.tx}-${e.name}-${e.ref}`} className="flex items-center justify-between gap-3 px-4 py-3">
-                <span><span className="block text-base">{e.name}</span><span className="block text-sm text-secondary">{new Date(e.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></span>
+                <span><span className="block text-base">{e.name}</span><span className="block text-sm text-secondary">{formatTime(e.at, { date: true, locale: 'en-GB' })}</span></span>
                 <Source href={`${EXPLORER}/tx/${e.tx}`}>Transaction</Source>
               </li>
             ))}

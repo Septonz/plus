@@ -1,5 +1,6 @@
 // Plus Nigeria wording helpers: simple English (Pidgin-friendly) in big type, Yoruba underneath.
 // Every label lives in translations.ts (one file, for the Yoruba review).
+import { formatTime } from '../lib/time'
 import { formatMoney } from '@plus/markets'
 import type { MicWords } from '../plus/voice'
 import { W } from './translations'
@@ -17,6 +18,13 @@ export function Y({ k, className = '', sub = 'text-secondary' }: { k: WKey; clas
       <span className={`mt-0.5 text-sm font-normal tracking-normal ${sub}`}>{w.yo}</span>
     </span>
   )
+}
+
+/** A label in her language (Profile > Language): Yoruba or Pidgin when there is one, else English. {x} / {n} filled in. */
+export function inLang(k: WKey, lang: string | null | undefined, fill: { x?: string; n?: string } = {}): string {
+  const w = W[k] as { en: string; yo: string; pcm?: string }
+  const s = (lang === 'yo' && w.yo) || (lang === 'pcm' && w.pcm) || w.en
+  return s.replace('{x}', fill.x ?? '').replace('{n}', fill.n ?? '')
 }
 
 /** The Yoruba line only (for places that set the English themselves). */
@@ -40,7 +48,7 @@ export function when(iso: string): string {
   // Calendar days (yesterday at 23:00 is "yesterday", not "today").
   const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
   const days = Math.round((day(new Date()) - day(d)) / 86_400_000)
-  const time = d.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })
+  const time = formatTime(d)
   if (days <= 0) return `today ${time}`
   if (days === 1) return `yesterday ${time}`
   return `${days} days ago`

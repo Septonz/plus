@@ -89,7 +89,7 @@ async function main() {
   const waiting = credit("vouches_for", "--borrower", myRef) as string[];
   check(waiting.length === 2 && waiting.includes(await ref(amaka.id)) && waiting.includes(await ref(tunde.id)), "plus_credit: two vouches waiting for her next loan (Amaka's withdrawn one is gone)");
   const offer = await tool("loan_status");
-  check((offer.offer as Record<string, unknown>)?.collateral_pct === 100 && /Amaka and Tunde vouched for her .*100% collateral instead of 150%/.test(String(offer.text)),
+  check((offer.offer as Record<string, unknown>)?.collateral_pct === 100 && /Amaka and Tunde vouched for this loan .*100% collateral instead of 150%/.test(String(offer.text)),
     "her offer: 100% collateral instead of 150%, and why", String(offer.text).match(/Amaka and Tunde[^.]*\./)?.[0] ?? "");
 
   console.log("3. She takes the loan (her PIN)");

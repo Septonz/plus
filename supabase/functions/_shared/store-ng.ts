@@ -6,7 +6,7 @@ import { contractReader, refreshBalances } from "./ng-chain.ts";
 import { verifyPin as verifyPinRow } from "./pin.ts";
 import type { Payee } from "./payees.ts";
 import type { CreditAsset, CreditLoan, CreditWeek } from "./lending.ts";
-import type { CashOut, NgGroup, NgStore, NgTx, PlusPeer, RecordShare, Vouch, VouchCheck } from "./tools-ng.ts";
+import { type CashOut, newPayCode, type NgGroup, type NgStore, type NgTx, type PlusPeer, type RecordShare, type Vouch, type VouchCheck } from "./tools-ng.ts";
 import type { Action, CashIn } from "./tools.ts";
 
 const ACTION_COLS = "id, user_id, kind, params, readback, status, result, expires_at, created_by, created_at";
@@ -99,9 +99,12 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
         created_at: r.created_at,
       }));
     },
-    async transactions(userId, limit) {
+    async transactions(userId, limit, includeHidden = false) {
+      // Piece 11: the demo reset's own rows and everything before its curated history are hidden
+      // from her lists (hidden_from_history); they stay for audit, balances and Stellar.
+      const q = db.from("transactions").select(TX_COLS).eq("user_id", userId);
       return must(
-        await db.from("transactions").select(TX_COLS).eq("user_id", userId).order("created_at", { ascending: false }).limit(limit),
+        await (includeHidden ? q : q.eq("hidden_from_history", false)).order("created_at", { ascending: false }).limit(limit),
         "transactions",
       ) as NgTx[];
     },
@@ -149,7 +152,7 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
     async recordShares(userId) {
       return must(
         await db.from("record_shares").select("id, created_at, expires_at, revoked_at, first_viewed_at, views, last_viewed_at")
-          .eq("user_id", userId).order("created_at", { ascending: false }).limit(50),
+          .eq("user_id", userId).not("action_id", "is", null).order("created_at", { ascending: false }).limit(50), // /verify's samples are not hers to see
         "recordShares",
       ) as RecordShare[];
     },
@@ -211,6 +214,21 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
       ) as { id: string }[];
       return rows.length === 1;
     },
+    async payCode(userId) {
+      for (let i = 0; i < 5; i++) {
+        const { data } = await db.from("users").select("pay_code").eq("id", userId).single();
+        if (data?.pay_code) return data.pay_code as string;
+        const { error } = await db.from("users").update({ pay_code: newPayCode() }).eq("id", userId).is("pay_code", null);
+        if (error && !/duplicate|unique/i.test(error.message)) throw new Error(`pay code: ${error.message}`);
+      }
+      throw new Error("pay code: could not make a unique one");
+    },
+    async plusUserByPayCode(code) {
+      return must(
+        await db.from("users").select("id, name, market_id, kyc_tier, stellar_pub").eq("pay_code", code).is("archived_at", null).maybeSingle(),
+        "plusUserByPayCode",
+      ) as PlusPeer | null;
+    },
     async plusUserByPhone(phone) {
       const r = must(
         await db.from("users").select("id, name, market_id, kyc_tier, stellar_pub").eq("wa_phone", phone).is("archived_at", null).maybeSingle(),
@@ -258,7 +276,7 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
       return {
         frozen_until: (must(u, "credit user") as { borrowing_frozen_until: string | null }).borrowing_frozen_until,
         weeks: (must(weeks, "ng_credit_weeks") as Record<string, unknown>[]).map((w) => ({
-          week: Number(w.week), money_in: big(w.money_in), qualifying_tx: Number(w.qualifying_tx), saved: big(w.saved),
+          week: Number(w.week), money_in: big(w.money_in), qualifying_tx: Number(w.qualifying_tx), saved: big(w.saved), savings: big(w.savings ?? 0),
         }) as CreditWeek),
         assets: (must(assets, "assets") as Record<string, unknown>[]).map((a) => ({ ...a, estimated_value: big(a.estimated_value) }) as CreditAsset),
         loans: (must(loans, "ng_loans") as Record<string, unknown>[]).map((l) => ({
@@ -268,6 +286,23 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
         }) as unknown as CreditLoan),
         events: must(events, "loan_events") as { kind: string; amount: number | null; note: string | null; created_at: string }[],
       };
+    },
+    async savingsGoal(userId) {
+      const g = must(await db.from("savings_goals").select("id, name, goal, onchain_pot_id").eq("user_id", userId).eq("status", "active").maybeSingle(), "savings goal") as
+        { id: string; name: string; goal: number | string; onchain_pot_id: number | null } | null;
+      if (!g) return null;
+      const saved = must(await db.rpc("ng_savings_balance", { p_user_id: userId }), "ng_savings_balance") as number | string | null;
+      return { id: g.id, name: g.name, goal: BigInt(g.goal), onchain_pot_id: g.onchain_pot_id, saved: BigInt(saved ?? 0) };
+    },
+    async setSavingsGoal(userId, name, goal, assetSac) {
+      const r = must(await db.rpc("ng_savings_goal_set", { p_user_id: userId, p_name: name, p_goal: Number(goal), p_asset_sac: assetSac }), "ng_savings_goal_set") as { created: boolean };
+      return { created: !!r.created };
+    },
+    async updateProfile(userId, patch) {
+      must(await db.from("users").update(patch).eq("id", userId), "profile");
+    },
+    async setAutoSave(userId, bps) {
+      must(await db.from("users").update({ auto_save_bps: bps }).eq("id", userId), "auto save");
     },
     chain: contractReader(contractId),
   };

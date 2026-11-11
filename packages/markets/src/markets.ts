@@ -11,6 +11,8 @@ export interface Market {
   country: string;
   currency: { code: CurrencyCode; symbol: string; onChain: boolean };
   languages: string[];
+  /** What the voice agent actually speaks, as shown to people (piece 11: only what's real). */
+  spokenLanguages: string[];
   custody: "partner_bank" | "stellar_account";
   usdBalance: boolean;
   domesticRail: "upi_sim" | "stellar";
@@ -30,6 +32,8 @@ export interface Market {
   lending: Lending | null;
   /** claimable_code cash-outs: agents can claim at once; the user can take it back after returnAfterDays. */
   cashOutCode: { digits: number; returnAfterDays: number; maxAttempts: number } | null;
+  /** A cash agent's commission on cash in and out, basis points. `simulated`: a demo figure, not a real fee. */
+  agentCommission?: { bps: number; simulated: boolean };
   /** Hours a helper's or agent's cash-in waits for the user's Yes before it expires. */
   cashInExpiryHours: number;
   /** App screens, in bottom-nav order; the app picks screens and wording from this. */
@@ -74,7 +78,7 @@ export interface Lending {
   /** Why she got it: weights (percent) of the score shown on the offer. */
   weights: { activity: number; assets: number; savings: number };
   /** The rewards ladder: each repaid loan moves her up one step (the last step repeats). */
-  ladder: { max: number; costBps: number; collateralPct: number; approval: string }[];
+  ladder: { max: number; costBps: number; collateralPct: number; approval: string; laterCollateralPct?: number }[];
   /** Repayment: repayBps of every money-in, plus at least `minimum` every `everyDays`. */
   repay: { fromMoneyInBps: number; minimum: number; everyDays: number };
   /** Affordability: what she can repay over `weeks` from repayBps of her typical weekly money-in, plus the minimums. Rounded down to `roundTo`. */
@@ -153,6 +157,7 @@ export const MARKETS: Record<MarketId, Market> = {
     country: "India",
     currency: { code: "INR", symbol: "₹", onChain: false },
     languages: ["ta", "en"],
+    spokenLanguages: ["Tamil", "English"],
     custody: "partner_bank",
     usdBalance: false,
     domesticRail: "upi_sim",
@@ -191,7 +196,8 @@ export const MARKETS: Record<MarketId, Market> = {
     country: "Nigeria",
     currency: { code: "NGN", symbol: "₦", onChain: true },
     // English covers Nigerian Pidgin.
-    languages: ["en", "yo", "ha", "ig"],
+    languages: ["en", "pcm", "yo"], // the languages the agent speaks (Pidgin is its own choice)
+    spokenLanguages: ["English", "Pidgin", "Yoruba"],
     custody: "stellar_account",
     usdBalance: true,
     domesticRail: "stellar",
@@ -210,8 +216,8 @@ export const MARKETS: Record<MarketId, Market> = {
       ladder: [
         { max: 30000, costBps: 600, collateralPct: 150, approval: "within a day" },
         { max: 50000, costBps: 500, collateralPct: 125, approval: "within hours" },
-        { max: 80000, costBps: 450, collateralPct: 100, approval: "in minutes" },
-        { max: 80000, costBps: 450, collateralPct: 50, approval: "in minutes" },
+        // The top step repeats; from its second loan on, the collateral drops to laterCollateralPct.
+        { max: 80000, costBps: 450, collateralPct: 100, laterCollateralPct: 50, approval: "in minutes" },
       ],
       repay: { fromMoneyInBps: 1000, minimum: 2500, everyDays: 14 },
       affordability: { weeks: 12, roundTo: 5000 },
@@ -223,6 +229,7 @@ export const MARKETS: Record<MarketId, Market> = {
       vouch: { min: 2, collateralPct: 100, minWeeks: 6, banMonths: 6, max: 10 },
     },
     cashOutCode: { digits: 6, returnAfterDays: 7, maxAttempts: 5 },
+    agentCommission: { bps: 50, simulated: true }, // 0.5%, for the agent page's "Earned today" (no fee is charged)
     cashInExpiryHours: 24,
     screens: ["home", "add_cash", "pay", "group", "loan", "cash_out", "record", "settings"],
     record: "native",
