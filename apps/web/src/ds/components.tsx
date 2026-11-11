@@ -1,7 +1,7 @@
 // Plus core components. Every screen (app, agent, helper, onboarding, /demo) is built from these
 // and the tokens in tokens.css. Motion: gentle springs (motion/react); "reduce motion" is honoured
 // globally by <MotionConfig reducedMotion="user"> in main.tsx.
-import { AnimatePresence, motion, useDragControls, type PanInfo } from 'motion/react'
+import { AnimatePresence, motion, useDragControls, useIsPresent, type PanInfo } from 'motion/react'
 import { useEffect, useId, type ReactNode } from 'react'
 import { Icon } from './Icon'
 
@@ -118,6 +118,9 @@ export function Pass({
 export function CardDetail({ id, title, sub, onClose, children, fromPass = true }: { id: string; title: ReactNode; sub?: ReactNode; onClose: () => void; children: ReactNode; fromPass?: boolean }) {
   const controls = useDragControls()
   const titleId = useId()
+  // Leaving (another sheet is opening over it, or it is closing): it takes no taps while it animates
+  // out, so a tap meant for the new sheet can't land on a button underneath.
+  const present = useIsPresent()
   useEscape(onClose)
   useLockScroll()
   function end(_: unknown, info: PanInfo) {
@@ -139,6 +142,7 @@ export function CardDetail({ id, title, sub, onClose, children, fromPass = true 
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
+      style={present ? undefined : { pointerEvents: 'none' }}
       className="fixed inset-0 z-50 overflow-hidden rounded-none bg-canvas"
     >
       <div className="h-full overflow-y-auto overscroll-contain">
@@ -170,7 +174,7 @@ export function Sheet({
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true" aria-label={label}>
+        <SheetFrame label={label}>
           <motion.div
             className="absolute inset-0 bg-scrim backdrop-blur-sm"
             initial={{ opacity: 0 }}
@@ -197,9 +201,20 @@ export function Sheet({
             </div>
             <div className="px-5">{children}</div>
           </motion.div>
-        </div>
+        </SheetFrame>
       )}
     </AnimatePresence>
+  )
+}
+
+/** The sheet's full-screen layer; while it animates out it takes no taps (see CardDetail). */
+function SheetFrame({ label, children }: { label: string; children: ReactNode }) {
+  const present = useIsPresent()
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true" aria-label={label}
+      style={present ? undefined : { pointerEvents: 'none' }}>
+      {children}
+    </div>
   )
 }
 
