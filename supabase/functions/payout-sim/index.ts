@@ -9,7 +9,8 @@
 // idempotency_key credits once.
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
-import { bearer, json, kickChainWorker, preflight, readJson, health, withCors } from "../_shared/http.ts";
+import { bearer, json, kickChainWorker, preflight, readJson, withCors } from "../_shared/http.ts";
+import { privateHealth } from "../_shared/cron.ts";
 import { formatMoney, formatSpokenMoney } from "../_shared/markets.ts";
 import { parseMajorAmount } from "../_shared/payees.ts";
 
@@ -23,18 +24,19 @@ const STATE_TRANSFER_PAISE = 100_000n; // Rs 1,000
 const MAX_WAGES_PAISE = 2_000_000n; // Rs 20,000 per simulated payment
 
 Deno.serve(withCors(async (req) => {
-  const up = health(req, "payout-sim");
+  // /health only with the cron or agent secret (verify_jwt is off; approved 2026-11-10, CLAUDE.md).
+  const up = await privateHealth(req, db, "payout-sim");
   if (up) return up;
   const pre = preflight(req);
   if (pre) return pre;
   const endpoint = new URL(req.url).pathname.split("/").filter(Boolean).pop() ?? "";
-  const body = await readJson(req);
-  if (body instanceof Response) return body;
-
+  // Her login first, before the body is read or any endpoint runs (login-gate.test.ts).
   const token = bearer(req);
   if (!token) return json({ error: "unauthorized" }, 401);
   const { data: auth, error: authErr } = await db.auth.getUser(token);
   if (authErr || !auth.user) return json({ error: "unauthorized" }, 401);
+  const body = await readJson(req);
+  if (body instanceof Response) return body;
   const meta = (auth.user.app_metadata ?? {}) as { role?: string; demo?: boolean };
 
   let userId: string | null = null;

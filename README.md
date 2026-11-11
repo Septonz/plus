@@ -15,22 +15,38 @@ Funmi sells tomatoes at Bodija market in Ibadan and has no bank account. Her Plu
 **Live:** https://plus-wallet.vercel.app (Stellar testnet, all money simulated). The front door has
 one-tap demo logins for the fictional demo people; `/agent` is the cash-agent page.
 
-## The Nigeria demo
+## Demo
 
-### Funmi's 60-second script
+### Before every rehearsal
 
-Before every rehearsal: `pnpm demo:reset ng` (and `pnpm demo:reset in`), then `pnpm warm`. Open
-**http://localhost:5173/demo** (staff login) on the projector and **/agent** (Mama Bisi) on a phone.
+```sh
+pnpm demo:ready
+```
+
+It resets every demo person (Nigeria and India), warms every Edge Function, then checks each
+function, the cron jobs and what they answered, the chain outbox, Stellar RPC and Horizon, and a
+first tap as Funmi, and prints a green **READY** or exactly what is wrong (about 30 s). Then open
+**/demo** (staff login) on the projector and **/agent** (Mama Bisi) on a phone.
+
+### The demo people
+
+| Who | Login | What she shows |
+| --- | ----- | -------------- |
+| **Funmi** (Nigeria) | demo button | The unlocked borrower: no bank account, a wallet on Stellar, ₦26,400, an ajo round to pay, verified stall stock and a ₦30,000 loan offer. |
+| **Kemi** (Nigeria) | demo button | New to Plus: "week 4 of 6", building her history toward a first loan, and verifying an asset from scratch (live photo, two witnesses, an inspection). |
+| **Amaka** (Nigeria) | demo button | A witness: 20 weeks with Plus and a verified ID, so she can confirm Kemi's asset in her own app. |
+| **Mama Bisi** (Nigeria) | /agent | The cash agent: records cash in, pays out codes, confirms and inspects assets. Float ₦200,000. |
+| **Selvi** (India) | demo button | The same record for someone who does have a bank account: ₹2,350 to spend, ₹1,415 saved, a seettu. Meena is her group leader (helper page). |
+
+### The 60-second script
 
 | Time | On screen | Say |
 | ---- | --------- | --- |
-| 0:00 | /demo, Nigeria. Funmi's phone: ₦26,400 | "Funmi sells tomatoes at Bodija market in Ibadan. She has no bank account. This wallet on Stellar is her account." |
-| 0:08 | Mama Bisi records ₦500 on /agent. Funmi's phone: "Mama Bisi says you gave her ₦500. Is that right?" | "She hands cash to Mama Bisi, a Plus agent. Nothing moves until Funmi herself says yes." |
-| 0:15 | Funmi taps **Yes** on the confirm sheet. "Sending…", then the tick. The feed shows *Mama Bisi → Funmi* with its seconds | "About five seconds, and anyone can check it: here it is on Stellar Expert." |
-| 0:25 | **Ajo** card: 4 of 5 ticks, each linking to its transaction. Funmi taps **Pay my part** | "Her ajo's pot is held by a contract nobody can edit or run off with. It pays Amaka tomorrow, on time." |
-| 0:35 | **Loan** card: "you receive ₦30,000, cost ₦1,800, total ₦31,800", why (activity 40%, verified assets 35%, savings 25%), the ladder; accept with her PIN | "The full cost in naira, before she agrees, and why she got it. Her verified stall stock backs it. If she needs more time, she asks; nobody else is ever contacted." |
-| 0:45 | **Wallet** card → **Cash out** ₦2,000: a 6-digit code; Mama Bisi redeems it on /agent; the feed shows the claim | "Cash out works the same way: the money waits on Stellar for the agent holding her code." |
-| 0:55 | Switch to **India**: Selvi's phone | "Same agent, same record, for people who do have a bank account." |
+| 0:00–0:10 | Mama Bisi records ₦500 on /agent. Funmi's phone: "Mama Bisi says you gave her ₦500. Is that right?" She says "yes"; the tick, and the transaction on Stellar | "Funmi has no bank account. She hands cash to Mama Bisi, a Plus agent; nothing moves until Funmi says yes. There it is on Stellar." |
+| 0:10–0:25 | Funmi: "Pay my ajo." Plus reads it back, she says yes; the ajo card's pot grows | "Her ajo's pot is held by a contract that nobody can edit or run off with." |
+| 0:25–0:45 | Funmi: "Can I get a loan?" The Loan screen: you receive ₦30,000, cost ₦1,800, total ₦31,800, and why. She types her PIN; the money arrives. Then **Simulate transfer received** on Add money: 10% repays the loan by itself | "The full cost in naira before she agrees, and why she qualifies. The next money in repays a tenth of it, on its own." |
+| 0:45–0:55 | A lender verifies her record on **/verify** in seconds, read from Stellar (once piece 9 exists) | "Any lender can check her record without trusting Plus." |
+| 0:55–1:00 | Kemi's phone: "week 4 of 6" | "And Kemi, two weeks from her first loan." |
 
 ### Why the blockchain is essential in Nigeria
 
@@ -110,7 +126,7 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   `partner_kyc_mock`). No real company names or logos are used.
 - Custodial keys sit in Supabase secrets (demo people) or Vault (new sign-ups, `anchor_ng`); in
   production they would be in a KMS/HSM or held by the user (passkeys).
-- Demo people (Funmi, Selvi, Mama Bisi) sign in with a demo password; new users sign up with a
+- Demo people (Funmi, Kemi, Amaka, Selvi, Mama Bisi, Meena) sign in with a demo password; new users sign up with a
   phone code and sign in with phone + PIN.
 - Loans: the partner lender and its lending account (`lending_ng`, NGNT on testnet) are simulated;
   the numbers (ladder, cost, repayment) are illustrative and live in the market pack. Her weeks
@@ -137,6 +153,8 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
 | Her Yes → tick (confirmed on-chain), `pnpm e2e:ng`, 8 transactions | median 4.8 s, max 7.6 s (a busier testnet hour: median 6.5 s) |
 | Contract call, Yes → confirmed, before / after the speed work | median 10.6 s → 4.6 s |
 | First confirm of the day: cold function / after `pnpm warm` | 7.5 s → 0.8 s |
+| First tap on **Simulate transfer received** after `pnpm warm` (deep warm-up of agent-tools) | 1.15 s → 0.32–0.40 s |
+| `pnpm demo:ready` (both resets, warm-up, all checks) / `pnpm demo:reset ng` / `in` | about 30 s / 20 s / 2 s |
 | Edge Function `/health`: cold / warm | 0.5–1.2 s / 0.06–0.1 s |
 | Balance read from Horizon (Edge Function) | about 0.15 s |
 | Sign-up, `pnpm e2e:ng --new-user` (2026-11-09): 11 steps, server time | 3.9 to 4.7 s |
@@ -148,15 +166,21 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
 
 ### Demo tools
 
-- `pnpm demo:reset ng`: Funmi back to the starting state: ₦26,400, no loan open (an open one is
-  settled by the reset, which doesn't count toward her ladder) and a ₦30,000 offer, her stall stock
-  independently verified, no advance (the partner settles one if open); Kemi in week 4 of 6 with her demo assets released; Amaka able to witness (Kemi's saved payee); an ajo round she hasn't paid (a new round with the same members if she has), no
-  pending actions or unused cash-out codes, Mama Bisi's float ₦200,000. `pnpm demo:reset in`:
-  Selvi at ₹2,350 to spend and ₹1,415 saved, no advance, seettu unpaid this round. Never deletes
-  anything; it only adds transactions. Prints the state the app shows.
-- `pnpm warm`: wakes every Edge Function (`GET /functions/v1/<fn>/health`). To keep them warm for
-  a whole session, set the Supabase secret `DEMO_WARM=true`: the `plus-warm` cron then pings them
-  every 5 minutes (remove it afterwards to stop).
+- `pnpm demo:ready`: the reset for both markets, the warm-up and the checks (above). `--check`
+  checks only; `ng` or `in` for one market.
+- `pnpm demo:reset ng`: every Nigeria demo person back to a fixed start. Funmi: ₦26,400, no loan
+  open (an open one is settled by the reset, which doesn't count toward her ladder) and the ₦30,000
+  offer, stall stock independently verified, an ajo round she hasn't paid (a new round with the
+  same members if she has). Kemi: week 4 of 6, no assets (earlier ones are released). Amaka: able
+  to witness, Kemi's saved payee. Nothing waiting anywhere: no pending actions, cash-ins, unused
+  cash-out codes or witness requests for Funmi, Kemi, Amaka or Mama Bisi; Mama Bisi's float
+  ₦200,000. `pnpm demo:reset in`: Selvi at ₹2,350 to spend and ₹1,415 saved, no advance, seettu
+  unpaid this round, nothing waiting for her or Meena. Never deletes anything; it only adds
+  transactions. Prints the state the app shows and how long it took.
+- `pnpm warm`: wakes every Edge Function (`GET /functions/v1/<fn>/health` with the agent secret),
+  then `agent-tools/warm` opens its database and Stellar RPC connections so a first tap answers in
+  under a second. To keep them warm for a whole session, set the Supabase secret `DEMO_WARM=true`:
+  the `plus-warm` cron then does the same every 5 minutes (remove it afterwards to stop).
 - **/demo** (staff login from `pnpm staff:create`): the projector view. Left, the app in a phone
   frame signed in as Funmi (`/app?as=funmi`); right, every Stellar transaction behind it (Funmi,
   Mama Bisi, the ajo pot, the advance pool) with the seconds from her Yes and a Stellar Expert
@@ -172,7 +196,7 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   Supabase secret `DEMO_LOGINS_ENABLED`; after the showcase, switch them off in one command:
   `npx supabase secrets set DEMO_LOGINS_ENABLED=false --project-ref qoqmnjzfjhpemwleipth`.
   Money actions by a demo person are rate-limited (15 per 10 minutes, 120 a day). Run
-  `pnpm demo:reset ng` before every rehearsal.
+  `pnpm demo:ready` before every rehearsal.
 - **Deploys.** Vercel project `plus-wallet` (root `apps/web`) redeploys on every merge to `main`;
   pull requests get preview URLs (allowed by the Edge Function CORS list).
 - `pnpm screens` (`--dark` for dark mode): phone-size screenshots of every screen into `docs/screens/` (headless Chrome,
@@ -337,5 +361,5 @@ This is a Testnet prototype. Where it cuts corners, it does so in ways that do n
 ### Secrets (Supabase secrets, never committed)
 
 `PLUS_CONTRACT_ID`, `NGNT_SAC_ID`, `USDC_SAC_ID`, `PARTNER_SECRET` (pays fees, sponsors reserves), the `STELLAR_SECRET_*` custodial keys named by `users.secret_name` (Nigeria: `STELLAR_SECRET_FUNMI`, `STELLAR_SECRET_AGENT_NG`), `CASHOUT_CODE_SECRET` (cash-out code hashes), `AGENT_SHARED_SECRET`, `USER_REF_SECRET`, `PIN_PEPPER`, `VOICE_SESSION_SECRET`, `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`, `ELEVENLABS_AGENT_ID_NG`, and optionally `DEMO_WARM` (`true` keeps the functions warm). Names are in `.env.example`; values live only in Supabase secrets and Vault.
-- `pnpm demo:reset ng|in` and `pnpm warm`: see "The Nigeria demo" above.
+- `pnpm demo:ready`, `pnpm demo:reset ng|in` and `pnpm warm`: see "Demo" above.
 - `pnpm bindings`: regenerates `packages/plus-client` from the deployed contract and re-applies the `@plus/client` name and the TypeScript 7 `rootDir` fix.

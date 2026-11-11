@@ -611,11 +611,12 @@ export const ngSimulateBankTransfer: NgTool = async ({ user, store, args, channe
   if (!user.stellar_pub || !user.virtual_account) return refuse("Her wallet is not open yet.", "no_wallet");
   const amount = parseMajorAmount(args.amount);
   if (amount === null) return refuse("Enter an amount in naira.", "invalid_amount");
-  const full = await receiveCheck(store, user, amount);
+  // The limit check and the advance lookup (Stellar RPC) run side by side: a first tap is under a second.
+  const [full, advance] = await Promise.all([receiveCheck(store, user, amount), store.chain.advanceOf(user.stellar_pub)]);
   if (full) return full;
   const ref = typeof args.ref === "string" && /^[A-Za-z0-9_-]{8,80}$/.test(args.ref) ? args.ref : crypto.randomUUID();
   const sender = typeof args.sender === "string" && args.sender.trim() ? args.sender.trim().slice(0, 60) : "A bank customer";
-  const repay = cashInRepayment(amount, await store.chain.advanceOf(user.stellar_pub));
+  const repay = cashInRepayment(amount, advance);
   const r = await store.bankTransferIn(user.id, amount, repay, ref, sender);
   return {
     text: `${say(amount)} arrived by bank transfer from ${sender}. It is on its way into her wallet on Stellar.` +

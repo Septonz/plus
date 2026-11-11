@@ -29,3 +29,14 @@ export async function jobGate(req: Request, db: JobDb, fn: string): Promise<Resp
   if (!(await mayRunJob(req, db))) return json({ error: "unauthorized" }, 401);
   return health(req, fn);
 }
+
+/**
+ * /health for a function that otherwise needs a login (payout-sim): only with a cron or agent secret,
+ * so `pnpm warm` and scheduler/warm can wake it without the gateway JWT (approved 2026-11-10).
+ * Any other route returns null: the function's own login check comes next.
+ */
+export async function privateHealth(req: Request, db: JobDb, fn: string): Promise<Response | null> {
+  if (req.method !== "GET" || !new URL(req.url).pathname.endsWith("/health")) return null;
+  if (!(await mayRunJob(req, db))) return json({ error: "unauthorized" }, 401);
+  return health(req, fn);
+}

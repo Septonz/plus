@@ -434,7 +434,10 @@ entrypoint = "./functions/agent-tools/index.ts"
 
 [functions.payout-sim]
 enabled = true
-verify_jwt = true
+# No gateway JWT (approved by the owner 2026-11-10): /health takes the cron or agent secret so
+# `pnpm warm` and scheduler/warm reach it; every other route checks her login first
+# (privateHealth in _shared/cron.ts; job-gate.test.ts and login-gate.test.ts).
+verify_jwt = false
 import_map = "./functions/payout-sim/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx

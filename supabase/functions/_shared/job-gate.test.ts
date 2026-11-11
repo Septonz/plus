@@ -5,7 +5,7 @@
 //   2. Each function's handler starts with jobGate, and the routes listed here are exactly the
 //      routes its source handles (add a route, and this test fails until it is listed here).
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { jobGate, type JobDb } from "./cron.ts";
+import { jobGate, type JobDb, privateHealth } from "./cron.ts";
 
 const SECRET = "test-agent-secret-0123456789abcdef0123456789";
 Deno.env.set("AGENT_SHARED_SECRET", SECRET);
@@ -70,3 +70,27 @@ for (const fn of Object.keys(ROUTES)) {
     assertEquals([...new Set(found)].sort(), [...ROUTES[fn]].sort(), "routes in the source vs. routes tested here");
   });
 }
+
+// payout-sim (verify_jwt = false, approved 2026-11-10): GET /health only with a cron or agent
+// secret; every other route falls through to its login check (login-gate.test.ts pins that).
+Deno.test("payout-sim /health: 401 without a valid secret, 200 with one", async () => {
+  for (const headers of <Record<string, string>[]>[
+    {}, { "x-plus-secret": "wrong" }, { "x-plus-cron-secret": "wrong-cron-secret" }, { authorization: "Bearer eyJhbGciOiJIUzI1NiJ9.e30.x" },
+  ]) {
+    assertEquals((await privateHealth(req("payout-sim", "/health", "GET", headers), db, "payout-sim"))?.status, 401, JSON.stringify(headers));
+  }
+  for (const headers of <Record<string, string>[]>[{ "x-plus-secret": SECRET }, { "x-plus-cron-secret": CRON_OK }]) {
+    assertEquals((await privateHealth(req("payout-sim", "/health", "GET", headers), db, "payout-sim"))?.status, 200);
+  }
+  for (const path of ["/state_transfer_arrives", "/wages_arrive", ""]) {
+    assertEquals(await privateHealth(req("payout-sim", path, "POST"), db, "payout-sim"), null, `${path} goes on to the login check`);
+  }
+});
+
+Deno.test("payout-sim: privateHealth comes first and health() is not served elsewhere", async () => {
+  const src = await Deno.readTextFile(new URL("../payout-sim/index.ts", import.meta.url));
+  const body = src.split("Deno.serve(")[1].split("\n").slice(1).map((l) => l.trim()).filter((l) => l && !l.startsWith("//"));
+  assertEquals(body[0], `const up = await privateHealth(req, db, "payout-sim");`);
+  assertEquals(body[1], "if (up) return up;");
+  assert(!/\bhealth\(req/.test(src.replace(/privateHealth\(req/g, "")), "only privateHealth answers /health");
+});
