@@ -291,6 +291,75 @@ async function curateSelvi(selviId: string) {
   console.log(`  recent history: ${chosen.length} of her own rows (each on Stellar) over the last 10 days; older rows hidden from her list, kept`);
 }
 
+/**
+ * Piece 11: her savings goal, a pot on the plus contract that pays back only to her (sender =
+ * payout_to = Funmi). The demo starts at "Stall shade", ₦18,500 of ₦50,000, auto-save 10%. The pot's
+ * balance on Stellar and Plus's ledger (ng_savings_balance) are both brought to ₦18,500 with real
+ * pot_fund / pot_send transactions; the first time, four real deposits over ten days make her history.
+ */
+const SAVINGS_GOAL = { name: "Stall shade", naira: 50_000n, saved: 18_500n };
+async function resetSavings(funmiId: string, NGNT: Asset, NGNT_SAC: string) {
+  const f = plus("funmi");
+  let goal = must(await db.from("savings_goals").select("id, onchain_pot_id").eq("user_id", funmiId).eq("status", "active").maybeSingle(), "goal") as
+    { id: string; onchain_pot_id: number | null } | null;
+  if (!goal || goal.onchain_pot_id === null) {
+    if (goal) must(await db.from("savings_goals").update({ status: "closed" }).eq("id", goal.id), "close unfinished goal");
+    const hash = await send("Funmi opens her savings pot (pot_create: to herself, manual only)", await signed(await f.pot_create({
+      sender: pub("funmi"), payout_to: pub("funmi"), asset: NGNT_SAC, per_period: SAVINGS_GOAL.naira * UNIT, period_secs: 0n,
+    }, { timeoutInSeconds: 60 }) as unknown as Assembled, true));
+    const tx = await server.getTransaction(hash);
+    const potId = Number(tx.status === rpc.Api.GetTransactionStatus.SUCCESS && tx.returnValue ? scValToNative(tx.returnValue) : NaN);
+    if (!Number.isInteger(potId)) throw new Error("could not read the new pot id");
+    goal = must(await db.from("savings_goals").insert({ user_id: funmiId, name: SAVINGS_GOAL.name, goal: (SAVINGS_GOAL.naira * 100n).toString(), onchain_pot_id: potId })
+      .select("id, onchain_pot_id").single(), "goal row") as { id: string; onchain_pot_id: number };
+  }
+  must(await db.from("savings_goals").update({ name: SAVINGS_GOAL.name, goal: (SAVINGS_GOAL.naira * 100n).toString(), updated_at: new Date().toISOString() }).eq("id", goal.id), "goal");
+  must(await db.from("users").update({ auto_save_bps: 1000 }).eq("id", funmiId), "auto-save 10%");
+  const potId = goal.onchain_pot_id!;
+  const fund = async (label: string, units: bigint) => await send(label, await signed(await f.pot_fund({ sender: pub("funmi"), pot_id: potId, amount: units }, { timeoutInSeconds: 60 }) as unknown as Assembled, true));
+  const needCash = async (units: bigint) => {
+    const have = await assetBalance("funmi", NGNT);
+    if (have < units) await send(`issuer gives Funmi ${naira(units - have)} to save`, await classic("issuer", [Operation.payment({ destination: pub("funmi"), asset: NGNT, amount: decimal(units - have) })]));
+  };
+
+  const balance = async () => BigInt((unwrap<{ balance: bigint }>(await plus("partner").pot({ pot_id: potId }))).balance);
+  const target = SAVINGS_GOAL.saved * UNIT;
+  const shown = must(await db.from("transactions").select("id").eq("user_id", funmiId).eq("kind", "saved").like("ref", "demo_history:%"), "savings history") as { id: string }[];
+  if ((await balance()) === 0n && shown.length === 0) {
+    // First time: four real deposits make up her ₦18,500 (two by hand, two auto-saved from money in).
+    const deposits: [bigint, string, number, number][] = [[10_000n, "manual", 9, 18], [1_250n, "auto_save", 6, 17], [5_000n, "manual", 4, 19], [2_250n, "auto_save", 1, 15]];
+    await needCash(target);
+    for (const [n, source, d, h] of deposits) {
+      const hash = await fund(`Funmi saves ${naira(n * UNIT)} into ${SAVINGS_GOAL.name} (pot_fund${source === "auto_save" ? ", auto-save" : ""})`, n * UNIT);
+      await addHistory({ user_id: funmiId, kind: "saved", source, counterparty: SAVINGS_GOAL.name, amount: -n * 100n, hash, at: daysAgo(d, h) });
+    }
+  }
+  // Whatever she saved or took out during the last demo: back to ₦18,500, on Stellar and in the ledger.
+  const now = await balance();
+  if (now !== target) {
+    const diff = target - now;
+    const hash = diff > 0n
+      ? (await needCash(diff), await fund(`Funmi's savings back to ${naira(target)} (pot_fund ${naira(diff)})`, diff))
+      : await send(`Funmi's savings back to ${naira(target)} (pot_send ${naira(-diff)} to her wallet)`,
+        await signed(await f.pot_send({ sender: pub("funmi"), pot_id: potId, amount: -diff }, { timeoutInSeconds: 60 }) as unknown as Assembled, true));
+    await addTx({ user_id: funmiId, kind: diff > 0n ? "saved" : "savings_out", source: "demo_reset", amount: -diff / KOBO_PER_UNIT, hash });
+  }
+  const { data: ledger } = await db.rpc("ng_savings_balance", { p_user_id: funmiId });
+  const gap = SAVINGS_GOAL.saved * 100n - BigInt(String(ledger ?? 0));
+  if (gap !== 0n) {
+    // The ledger drifted from the pot (e.g. a demo row from before piece 11): one hidden correcting row.
+    must(await db.from("transactions").insert({
+      user_id: funmiId, market_id: "ng", kind: "saved", source: "demo_reset_ledger", amount: (-gap).toString(), currency: "NGN", rail: "stellar",
+      ref: `demo_reset_ledger:${Date.now()}`, status: "completed",
+    }), "ledger correction");
+  }
+  // Her four deposits show in her history again (3c hid everything older).
+  const rows = must(await db.from("transactions").select("id").eq("user_id", funmiId).eq("kind", "saved").like("ref", "demo_history:%")
+    .order("created_at", { ascending: false }).limit(4), "savings rows") as { id: string }[];
+  for (const r of rows) must(await db.from("transactions").update({ hidden_from_history: false }).eq("id", r.id), "show savings row");
+  console.log(`  ${SAVINGS_GOAL.name}: ${naira(await balance())} of ${naira(SAVINGS_GOAL.naira * UNIT)} in pot ${potId} on Stellar; auto-save 10%`);
+}
+
 async function waitForOutbox(signers: string[]) {
   for (let i = 0; i < 45; i++) {
     const { count } = await db.from("chain_outbox").select("id", { count: "exact", head: true })
@@ -353,7 +422,7 @@ async function ensureSystem(signer: "anchor_ng" | "lending_ng", min: bigint, NGN
   }
 }
 
-type WeekTarget = { money_in: bigint; tx: number; saved: bigint }; // naira, count, naira
+type WeekTarget = { money_in: bigint; tx: number; saved: bigint; savings?: bigint }; // naira, count, naira, naira
 
 /**
  * Her compressed demo history: per week, the seed tops real activity up to the target (real
@@ -362,7 +431,7 @@ type WeekTarget = { money_in: bigint; tx: number; saved: bigint }; // naira, cou
 async function seedHistory(userId: string, targets: Map<number, WeekTarget>) {
   must(await db.from("credit_history_seed").delete().eq("user_id", userId).select("user_id"), "clear seed");
   const real = must(await db.rpc("ng_credit_weeks", { p_user_id: userId }), "credit weeks") as
-    { week: number; money_in: number; qualifying_tx: number; saved: number }[];
+    { week: number; money_in: number; qualifying_tx: number; saved: number; savings: number }[];
   const byWeek = new Map(real.map((w) => [w.week, w]));
   const rows = [...targets].map(([week, t]) => {
     const r = byWeek.get(week);
@@ -372,8 +441,9 @@ async function seedHistory(userId: string, targets: Map<number, WeekTarget>) {
       money_in: gap(t.money_in, r?.money_in ?? 0).toString(),
       qualifying_tx: Math.max(0, t.tx - (r?.qualifying_tx ?? 0)),
       saved: gap(t.saved, r?.saved ?? 0).toString(),
+      savings: gap(t.savings ?? 0n, r?.savings ?? 0).toString(),
     };
-  }).filter((r) => r.money_in !== "0" || r.qualifying_tx > 0 || r.saved !== "0");
+  }).filter((r) => r.money_in !== "0" || r.qualifying_tx > 0 || r.saved !== "0" || r.savings !== "0");
   if (rows.length) must(await db.from("credit_history_seed").insert(rows).select("user_id"), "seed history");
   return rows.length;
 }
@@ -539,7 +609,7 @@ async function resetNigeria() {
   await settleLoans(funmi.id, "Funmi");
   const me = must(await db.from("users").select("member_since").eq("id", funmi.id).single(), "member_since") as { member_since: string };
   const fw = weekOf(me.member_since);
-  const seeded = await seedHistory(funmi.id, new Map(Array.from({ length: fw }, (_, i) => [i + 1, { money_in: 12_500n, tx: 6, saved: 1_000n }])));
+  const seeded = await seedHistory(funmi.id, new Map(Array.from({ length: fw }, (_, i) => [i + 1, { money_in: 12_500n, tx: 6, saved: 1_000n, savings: fw - i <= 8 && (fw - i) % 4 !== 3 ? 500n : 0n }])));
   console.log(`  week ${fw} with Plus; history seeded for ${seeded} weeks (about ₦12,500 in a week, ajo every week)`);
   const stock = must(await db.from("assets").select("id").eq("user_id", funmi.id).eq("description", "Stall stock (tomatoes)").maybeSingle(), "stock") as { id: string } | null;
   const asset = { user_id: funmi.id, type: "stock", description: "Stall stock (tomatoes)", estimated_value: "9000000", level: "independently_verified", status: "active", confidence: 85 };
@@ -553,6 +623,9 @@ async function resetNigeria() {
 
   console.log("\n3c. Her recent history (what Home and Activity show)");
   await curateFunmi(funmi.id, NGNT);
+
+  console.log("\n3d. Savings (her goal pot on Stellar)");
+  await resetSavings(funmi.id, NGNT, NGNT_SAC);
 
   console.log("\n4. Funmi's wallet and Mama Bisi's float");
   for (const [name, target, userId] of [["funmi", FUNMI_START * UNIT, funmi.id], ["agent_ng", FLOAT_START * UNIT, null]] as const) {

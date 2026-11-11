@@ -51,10 +51,11 @@ function Waiting({ data, onAnswer }: { data: PlusData; onAnswer: (a: PendingActi
 
 // ---------------------------------------------------------------------------- Home
 
-export type Detail = 'wallet' | 'group' | 'loan' | 'assets' | 'add_cash' | 'cash_out'
+export type Detail = 'wallet' | 'savings' | 'group' | 'loan' | 'assets' | 'add_cash' | 'cash_out'
 
 export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Props & { onAnswer: (a: PendingAction) => void; open: Detail | null; onOpen: (d: Detail) => void }) {
   const ajo = useTool('group_status', version)
+  const sav = useTool('savings_status', version)
   const loan = useTool('loan_status', version)
   const assets = useTool('my_assets', version)
   const owned = ((assets?.assets ?? []) as Row[]).filter((a) => a.status !== 'released')
@@ -69,11 +70,12 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
   useSays(
     `Home. Wallet: ${wallet ? naira(wallet.NGNT) : 'loading'}${sending ? `, ${sending} sending` : ''}. ` +
       (ajo ? (ajo.in_group ? `Ajo ${String(ajo.name)}: ${paid} of ${members.length} paid this round; her part ${ajo.paid_this_period ? 'is paid' : ajo.on_its_way ? 'is sending' : `is not paid (${String(ajo.amount_text)})`}. ` : 'Not in an ajo. ') : '') +
+      (sav?.has_goal ? `Savings: ${String(sav.saved_text)} of ${String(sav.goal_text)} for ${String(sav.goal_name)}. ` : '') +
       (loan?.ok ? `Loan: ${loanLine(loan)}. ` : '') +
       (cashIns.length ? `Waiting for her answer: ${cashIns.map((a) => a.readback).join('; ')}. ` : '') +
       (latest.length ? `Latest: ${latest.slice(0, 3).map((t) => `${String(t.label)} ${t.outgoing ? '-' : '+'}${String(t.amount_text)}`).join(', ')}. ` : '') +
       (assets?.ok ? `Assets: ${owned.length} registered, ${verified} verified. ` : '') +
-      'Cards: Wallet, Ajo, Loan, Assets. Tabs: Home, Pay, Activity, Profile.',
+      'Cards: Wallet, Savings, Ajo, Loan, Assets. Tabs: Home, Pay, Activity, Profile.',
   )
 
   return (
@@ -102,6 +104,17 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
           note={sending > 0 ? `${sending} sending…` : 'Add money · Cash out'}
         >
           {wallet ? <AmountDisplay text={naira(wallet.NGNT)} size="lg" /> : <Skeleton className="h-12 w-48 opacity-30" />}
+        </Pass>
+        <Pass
+          id="savings"
+          icon="savings"
+          title={W.savings.en}
+          sub={sav ? (sav.has_goal ? `${W.goal.en}: ${String(sav.goal_name)} ${String(sav.goal_text)}` : 'Set a goal') : ' '}
+          value={sav?.has_goal ? String(sav.saved_text) : undefined}
+          hidden={open === 'savings'}
+          onOpen={() => onOpen('savings')}
+        >
+          {sav?.has_goal ? <Progress pct={savedPct(sav)} label={`${String(sav.left_text)} to go`} /> : null}
         </Pass>
         <Pass
           id="group"
@@ -736,6 +749,90 @@ export function Loan({ version }: Props) {
   )
 }
 
+// ---------------------------------------------------------------------------- Savings (piece 11)
+
+const kobo = (text: unknown) => BigInt(String(text ?? '').replace(/[^0-9]/g, '') || '0')
+function savedPct(s: ToolResult): number {
+  const goal = kobo(s.goal_text)
+  return goal > 0n ? Math.min(100, Number((kobo(s.saved_text) * 100n) / goal)) : 0
+}
+
+/** Her savings goal: a pot on the plus contract that pays back only to her. */
+export function Savings({ data, version }: Props) {
+  const s = useTool('savings_status', version)
+  const rec = useTool('my_record', version)
+  const [mode, setMode] = useState<'add' | 'out'>('add')
+  const [amount, setAmount] = useState('')
+  const [goalName, setGoalName] = useState('')
+  const [goalAmount, setGoalAmount] = useState('')
+  const { busy, msg, run } = useSubmit()
+  const [autoBusy, setAutoBusy] = useState(false)
+  const moves = ((rec?.recent ?? []) as Row[]).filter((t) => t.kind === 'saved' || t.kind === 'savings_out').slice(0, 5)
+  const auto = Number(s?.auto_save_pct ?? (data.me?.auto_save_bps ?? 0) / 100)
+  useSays(s ? `Savings. ${forScreen(String(s.text))}` +
+    (s.has_goal ? ` Buttons: ${W.addToSavings.en}, ${W.takeOut.en}. Auto-save choices: 0, 5, 10, 20 percent.` : ` Fields: what she is saving for, the goal amount; button ${W.setGoal.en}.`) : 'Savings, loading.')
+  const setAuto = async (pct: number) => {
+    setAutoBusy(true)
+    await tool('set_auto_save', { percent: pct }).catch(() => null)
+    setAutoBusy(false)
+    void data.refresh()
+  }
+  return (
+    <Loaded r={s} rows={3}>
+      {(s) => !s.has_goal ? (
+        <Card className="space-y-4">
+          <p className="text-lg">What are you saving for?</p>
+          <TextField label="Your goal" value={goalName} onChange={setGoalName} placeholder="New stall shade" />
+          <TextField label="How much (₦)" value={goalAmount} onChange={(v) => setGoalAmount(v.replace(/[^0-9]/g, '').slice(0, 7))} inputMode="numeric" placeholder="50000" />
+          {msg && <Notice tone="danger">{msg}</Notice>}
+          <Button className="w-full" loading={busy} disabled={!goalName.trim() || !goalAmount} onClick={async () => {
+            const r = await run('set_savings_goal', { name: goalName.trim(), amount: goalAmount })
+            if (r.ok) void data.refresh()
+          }}>{W.setGoal.en}</Button>
+        </Card>
+      ) : (
+        <>
+          <Card className="space-y-4">
+            <div>
+              <p className="text-base text-secondary">{W.goal.en}: {String(s.goal_name)}</p>
+              <AmountDisplay text={String(s.saved_text)} size="lg" />
+              <p className="text-base text-secondary">of {String(s.goal_text)}</p>
+            </div>
+            <Progress pct={savedPct(s)} label={`${String(s.left_text)} to go`} />
+            <p className="flex items-center gap-2 text-sm text-secondary"><Icon name="lock" /> <Bilingual main={W.onlyYou.en} sub={yo('onlyYou')} /></p>
+          </Card>
+          {s.ready ? (
+            <Card className="space-y-4">
+              <Segmented<'add' | 'out'> label="Add or take out" value={mode} onChange={(m) => { setMode(m); setAmount('') }}
+                options={[['add', W.addToSavings.en], ['out', W.takeOut.en]]} />
+              <AmountEntry value={amount} onChange={setAmount} max={6} />
+              {mode === 'out' && <p className="text-sm text-secondary">Above {naira(BigInt(NG.pinThreshold) * 100n)} you type your PIN.</p>}
+              {msg && <Notice tone="danger">{msg}</Notice>}
+              <Button className="w-full" loading={busy} disabled={!amount} onClick={async () => {
+                const r = await run(mode === 'add' ? 'prepare_save' : 'prepare_withdraw_savings', { amount })
+                if (r.ok) setAmount('')
+              }}>{W.next.en}</Button>
+            </Card>
+          ) : (
+            <Notice>Your savings pot is being set up on Stellar. A few seconds.</Notice>
+          )}
+          <Section title={W.autoSave.en}>
+            <Card className="space-y-3">
+              <Segmented<string> label={W.autoSave.en} value={String(auto)} onChange={(v) => void setAuto(Number(v))}
+                options={[0, 5, 10, 20].map((p) => [String(p), p === 0 ? 'Off' : `${p}%`] as [string, string])} />
+              <p className="text-sm text-secondary">{autoBusy ? 'Saving…' : <Bilingual main={W.autoSaveHow.en} sub={yo('autoSaveHow')} />}</p>
+            </Card>
+          </Section>
+          <Section title={W.latest.en}>
+            {moves.length > 0 ? <ListGroup>{moves.map((t) => <TxRow key={String(t.id)} t={t} />)}</ListGroup>
+              : <EmptyState icon="savings" title="Nothing saved yet">What you save shows here, each one on Stellar.</EmptyState>}
+          </Section>
+        </>
+      )}
+    </Loaded>
+  )
+}
+
 // ---------------------------------------------------------------------------- Cash out
 
 type ShownCode = { id: string; code: string } | null
@@ -789,7 +886,7 @@ export function CashOut({ version, shownCode, onShowCode }: Props & { shownCode:
 // ---------------------------------------------------------------------------- Activity
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
-const KIND_ICON: Record<string, string> = { incoming: 'in', pay: 'pay', group_contribution: 'group', advance: 'advance', repay: 'advance', loan: 'loan', loan_repay: 'loan', cash_out: 'cash' }
+const KIND_ICON: Record<string, string> = { incoming: 'in', pay: 'pay', group_contribution: 'group', advance: 'advance', repay: 'advance', loan: 'loan', loan_repay: 'loan', cash_out: 'cash', saved: 'savings', savings_out: 'savings' }
 
 /** One transaction with its "Verified on Stellar" tick, which links to the transaction. */
 function TxRow({ t }: { t: Row }) {

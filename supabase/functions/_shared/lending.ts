@@ -12,6 +12,8 @@ export interface CreditWeek {
   money_in: bigint;
   qualifying_tx: number;
   saved: bigint;
+  /** Piece 11: savings deposits (her goal pot on Stellar) that week. */
+  savings?: bigint;
 }
 
 export interface CreditAsset {
@@ -109,7 +111,11 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
   const qualifying = sofar.reduce((s, w) => s + w.qualifying_tx, 0);
   // Savings consistency looks at her last 8 weeks (or fewer, if she is newer).
   const considered = Math.max(1, Math.min(8, week));
-  const savedWeeks = sofar.filter((w) => w.week > week - considered && w.saved > 0n).length;
+  const recent = sofar.filter((w) => w.week > week - considered);
+  const ajoWeeks = recent.filter((w) => w.saved > 0n).length;
+  const potWeeks = recent.filter((w) => (w.savings ?? 0n) > 0n).length;
+  // A week counts when she put money aside at all: ajo or her savings goal.
+  const savedWeeks = recent.filter((w) => w.saved > 0n || (w.savings ?? 0n) > 0n).length;
   const identity = input.kyc_tier >= 2;
   const open = input.loans.find((l) => OPEN_STATUSES.has(l.status)) ?? null;
   // Postgres returns a freeze "until repaid" as the string "infinity".
@@ -163,7 +169,7 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
   const why = [
     { key: "activity", label: "Activity", weight: L.weights.activity, points: Math.round(activity * L.weights.activity), detail: `${activeWeeks} active weeks and ${qualifying} qualifying transactions since joining Plus` },
     { key: "assets", label: "Verified assets", weight: L.weights.assets, points: Math.round(assetsPart * L.weights.assets), detail: verified.length ? `${verified[0].description}, ${levelWords(verified[0].level)}` : "None verified yet" },
-    { key: "savings", label: "Savings consistency", weight: L.weights.savings, points: Math.round(savings * L.weights.savings), detail: `Ajo paid in ${savedWeeks} of ${considered} weeks` },
+    { key: "savings", label: "Savings consistency", weight: L.weights.savings, points: Math.round(savings * L.weights.savings), detail: `Ajo paid in ${ajoWeeks} of ${considered} weeks` + (potWeeks > 0 ? ` · saved in ${potWeeks} of ${considered} weeks` : "") },
   ];
 
   // Before unlock: an estimate, not an offer, from what she does now.

@@ -68,6 +68,16 @@ export const W = {
   smallerPayments: { en: 'Smaller payments', yo: 'Ìsanwó kékeré' }, // check
   nobodyElse: { en: 'Plus never contacts anyone else about your loan.', yo: 'Plus kò ní kàn sí ẹlòmíì nípa owó tí o yá.' }, // check
 
+  // Savings (piece 11)
+  savings: { en: 'Savings', yo: 'Owó ìpamọ́' }, // check
+  goal: { en: 'Goal', yo: 'Àfojúsùn' }, // check
+  addToSavings: { en: 'Add to savings', yo: 'Fi kún owó ìpamọ́' }, // check
+  takeOut: { en: 'Take out', yo: 'Mú jáde' }, // check
+  autoSave: { en: 'Auto-save', yo: 'Ìpamọ́ aládàáṣe' }, // check
+  autoSaveHow: { en: 'Of every money-in, after any loan payment', yo: 'Nínú owó tó bá wọlé, lẹ́yìn ìsanwó owó yíyá' }, // check
+  setGoal: { en: 'Set my goal', yo: 'Ṣètò àfojúsùn mi' }, // check
+  onlyYou: { en: 'Held on Stellar, apart from your spending money. Only you can take it out.', yo: 'Ó wà lórí Stellar, lọ́tọ̀ sí owó ìnáwó rẹ. Ìwọ nìkan ló lè mú un jáde.' }, // check
+
   // Assets (piece 5)
   assets: { en: 'Assets', yo: 'Ohun ìní' }, // check
   addAsset: { en: 'Add something you own', yo: 'Fi ohun tí o ní kún un' }, // check

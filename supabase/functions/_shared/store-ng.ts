@@ -261,7 +261,7 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
       return {
         frozen_until: (must(u, "credit user") as { borrowing_frozen_until: string | null }).borrowing_frozen_until,
         weeks: (must(weeks, "ng_credit_weeks") as Record<string, unknown>[]).map((w) => ({
-          week: Number(w.week), money_in: big(w.money_in), qualifying_tx: Number(w.qualifying_tx), saved: big(w.saved),
+          week: Number(w.week), money_in: big(w.money_in), qualifying_tx: Number(w.qualifying_tx), saved: big(w.saved), savings: big(w.savings ?? 0),
         }) as CreditWeek),
         assets: (must(assets, "assets") as Record<string, unknown>[]).map((a) => ({ ...a, estimated_value: big(a.estimated_value) }) as CreditAsset),
         loans: (must(loans, "ng_loans") as Record<string, unknown>[]).map((l) => ({
@@ -271,6 +271,20 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
         }) as unknown as CreditLoan),
         events: must(events, "loan_events") as { kind: string; amount: number | null; note: string | null; created_at: string }[],
       };
+    },
+    async savingsGoal(userId) {
+      const g = must(await db.from("savings_goals").select("id, name, goal, onchain_pot_id").eq("user_id", userId).eq("status", "active").maybeSingle(), "savings goal") as
+        { id: string; name: string; goal: number | string; onchain_pot_id: number | null } | null;
+      if (!g) return null;
+      const saved = must(await db.rpc("ng_savings_balance", { p_user_id: userId }), "ng_savings_balance") as number | string | null;
+      return { id: g.id, name: g.name, goal: BigInt(g.goal), onchain_pot_id: g.onchain_pot_id, saved: BigInt(saved ?? 0) };
+    },
+    async setSavingsGoal(userId, name, goal, assetSac) {
+      const r = must(await db.rpc("ng_savings_goal_set", { p_user_id: userId, p_name: name, p_goal: Number(goal), p_asset_sac: assetSac }), "ng_savings_goal_set") as { created: boolean };
+      return { created: !!r.created };
+    },
+    async setAutoSave(userId, bps) {
+      must(await db.from("users").update({ auto_save_bps: bps }).eq("id", userId), "auto save");
     },
     chain: contractReader(contractId),
   };

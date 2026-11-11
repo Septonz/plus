@@ -124,5 +124,21 @@ export function contractReader(contractId: string): ContractReader {
     async poolBalance(assetSac) {
       return chainToMinor(await view("pool_balance", (S) => [new S.Address(assetSac).toScVal()]));
     },
+    async pot(id) {
+      let p: Record<string, unknown> | null;
+      try {
+        p = await view("pot", (S) => [S.nativeToScVal(id, { type: "u32" })]) as Record<string, unknown> | null;
+      } catch {
+        return null;
+      }
+      if (!p) return null;
+      return {
+        sender: String(p.sender),
+        payout_to: String(p.payout_to),
+        balance_minor: chainToMinor(p.balance),
+        per_period_minor: chainToMinor(p.per_period),
+        period_secs: Number(p.period_secs),
+      };
+    },
   };
 }

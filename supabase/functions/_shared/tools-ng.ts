@@ -59,6 +59,16 @@ export interface CashOut {
   recipient_name?: string | null;
 }
 
+/** Piece 11: her savings goal (a pot on the plus contract that pays back to her). */
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  goal: bigint;
+  onchain_pot_id: number | null;
+  /** What Plus's ledger says she has saved (completed and on-its-way deposits, minus withdrawals). */
+  saved: bigint;
+}
+
 export interface NgStore {
   /** From the wallet_balances cache (never Horizon directly). */
   balances(userId: string): Promise<{ NGNT: bigint; USDC: bigint; updated_at: string | null }>;
@@ -116,6 +126,11 @@ export interface NgStore {
     loans: CreditLoan[];
     events: { kind: string; amount: number | null; note: string | null; created_at: string }[];
   }>;
+  /** Piece 11: her active savings goal, if any. */
+  savingsGoal(userId: string): Promise<SavingsGoal | null>;
+  /** ng_savings_goal_set: set or rename her goal; the first time, her pot is created on Stellar. */
+  setSavingsGoal(userId: string, name: string, goal: bigint, assetSac: string): Promise<{ created: boolean }>;
+  setAutoSave(userId: string, bps: number): Promise<void>;
   chain: ContractReader;
 }
 
@@ -148,7 +163,7 @@ const PIN_ON_SCREEN = "Ask her to check her screen and type her PIN there. Never
  * Money moves up to the market's PIN threshold (₦5,000) take a spoken or tapped Yes; above it, the
  * PIN, typed in the app. Accepting a loan always takes the PIN.
  */
-export const NG_PIN_KINDS = ["pay", "pay_code", "group_contribution", "cash_out", "advance", "loan_repay", "bank_send"];
+export const NG_PIN_KINDS = ["pay", "pay_code", "group_contribution", "cash_out", "advance", "loan_repay", "bank_send", "save", "savings_withdraw"];
 export function ngNeedsPin(a: Pick<Action, "kind" | "params">): boolean {
   if (a.kind === "loan" || a.kind === "record_share" || a.kind === "vouch") return true;
   if (!NG_PIN_KINDS.includes(a.kind)) return false;
@@ -365,6 +380,8 @@ const KIND_WORDS: Record<string, string> = {
   loan: "loan received",
   loan_repay: "loan repayment",
   cash_out: "cash out",
+  saved: "saved",
+  savings_out: "from savings",
   adjustment: "demo reset (testnet)",
 };
 
@@ -402,7 +419,8 @@ export const ngMyRecord: NgTool = async ({ user, store, explorer }) => {
       kind: t.kind,
       label: t.kind === "pay" && t.source === "code" ? "paid by code"
         : t.kind === "pay" && t.source === "bank" ? "sent to bank (partner, simulated)"
-        : t.kind === "incoming" && t.source === "bank" ? "bank transfer" : KIND_WORDS[t.kind] ?? t.kind,
+        : t.kind === "incoming" && t.source === "bank" ? "bank transfer"
+        : t.kind === "saved" && t.source === "auto_save" ? "auto-saved" : KIND_WORDS[t.kind] ?? t.kind,
       counterparty: t.counterparty ?? null,
       source: t.source,
       amount_minor: String(t.amount),
@@ -838,6 +856,10 @@ function doneText(a: Action): string {
       return `Done: her next payment is now due ${spokenDate(String(r.next_due_at ?? a.params.new_due_at))}. New borrowing is paused until this loan is repaid.`;
     case "loan_restructure":
       return `Done: smaller payments now, ${say(String(r.minimum ?? a.params.minimum))} every two weeks.`;
+    case "save":
+      return `Okay: ${amt} into her savings, ${String(r.goal_name ?? a.params.goal_name)}. It is held on Stellar, apart from her spending money.${tail}`;
+    case "savings_withdraw":
+      return `Okay: ${amt} from her savings back to her wallet.${tail}`;
     case "vouch":
       return `Done: she vouches for ${String(a.params.borrower_name ?? "them")}'s next loan. It is being recorded on Stellar.`;
   }
@@ -1462,6 +1484,128 @@ export const ngWithdrawVouch: NgTool = async ({ user, store, args }) => {
     : refuse("That vouch is already on a loan or withdrawn.", "nothing_to_withdraw");
 };
 
+// ---------------------------------------------------------------------------
+// Piece 11: savings (her goal is a pot on the plus contract; only she can take it out)
+// ---------------------------------------------------------------------------
+
+/** The auto-save choices she can pick, in basis points (0, 5, 10, 20 percent). */
+export const AUTO_SAVE_CHOICES = [0, 500, 1000, 2000];
+
+/**
+ * What a money-in does, in order: the loan's share first, then auto-save from what is left. Mirrors
+ * public.ng_loan_repay_from_money_in + ng_auto_save (integer division; under ₦1 saves nothing).
+ */
+export function autoSaveSplit(moneyIn: bigint, loanShare: bigint, bps: number): { loan: bigint; saved: bigint; kept: bigint } {
+  const loan = loanShare > moneyIn ? moneyIn : loanShare < 0n ? 0n : loanShare;
+  const rest = moneyIn - loan;
+  let saved = bps > 0 ? (rest * BigInt(bps)) / 10000n : 0n;
+  if (saved < 100n) saved = 0n;
+  return { loan, saved, kept: rest - saved };
+}
+
+const pct = (bps: number) => `${bps / 100}%`;
+
+async function savingsView(store: NgStore, user: User) {
+  const g = await store.savingsGoal(user.id);
+  if (!g) return null;
+  // The pot's own balance on the contract when we can read it (the ledger otherwise).
+  const pot = g.onchain_pot_id !== null ? await store.chain.pot(g.onchain_pot_id).catch(() => null) : null;
+  const saved = pot ? pot.balance_minor : g.saved;
+  return { g, saved, onChain: pot !== null };
+}
+
+export const ngSavingsStatus: NgTool = async ({ user, store }) => {
+  const v = await savingsView(store, user);
+  const auto = user.auto_save_bps ?? 0;
+  if (!v) {
+    return { text: "She has no savings goal yet. Ask what she is saving for and how much, then use set_savings_goal.", ok: true, has_goal: false, auto_save_pct: auto / 100 };
+  }
+  const { g, saved } = v;
+  const left = g.goal > saved ? g.goal - saved : 0n;
+  const ready = g.onchain_pot_id !== null;
+  return {
+    text: `Savings for ${g.name}: ${say(saved)} of ${say(g.goal)}` + (left > 0n ? `, ${say(left)} to go.` : ". She has reached her goal!") +
+      ` Auto-save is ${auto > 0 ? `${auto / 100} percent of money in, after any loan payment` : "off"}.` +
+      (ready ? " It is held on Stellar, apart from her spending money; only she can take it out." : " Her savings pot is still being set up on Stellar; she can add money in a few seconds."),
+    ok: true,
+    has_goal: true,
+    goal_name: g.name,
+    saved_text: show(saved),
+    goal_text: show(g.goal),
+    left_text: show(left),
+    auto_save_pct: auto / 100,
+    ready,
+  };
+};
+
+export const ngSetSavingsGoal: NgTool = async ({ user, store, args, ngntSac }) => {
+  if (!user.stellar_pub) return refuse("Her wallet is not set up yet.", "no_wallet");
+  if (!/^C[A-Z2-7]{55}$/.test(ngntSac)) return refuse("Savings is not available just now. Try again later.", "not_configured");
+  const name = typeof args.name === "string" ? args.name.trim().slice(0, 60) : "";
+  const amount = parseMajorAmount(args.amount);
+  if (!name) return refuse("What is she saving for? Ask for a short name, like 'new stall shade'.", "missing_name");
+  if (amount === null || amount < 100_00n) return refuse("How much is the goal? Ask for an amount in naira (at least ₦100).", "invalid_amount");
+  const r = await store.setSavingsGoal(user.id, name, amount, ngntSac);
+  return {
+    text: r.created
+      ? `Done: her goal is ${name}, ${say(amount)}. Her savings pot is being set up on Stellar now; she can add money in a few seconds.`
+      : `Done: her goal is now ${name}, ${say(amount)}.`,
+    ok: true,
+    goal_name: name,
+    goal_text: show(amount),
+    created: r.created,
+  };
+};
+
+export const ngSetAutoSave: NgTool = async ({ user, store, args }) => {
+  const raw = Number(args.percent);
+  const bps = Math.round(raw * 100);
+  if (!Number.isFinite(raw) || !AUTO_SAVE_CHOICES.includes(bps)) {
+    return refuse("Auto-save can be 0, 5, 10 or 20 percent of money in. Ask which one.", "invalid_percent");
+  }
+  await store.setAutoSave(user.id, bps);
+  return {
+    text: bps === 0 ? "Done: auto-save is off." : `Done: ${pct(bps)} of every money-in goes to her savings, after any loan payment.`,
+    ok: true,
+    auto_save_pct: bps / 100,
+  };
+};
+
+export const ngPrepareSave: NgTool = async ({ user, store, args, now = new Date() }) => {
+  const amount = parseMajorAmount(args.amount);
+  if (amount === null) return refuse("How much does she want to save? Ask for the amount in naira.", "invalid_amount");
+  const g = await store.savingsGoal(user.id);
+  if (!g) return refuse("She has no savings goal yet. Ask what she is saving for and how much, then set it first.", "no_savings_goal");
+  if (g.onchain_pot_id === null) return refuse("Her savings pot is still being set up on Stellar. Try again in a few seconds.", "savings_not_ready");
+  const blocked = await spendCheck(store, user, amount, now);
+  if (blocked) return blocked;
+  const a = await store.createAction({
+    user_id: user.id,
+    kind: "save",
+    params: { amount: String(amount), goal_name: g.name, pot_id: g.onchain_pot_id },
+    readback: `Save ${show(amount)} for ${g.name}`,
+    ttl_secs: ACTION_TTL_SECS,
+  });
+  return { text: `Read back: save ${say(amount)} for ${g.name}. ${confirmText(a)}`, ok: true, ...actionFields(a), amount_text: show(amount) };
+};
+
+export const ngPrepareWithdrawSavings: NgTool = async ({ user, store, args }) => {
+  const amount = parseMajorAmount(args.amount);
+  if (amount === null) return refuse("How much does she want to take out of her savings? Ask for the amount in naira.", "invalid_amount");
+  const v = await savingsView(store, user);
+  if (!v || v.g.onchain_pot_id === null) return refuse("She has no savings to take out.", "no_savings_goal");
+  const saved = v.saved < v.g.saved ? v.saved : v.g.saved; // never more than both the pot and the ledger say
+  if (amount > saved) return refuse(`She has ${say(saved)} saved; she can take out up to that.`, "not_enough_saved", { saved_text: show(saved) });
+  const a = await store.createAction({
+    user_id: user.id,
+    kind: "savings_withdraw",
+    params: { amount: String(amount), goal_name: v.g.name, pot_id: v.g.onchain_pot_id },
+    readback: `Take ${show(amount)} out of savings (${v.g.name}), back to your wallet`,
+    ttl_secs: ACTION_TTL_SECS,
+  });
+  return { text: `Read back: take ${say(amount)} out of her savings, back to her wallet. ${confirmText(a)}`, ok: true, ...actionFields(a), amount_text: show(amount) };
+};
+
 function spokenTime(iso: string): string {
   return new Date(iso).toLocaleString("en-NG", { weekday: "long", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Africa/Lagos" });
 }
@@ -1477,6 +1621,11 @@ export const NG_VOICE_TOOLS: Record<string, NgTool> = {
   prepare_ajo_contribution: ngPrepareAjo,
   prepare_group_contribution: ngPrepareAjo, // same tool under the shared name
   prepare_cashout: ngPrepareCashout,
+  savings_status: ngSavingsStatus,
+  prepare_save: ngPrepareSave,
+  prepare_withdraw_savings: ngPrepareWithdrawSavings,
+  set_savings_goal: ngSetSavingsGoal,
+  set_auto_save: ngSetAutoSave,
   // The 1.5% advance is retired from the app and the agent (its contract functions stay); loans replace it.
   loan_status: ngLoanStatus,
   prepare_loan: ngPrepareLoan,

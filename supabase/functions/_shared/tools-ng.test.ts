@@ -10,7 +10,12 @@ import {
   cashOutCodeHash,
   type NgContext,
   type NgStore,
+  autoSaveSplit,
   ngConfirmAction,
+  ngPrepareSave,
+  ngPrepareWithdrawSavings,
+  ngSavingsStatus,
+  ngSetAutoSave,
   ngHelp,
   ngLoanMoreTime,
   ngLoanStatus,
@@ -164,7 +169,11 @@ function fakeStore(w: World): NgStore {
       advanceOf: () => Promise.resolve(w.advance),
       limitOf: () => Promise.resolve(w.limit),
       poolBalance: () => Promise.resolve(w.pool),
+      pot: () => Promise.resolve(null),
     },
+    savingsGoal: () => Promise.resolve(null),
+    setSavingsGoal: () => Promise.resolve({ created: true }),
+    setAutoSave: () => Promise.resolve(),
   };
 }
 
@@ -799,4 +808,53 @@ Deno.test("my_vouches and withdraw_vouch: what she gave, who vouched for her; wi
   assert(r.ok, r.text);
   assertEquals(w.withdrawn, ["v1"]);
   assertEquals((await NG_VOICE_TOOLS.withdraw_vouch(ctx({ name: "Kemi" }, "voice", me))).error, "nothing_to_withdraw");
+});
+
+Deno.test("savings: a money-in repays the loan's share first, then auto-saves from the rest", () => {
+  // ₦10,000 in, ₦1,000 to the loan, 10% auto-save of the ₦9,000 left = ₦900; she keeps ₦8,100.
+  assertEquals(autoSaveSplit(N(10_000), N(1_000), 1000), { loan: N(1_000), saved: N(900), kept: N(8_100) });
+  // No loan: 20% of all of it.
+  assertEquals(autoSaveSplit(N(5_000), 0n, 2000), { loan: 0n, saved: N(1_000), kept: N(4_000) });
+  // Off, or under ₦1: nothing saved.
+  assertEquals(autoSaveSplit(N(5_000), 0n, 0).saved, 0n);
+  assertEquals(autoSaveSplit(900n, 0n, 1000).saved, 0n);
+  // The loan share never exceeds the money in.
+  assertEquals(autoSaveSplit(N(500), N(800), 1000), { loan: N(500), saved: 0n, kept: 0n });
+});
+
+Deno.test("savings: no goal yet, saving is refused and the agent asks for one", async () => {
+  const { ctx } = setup();
+  const r = await ngPrepareSave(ctx({ amount: "1000" }));
+  assertEquals(r.ok, false);
+  assertEquals(r.error, "no_savings_goal");
+  const s = await ngSavingsStatus(ctx());
+  assertEquals(s.has_goal, false);
+});
+
+Deno.test("savings: save and take out go through prepare, PIN above ₦5,000", async () => {
+  const goal = { id: "g1", name: "Stall shade", goal: N(50_000), onchain_pot_id: 7, saved: N(18_500) };
+  const { ctx } = setup();
+  const withGoal = (args: Record<string, unknown> = {}) => {
+    const c = ctx(args);
+    return {
+      ...c,
+      store: {
+        ...c.store,
+        savingsGoal: () => Promise.resolve(goal),
+        chain: { ...c.store.chain, pot: () => Promise.resolve({ sender: "G", payout_to: "G", balance_minor: N(18_500), per_period_minor: N(50_000), period_secs: 0 }) },
+      },
+    };
+  };
+  const s = await ngSavingsStatus(withGoal());
+  assertEquals(s.saved_text, "₦18,500");
+  const save = await ngPrepareSave(withGoal({ amount: "1000" }));
+  assertEquals(save.ok, true);
+  assertEquals(save.kind, "save");
+  assertEquals(save.requires_pin, false);
+  const big = await ngPrepareWithdrawSavings(withGoal({ amount: "6000" }));
+  assertEquals(big.requires_pin, true);
+  const tooMuch = await ngPrepareWithdrawSavings(withGoal({ amount: "20000" }));
+  assertEquals(tooMuch.error, "not_enough_saved");
+  const auto = await ngSetAutoSave(withGoal({ percent: 15 }));
+  assertEquals(auto.error, "invalid_percent");
 });

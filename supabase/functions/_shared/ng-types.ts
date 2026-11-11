@@ -19,9 +19,19 @@ export interface ChainAdvance {
   opened_at: Date;
 }
 
+/** A pot on the plus contract (piece 11: her savings goal is one, paying back to herself). */
+export interface ChainPot {
+  sender: string;
+  payout_to: string;
+  balance_minor: bigint;
+  per_period_minor: bigint;
+  period_secs: number;
+}
+
 export interface ContractReader {
   group(onchainId: number): Promise<ChainGroup | null>;
   advanceOf(pub: string): Promise<ChainAdvance | null>;
   limitOf(pub: string): Promise<bigint>;
   poolBalance(assetSac: string): Promise<bigint>;
+  pot(potId: number): Promise<ChainPot | null>;
 }

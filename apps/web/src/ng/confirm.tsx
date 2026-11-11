@@ -23,7 +23,7 @@ const localNg = (p: string) => (p.startsWith('+234') ? `0${p.slice(4, 7)} ${p.sl
 /** Same rule as the server (tools-ng.ts): a spoken or tapped Yes up to ₦5,000, the PIN above. A loan always takes the PIN. */
 export function ngNeedsPin(a: PendingAction): boolean {
   if (a.kind === 'loan' || a.kind === 'record_share' || a.kind === 'vouch') return true
-  if (!['pay', 'pay_code', 'group_contribution', 'cash_out', 'advance', 'loan_repay', 'bank_send'].includes(a.kind)) return false
+  if (!['pay', 'pay_code', 'group_contribution', 'cash_out', 'advance', 'loan_repay', 'bank_send', 'save', 'savings_withdraw'].includes(a.kind)) return false
   return BigInt(String(a.params.amount ?? 0)) > BigInt(NG.pinThreshold) * 100n
 }
 
@@ -54,6 +54,10 @@ function to(a: PendingAction): string {
       return `Cash you gave ${String(p.helper_name ?? 'the agent')}`
     case 'record_share':
       return 'Share your record with a lender'
+    case 'save':
+      return `Into your savings: ${String(p.goal_name ?? '')}`
+    case 'savings_withdraw':
+      return 'From your savings to your wallet'
     case 'vouch':
       return `Vouch for ${String(p.borrower_name ?? 'an ajo member')}'s next loan`
     default:
@@ -95,7 +99,7 @@ function costLines(a: PendingAction): CostLine[] {
       { label: 'Extra cost', value: naira(0n) },
     ]
   }
-  if (a.kind === 'pay' || a.kind === 'pay_code' || a.kind === 'group_contribution' || a.kind === 'cash_out' || a.kind === 'loan_repay' || a.kind === 'bank_send') {
+  if (a.kind === 'pay' || a.kind === 'pay_code' || a.kind === 'group_contribution' || a.kind === 'cash_out' || a.kind === 'loan_repay' || a.kind === 'bank_send' || a.kind === 'save' || a.kind === 'savings_withdraw') {
     return [{ label: 'Fee', value: naira(0n) }, { label: 'Total', value: naira(amount ?? 0n), strong: true }]
   }
   return []
@@ -179,6 +183,8 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
   else if (action.kind === 'pay_code') info = 'They are not on Plus yet. They get a text with a code and collect the cash at any Plus agent. Unused after 7 days, it comes back to you.'
   else if (action.kind === 'pay' && action.params.to_user_id) info = 'On Plus: straight to their wallet.'
   else if (action.kind === 'bank_send') info = `${String(action.params.bank_name)}, account •••• ${String(action.params.account_number).slice(-4)}${action.params.payee_name !== action.params.account_name ? ` (${String(action.params.payee_name)})` : ''}. Sent on Stellar to the partner bank, which pays the account (simulated).`
+  else if (action.kind === 'save') info = W.onlyYou.en
+  else if (action.kind === 'savings_withdraw') info = 'Back to your wallet, on Stellar.'
   else if (action.kind === 'loan') info = 'Sent on Stellar from the partner lender account (simulated on Testnet).'
   else if (action.kind === 'vouch') info = `Recorded on Stellar as a reference, never your name. No money is ever taken from you. If ${String(action.params.borrower_name ?? 'they')} doesn't repay, you can't vouch for anyone for 6 months.`
   else if (action.kind === 'record_share') info = `The lender sees, read from Stellar: ${((action.params.shared ?? []) as string[]).join('; ')}. Never your name, phone number, ID or photos. One code, for one lender, for 24 hours. You can revoke it any time.`

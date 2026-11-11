@@ -13,7 +13,7 @@ import { ENGLISH, LangContext } from '../plus/ui'
 import { VoiceButton } from '../plus/voice'
 import { Assets, requestPhoto } from './assets'
 import { NgConfirmSheet } from './confirm'
-import { AddCash, Ajo, CashOut, Home, Loan, Pay, Record, Settings, WalletDetail, type Detail } from './screens'
+import { AddCash, Ajo, CashOut, Home, Loan, Pay, Record, Savings, Settings, WalletDetail, type Detail } from './screens'
 import { MIC_WORDS, naira, W, yo } from './words'
 
 export type Wallet = { NGNT: bigint; USDC: bigint; updated_at: string | null }
@@ -58,6 +58,7 @@ const VOICE_SCREENS: Record<string, { tab?: Tab; detail?: Detail }> = {
   add_money: { detail: 'add_cash' },
   pay: { tab: 'pay' },
   ajo: { detail: 'group' },
+  savings: { detail: 'savings' },
   loan: { detail: 'loan' },
   assets: { detail: 'assets' },
   cash_out: { detail: 'cash_out' },
@@ -69,6 +70,7 @@ type Tab = 'home' | 'pay' | 'record' | 'settings'
 const TABS: Tab[] = ['home', 'pay', 'record', 'settings']
 const DETAIL_TITLE: Record<Detail, [string, string | undefined]> = {
   wallet: [W.wallet.en, yo('wallet')],
+  savings: [W.savings.en, yo('savings')],
   group: [W.ajo.en, yo('ajo')],
   loan: [W.loan.en, yo('loan')],
   assets: [W.assets.en, yo('assets')],
@@ -165,6 +167,7 @@ export default function NgApp({ data }: { data: PlusData }) {
         {open && (
           <CardDetail key={open} id={open} title={DETAIL_TITLE[open][0]} sub={DETAIL_TITLE[open][1]} fromPass={fromPass} onClose={() => setOpen(null)}>
             {open === 'wallet' && <WalletDetail wallet={wallet} version={data.version} onOpen={(d) => openDetail(d, false)} />}
+            {open === 'savings' && <Savings {...props} />}
             {open === 'group' && <Ajo {...props} />}
             {open === 'loan' && <Loan {...props} />}
             {open === 'assets' && <Assets version={data.version} />}

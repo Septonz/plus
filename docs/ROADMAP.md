@@ -164,7 +164,7 @@ P1 (product gaps)
   Savings card and sheet, auto-save 0/5/10/20% of money-in after loan repayment, voice tools
   (`savings_status`, `prepare_save`, `prepare_withdraw_savings`, `set_savings_goal`,
   `set_auto_save`), savings consistency counts savings, demo: "Stall shade" ₦18,500 of ₦50,000.
-  Stretch: dollar savings (path payment), only if solid; else a note "next".
+  Dollar savings: path payment, next (not built in piece 11, so the app never shows a USD figure).
 - [ ] 7. Pay a shop: "My code" (QR + short pay code) and "Scan to pay" (camera, or type the code),
   same prepare_pay flow; voice `navigate("receive")` and `prepare_pay` with `code`.
 - [ ] 8. Loan screen: one "You receive", Cost and Total rows; ladder rungs 3-4 merged (in markets.ts

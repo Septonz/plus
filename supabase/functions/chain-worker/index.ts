@@ -160,8 +160,23 @@ async function update(id: number, patch: Record<string, unknown>) {
 
 const backoffMs = (attempts: number) => Math.min(30 * 60_000, 15_000 * 2 ** Math.max(0, attempts - 1));
 
-async function markDone(row: OutboxRow, hash: string) {
-  await update(row.id, { status: "done", tx_hash: hash, done_at: new Date().toISOString(), last_error: null });
+/** A contract call's return value (e.g. pot_create's pot id), kept when it is a plain scalar. */
+function returned(res: unknown): { returned: string | number | boolean } | null {
+  const rv = (res as { returnValue?: unknown })?.returnValue;
+  if (!rv) return null;
+  try {
+    const v = StellarSdk.scValToNative(rv as Parameters<typeof StellarSdk.scValToNative>[0]);
+    if (typeof v === "number" || typeof v === "boolean" || typeof v === "string") return { returned: v };
+    if (typeof v === "bigint") return { returned: v.toString() };
+  } catch { /* not decodable: nothing to keep */ }
+  return null;
+}
+
+async function markDone(row: OutboxRow, hash: string, extra: Record<string, unknown> | null = null) {
+  await update(row.id, {
+    status: "done", tx_hash: hash, done_at: new Date().toISOString(), last_error: null,
+    ...(extra ? { result: { ...(row.result as Record<string, unknown> ?? {}), ...extra } } : {}),
+  });
   const txId = row.args.transaction_id ? String(row.args.transaction_id) : null;
   // Paying another Plus user: her incoming row is the same Stellar transaction.
   const peerId = row.args.peer_transaction_id ? String(row.args.peer_transaction_id) : null;
@@ -311,7 +326,7 @@ async function submitRow(kp: InstanceType<typeof Keypair>, seq: { next: bigint |
     }
     if (res.status === "SUCCESS") {
       seq.next = seq.next + 1n;
-      await markDone(row, hash);
+      await markDone(row, hash, row.kind === "contract" ? returned(res) : null);
       stats.done++;
       stats.ms.push(Date.now() - t0);
     } else {
