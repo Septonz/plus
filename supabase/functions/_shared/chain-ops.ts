@@ -62,6 +62,7 @@ export type ContractArg =
   | { t: "u32"; v: number }
   | { t: "u64"; v: string }
   | { t: "bytes32"; v: string }
+  | { t: "opt_bytes32"; v: string | null }
   | { t: "bool"; v: boolean };
 
 export function scVal(a: ContractArg) {
@@ -79,9 +80,14 @@ export function scVal(a: ContractArg) {
     case "bytes32":
       if (!/^[0-9a-f]{64}$/.test(a.v)) throw new Error("bad 32-byte hex");
       return xdr.ScVal.scvBytes(Buffer.from(a.v, "hex"));
+    case "opt_bytes32":
+      if (a.v === null || a.v === undefined) return xdr.ScVal.scvVoid();
+      if (!/^[0-9a-f]{64}$/.test(a.v)) throw new Error("bad 32-byte hex");
+      return xdr.ScVal.scvBytes(Buffer.from(a.v, "hex"));
     case "bool":
       return xdr.ScVal.scvBool(Boolean(a.v));
   }
+  throw new Error(`bad contract arg type ${String((a as { t?: unknown }).t)}`);
 }
 
 const ATTEST_KIND: Record<string, number> = { received: 0, saved: 1, paid: 2 };
@@ -103,8 +109,15 @@ export function createWalletOps(args: Record<string, unknown>, sponsor: string) 
   ];
 }
 
-/** The single operation for a row. Contract calls need the contract id. */
-export function operationFor(row: Pick<OutboxRow, "kind" | "args">, contractId: string) {
+/**
+ * The contracts a "contract" row can call: `plus` (the default) or `credit` (plus_credit, piece 8:
+ * loans, assets and vouches, written by partner).
+ */
+export type ContractIds = { plus: string; credit?: string };
+
+/** The single operation for a row. Contract calls need the contract id(s). */
+export function operationFor(row: Pick<OutboxRow, "kind" | "args">, ids: string | ContractIds) {
+  const { plus: contractId, credit: creditId } = typeof ids === "string" ? { plus: ids, credit: undefined } : ids;
   const a = row.args;
   switch (row.kind) {
     case "attest": {
@@ -120,7 +133,9 @@ export function operationFor(row: Pick<OutboxRow, "kind" | "args">, contractId: 
     case "contract": {
       if (typeof a.fn !== "string" || !/^[a-z_][a-z0-9_]{0,31}$/.test(a.fn)) throw new Error("bad contract fn");
       const args = (Array.isArray(a.args) ? a.args : []) as ContractArg[];
-      return new Contract(contractId).call(a.fn, ...args.map(scVal));
+      const target = a.contract === undefined || a.contract === "plus" ? contractId : a.contract === "credit" ? creditId : null;
+      if (!target) throw new Error(a.contract === "credit" ? "PLUS_CREDIT_CONTRACT_ID is not set" : `unknown contract ${String(a.contract)}`);
+      return new Contract(target).call(a.fn, ...args.map(scVal));
     }
     case "payment":
       return Operation.payment({ destination: account(a.to, "destination"), asset: assetOf(a.asset), amount: stroopsToAmount(a.amount) });

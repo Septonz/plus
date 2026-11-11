@@ -888,6 +888,7 @@ function loanView(l: CreditLoan, now: Date) {
   return {
     id: l.id,
     status: l.status,
+    credit_tx_hash: l.credit_tx_hash ?? null,
     principal_text: show(l.principal),
     cost_text: show(l.cost),
     total_text: show(l.total),

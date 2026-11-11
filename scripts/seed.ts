@@ -808,6 +808,8 @@ function writeDocs(d: {
     "| Network | Contract | Contract ID | WASM hash | Deployed (date) | Commit |",
     "| ------- | -------- | ----------- | --------- | --------------- | ------ |",
     `| testnet | plus | ${c(CONTRACT_ID)} | \`${d.wasmHash}\` | ${date} | ${d.commit} |`,
+    // plus_credit (piece 8) is deployed on its own (README, "plus_credit"); keep its row.
+    ...(existsSync(DOCS_FILE) ? readFileSync(DOCS_FILE, "utf8").split("\n").filter((l) => l.startsWith("| testnet | plus_credit |")) : []),
     "",
     "## Assets (Stellar Asset Contracts)",
     "",

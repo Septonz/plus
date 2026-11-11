@@ -89,12 +89,19 @@ Two demo users (naira, illustrative numbers), both with demo login buttons.
 
 ## Piece 8 (Wednesday, after the rest): `plus_credit` contract
 
-- [ ] A `plus_credit` Soroban contract, deployed alongside the existing one. It holds each loan
+- [x] A `plus_credit` Soroban contract, deployed alongside the existing one. It holds each loan
   agreement (borrower ref, lender, principal, cost, total, repaid, repayment %, minimum, collateral
   ref, status: Active, Late, Restructured, Repaid, Default) and each asset's reference (anonymous
   asset ID, verification hash, level, collateral status). No personal data on-chain.
-- [ ] The backend writes to it through the outbox at every loan and asset change, and the app's
+- [x] The backend writes to it through the outbox at every loan and asset change, and the app's
   small "Verified on Stellar" tick links to it.
+- Done 2026-11-10: `plus_credit` [`CCLO7QV3…DZCC`](https://stellar.expert/explorer/testnet/contract/CCLO7QV3LC4MPC46ZBYZDGNOVEYTY62SDRV6S4KZ7O5LVAA7RMX6DZCC)
+  next to `plus` (unchanged). Partner or admin write (with their signature), anyone reads; HMAC
+  references only (key in Vault). Adds a Cancelled status for loans the demo reset settles, vouches
+  (for piece 10) and an admin `upgrade`. 21 unit tests. Postgres triggers write every loan, repayment
+  and asset change through partner's outbox queue; 13 writes backfilled (5 assets incl. Funmi's stall
+  stock, 2 loans with 4 repayments, 2 asset statuses). `pnpm e2e:loan` step 8 reads it back from
+  Stellar; `pnpm demo:ready` checks it. Funmi had no open loan to backfill.
 
 ## Piece 9 (after piece 8; reads from `plus_credit`): Verify a Plus record, the key demo moment
 

@@ -46,6 +46,8 @@ export interface CreditLoan {
   borrowing_paused: boolean;
   closed_by_reset: boolean;
   disbursed: string;
+  /** The last plus_credit transaction for this loan (piece 8): the "Verified on Stellar" tick. */
+  credit_tx_hash?: string | null;
   created_at: string;
 }
 

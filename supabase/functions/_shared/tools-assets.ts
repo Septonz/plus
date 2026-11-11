@@ -44,6 +44,7 @@ export function assetView(a: Asset) {
     inspection_waiting: a.inspection_waiting,
     pledged: a.pledged,
     photo_at: a.evidence_at,
+    credit_tx_hash: a.credit_tx_hash ?? null,
     next: step,
     next_text: step ? NEXT_TEXT[step] : a.level === "independently_verified" && a.status === "active" ? "Fully verified." : null,
   };

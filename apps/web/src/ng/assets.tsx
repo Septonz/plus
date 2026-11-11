@@ -4,12 +4,14 @@
 // Also: requests from people who asked HER to confirm their asset (she is the witness).
 import { useEffect, useRef, useState } from 'react'
 import {
-  AmountDisplay, Bilingual, Button, Card, EmptyState, Icon, ListGroup, ListRow, Notice, NumPad, Section, applyKey,
+  AmountDisplay, Bilingual, Button, Card, EmptyState, Icon, ListGroup, ListRow, Notice, NumPad, Section, VerifiedMark, applyKey,
 } from '../ds/components'
 import { tool, type ToolResult } from '../plus/api'
 import { useSays } from '../plus/screen'
 import { LoadingList, TextField } from '../plus/ui'
 import { forScreen, naira, W, yo } from './words'
+
+const EXPLORER = 'https://stellar.expert/explorer/testnet'
 
 type Row = Record<string, unknown>
 
@@ -130,6 +132,8 @@ function AssetView({ a, run, busy, onPhoto, onBack }: { a: Row; run: (n: string,
         <AmountDisplay text={String(a.value_text)} size="md" label="Estimated value" className="mt-2" />
         {a.status !== 'active' && <Notice tone={a.status === 'under_review' ? 'info' : 'warning'}>It is marked {String(a.status_text)}. {a.status === 'under_review' ? 'A new live photo makes it active again.' : 'It does not count toward a loan for now.'}</Notice>}
         {a.pledged ? <p className="mt-2 text-sm text-secondary">It backs your loan.</p> : null}
+        {/* Its level and status on plus_credit: lenders read it from Stellar (no photo, no description). */}
+        <div className="mt-3"><VerifiedMark url={a.credit_tx_hash ? `${EXPLORER}/tx/${String(a.credit_tx_hash)}` : null} pending={!a.credit_tx_hash} /></div>
       </Card>
       <Levels level={String(a.level)} />
       {a.next_text ? <p className="px-1 text-base text-secondary">{forScreen(String(a.next_text))}</p> : null}
