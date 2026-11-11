@@ -20,6 +20,13 @@ export function Y({ k, className = '', sub = 'text-secondary' }: { k: WKey; clas
   )
 }
 
+/** A label in her language (Profile > Language): Yoruba or Pidgin when there is one, else English. {x} / {n} filled in. */
+export function inLang(k: WKey, lang: string | null | undefined, fill: { x?: string; n?: string } = {}): string {
+  const w = W[k] as { en: string; yo: string; pcm?: string }
+  const s = (lang === 'yo' && w.yo) || (lang === 'pcm' && w.pcm) || w.en
+  return s.replace('{x}', fill.x ?? '').replace('{n}', fill.n ?? '')
+}
+
 /** The Yoruba line only (for places that set the English themselves). */
 export const yo = (k: WKey): string | undefined => W[k].yo || undefined
 

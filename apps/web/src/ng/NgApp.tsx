@@ -208,6 +208,7 @@ export default function NgApp({ data }: { data: PlusData }) {
           key={held.id}
           action={held}
           txs={data.txs}
+          lang={data.me?.language ?? 'en'}
           onClose={() => {
             setDismissed((d) => new Set(d).add(held.id))
             setHeld(null)

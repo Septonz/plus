@@ -13,7 +13,7 @@ import { tool, type ToolResult } from '../plus/api'
 import type { PendingAction, Tx } from '../plus/data'
 import { useSays } from '../plus/screen'
 import { SmsBubble } from '../plus/ui'
-import { forScreen, naira, W } from './words'
+import { forScreen, inLang, naira, type WKey } from './words'
 
 const EXPLORER = 'https://stellar.expert/explorer/testnet'
 const NG = getMarket('ng')
@@ -27,17 +27,18 @@ export function ngNeedsPin(a: PendingAction): boolean {
   return BigInt(String(a.params.amount ?? 0)) > BigInt(NG.pinThreshold) * 100n
 }
 
-function to(a: PendingAction): string {
+function to(a: PendingAction, lang: string): string {
   const p = a.params
+  const toWho = (x: string) => inLang('toWho', lang, { x })
   switch (a.kind) {
     case 'pay':
-      return `To ${String(p.payee_name ?? '')}`
+      return toWho(String(p.payee_name ?? ''))
     case 'pay_code':
       return `To ${String(p.payee_name ?? '')}, by code`
     case 'bank_send':
-      return `To ${String(p.account_name ?? '')}`
+      return toWho(String(p.account_name ?? ''))
     case 'group_contribution':
-      return `To ${String(p.group_name ?? 'your ajo')}`
+      return toWho(String(p.group_name ?? 'Ajo'))
     case 'advance':
       return 'Advance into your wallet'
     case 'loan':
@@ -55,9 +56,9 @@ function to(a: PendingAction): string {
     case 'record_share':
       return 'Share your record with a lender'
     case 'save':
-      return `Into your savings: ${String(p.goal_name ?? '')}`
+      return inLang('intoSavings', lang, { x: String(p.goal_name ?? '') })
     case 'savings_withdraw':
-      return 'From your savings to your wallet'
+      return inLang('fromSavings', lang)
     case 'vouch':
       return `Vouch for ${String(p.borrower_name ?? 'an ajo member')}'s next loan`
     default:
@@ -65,7 +66,8 @@ function to(a: PendingAction): string {
   }
 }
 
-function costLines(a: PendingAction): CostLine[] {
+function costLines(a: PendingAction, lang: string): CostLine[] {
+  const L = (k: WKey) => inLang(k, lang)
   const p = a.params
   const amount = p.amount !== undefined ? BigInt(String(p.amount)) : null
   if (a.kind === 'advance') {
@@ -78,12 +80,12 @@ function costLines(a: PendingAction): CostLine[] {
     ]
   }
   if (a.kind === 'loan') {
-    const L = NG.lending!
+    const rules = NG.lending!
     return [
-      { label: W.youReceive.en, value: naira(amount ?? 0n) },
-      { label: 'Cost', value: naira(String(p.cost ?? 0)) },
-      { label: 'Total to repay', value: naira(String(p.total ?? 0)), strong: true },
-      { label: `Repay ${L.repay.fromMoneyInBps / 100}% of every money-in, and at least ${naira(String(p.minimum ?? 0))} every two weeks. ${W.nobodyElse.en}` },
+      { label: L('youReceive'), value: naira(amount ?? 0n) },
+      { label: L('cost'), value: naira(String(p.cost ?? 0)) },
+      { label: L('totalToRepay'), value: naira(String(p.total ?? 0)), strong: true },
+      { label: `Repay ${rules.repay.fromMoneyInBps / 100}% of every money-in, and at least ${naira(String(p.minimum ?? 0))} every two weeks. ${L('nobodyElse')}` },
     ]
   }
   if (a.kind === 'loan_extension') {
@@ -100,12 +102,13 @@ function costLines(a: PendingAction): CostLine[] {
     ]
   }
   if (a.kind === 'pay' || a.kind === 'pay_code' || a.kind === 'group_contribution' || a.kind === 'cash_out' || a.kind === 'loan_repay' || a.kind === 'bank_send' || a.kind === 'save' || a.kind === 'savings_withdraw') {
-    return [{ label: 'Fee', value: naira(0n) }, { label: 'Total', value: naira(amount ?? 0n), strong: true }]
+    return [{ label: L('fee'), value: naira(0n) }, { label: L('total'), value: naira(amount ?? 0n), strong: true }]
   }
   return []
 }
 
-export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction; txs: Tx[]; onClose: () => void }) {
+export function NgConfirmSheet({ action, txs, onClose, lang = 'en' }: { action: PendingAction; txs: Tx[]; onClose: () => void; lang?: string }) {
+  const L = (k: WKey, fill?: { x?: string; n?: string }) => inLang(k, lang, fill)
   const pinNeeded = ngNeedsPin(action)
   const [pin, setPin] = useState('')
   const [phase, setPhase] = useState<ConfirmPhase>('ask')
@@ -131,7 +134,7 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
       setSeconds((Date.now() - t0.current) / 1000)
       setPhase('done')
     } else if (tx.status === 'failed') {
-      setMessage("It didn't go through. Nothing left your wallet.")
+      setMessage(L('notThrough'))
       setPhase('failed')
     }
   }, [phase, tx])
@@ -160,7 +163,7 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
   async function no() {
     setPhase('working')
     await tool('reject_action', { action_id: action.id }).catch(() => null)
-    setMessage(action.kind === 'confirm_cash_in' ? 'Okay. That cash is marked as not received.' : 'Okay, cancelled. Nothing was sent.')
+    setMessage(action.kind === 'confirm_cash_in' ? L('cashNotReceived') : L('cancelled'))
     setPhase('failed')
   }
 
@@ -172,19 +175,19 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
   const amount = action.params.amount !== undefined ? naira(String(action.params.amount)) : null
   const extras = (
     <>
-      {code && <CodeBox code={code} />}
+      {code && <CodeBox code={code} lang={lang} />}
       {shareCode && <ShareCodeBox code={shareCode} expires={typeof result?.share_expires_at === 'string' ? result.share_expires_at : null} />}
       {sms && <div className="text-left"><SmsBubble to={localNg(sms.to)} text={sms.text} /></div>}
     </>
   )
 
   let info: string | null = null
-  if (action.kind === 'cash_out') info = 'You get a code. Show it to the agent and collect your cash.'
+  if (action.kind === 'cash_out') info = L('cashOutInfo')
   else if (action.kind === 'pay_code') info = 'They are not on Plus yet. They get a text with a code and collect the cash at any Plus agent. Unused after 7 days, it comes back to you.'
-  else if (action.kind === 'pay' && action.params.to_user_id) info = 'On Plus: straight to their wallet.'
+  else if (action.kind === 'pay' && action.params.to_user_id) info = L('onPlus')
   else if (action.kind === 'bank_send') info = `${String(action.params.bank_name)}, account •••• ${String(action.params.account_number).slice(-4)}${action.params.payee_name !== action.params.account_name ? ` (${String(action.params.payee_name)})` : ''}. Sent on Stellar to the partner bank, which pays the account (simulated).`
-  else if (action.kind === 'save') info = W.onlyYou.en
-  else if (action.kind === 'savings_withdraw') info = 'Back to your wallet, on Stellar.'
+  else if (action.kind === 'save') info = L('onlyYou')
+  else if (action.kind === 'savings_withdraw') info = L('backToWallet')
   else if (action.kind === 'loan') info = 'Sent on Stellar from the partner lender account (simulated on Testnet).'
   else if (action.kind === 'vouch') info = `Recorded on Stellar as a reference, never your name. No money is ever taken from you. If ${String(action.params.borrower_name ?? 'they')} doesn't repay, you can't vouch for anyone for 6 months.`
   else if (action.kind === 'record_share') info = `The lender sees, read from Stellar: ${((action.params.shared ?? []) as string[]).join('; ')}. Never your name, phone number, ID or photos. One code, for one lender, for 24 hours. You can revoke it any time.`
@@ -192,33 +195,33 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
   return (
     <ConfirmSheet
       phase={phase}
-      heading={action.kind === 'confirm_cash_in' ? W.isThatRight.en : W.checkThis.en}
+      heading={action.kind === 'confirm_cash_in' ? L('isThatRight') : L('checkThis')}
       amount={amount}
-      to={to(action)}
+      to={to(action, lang)}
       toSub={phone && phase !== 'done' ? localNg(phone) : undefined}
-      lines={costLines(action)}
+      lines={costLines(action, lang)}
       info={info}
       pinNeeded={pinNeeded}
       pin={pin}
       onPin={setPin}
-      pinLabel={W.typePin.en}
-      pinHint={W.pinHidden.en}
-      yes={W.yes.en}
-      no={W.no.en}
-      closeLabel={W.close.en}
+      pinLabel={L('typePin')}
+      pinHint={L('pinHidden')}
+      yes={L('yes')}
+      no={L('no')}
+      closeLabel={L('close')}
       onYes={() => void yes()}
       onNo={() => void no()}
       onClose={onClose}
       message={message}
-      sending={<>{extras}<p className="text-base text-secondary">{result?.text}</p></>}
+      sending={<>{extras}<p className="text-base text-secondary">{L('tickSoon')}</p></>}
       done={
         <>
           {extras}
           <div className="flex flex-col items-center gap-1">
             {txId && <VerifiedMark url={tx?.chain_tx_hash ? `${EXPLORER}/tx/${tx.chain_tx_hash}` : null} />}
-            {seconds !== null && <span className="text-sm text-secondary">in {seconds.toFixed(1)} seconds</span>}
+            {seconds !== null && <span className="text-sm text-secondary">{L('inSeconds', { n: seconds.toFixed(1) })}</span>}
           </div>
-          {canSave && <SaveThisPerson name={String(action.params.payee_name ?? '')} phone={phone!} />}
+          {canSave && <SaveThisPerson name={String(action.params.payee_name ?? '')} phone={phone!} lang={lang} />}
         </>
       }
     />
@@ -226,10 +229,10 @@ export function NgConfirmSheet({ action, txs, onClose }: { action: PendingAction
 }
 
 /** After paying a new phone number: keep them as a payee for next time. */
-function SaveThisPerson({ name, phone }: { name: string; phone: string }) {
+function SaveThisPerson({ name, phone, lang }: { name: string; phone: string; lang: string }) {
   const [state, setState] = useState<'ask' | 'saving' | 'saved' | 'failed'>('ask')
   const [text, setText] = useState('')
-  if (state === 'saved') return <Notice tone="success">{text || `Saved ${name}. Next time, pick them from Saved people.`}</Notice>
+  if (state === 'saved') return <Notice tone="success">{inLang('savedPerson', lang, { x: name })}</Notice>
   return (
     <div className="space-y-2">
       {state === 'failed' && <Notice tone="danger">{text}</Notice>}
@@ -239,7 +242,7 @@ function SaveThisPerson({ name, phone }: { name: string; phone: string }) {
         setText(r.text)
         setState(r.ok ? 'saved' : 'failed')
       }}>
-        <Icon name="userPlus" /> {W.saveThisPerson.en}
+        <Icon name="userPlus" /> {inLang('saveThisPerson', lang)}
       </Button>
     </div>
   )
@@ -257,10 +260,10 @@ export function ShareCodeBox({ code, expires }: { code: string; expires: string 
   )
 }
 
-export function CodeBox({ code }: { code: string }) {
+export function CodeBox({ code, lang }: { code: string; lang?: string }) {
   return (
     <div className="rounded-card border border-dashed border-fill-strong bg-surface-2 px-4 py-5 text-center">
-      <p className="text-sm font-medium text-secondary">{W.showCode.en}</p>
+      <p className="text-sm font-medium text-secondary">{inLang('showCode', lang)}</p>
       <p className="num mt-2 font-mono text-5xl font-light tracking-[0.18em] text-label" aria-label={code.split('').join(' ')}>
         {code.slice(0, 3)} {code.slice(3)}
       </p>
