@@ -97,6 +97,14 @@ export interface NgStore {
   /** Piece 9: her record shares (newest first) and revoking one. */
   recordShares(userId: string): Promise<RecordShare[]>;
   revokeRecordShare(userId: string, shareId: string): Promise<boolean>;
+  /** Piece 10: vouches she gave and vouches for her (newest first), with the other person's first name. */
+  vouches(userId: string): Promise<{ given: Vouch[]; received: Vouch[] }>;
+  /** Plus users who share an ajo with her (the people she can vouch for). */
+  ajoPeers(userId: string): Promise<{ user_id: string; name: string | null; group_name: string }[]>;
+  /** vouch_check: can she vouch for them now? */
+  vouchCheck(voucherId: string, borrowerId: string): Promise<VouchCheck>;
+  /** vouch_withdraw: hers, still waiting for the loan; written to plus_credit. */
+  withdrawVouch(voucherId: string, vouchId: string): Promise<boolean>;
   /** ng_bank_transfer_in: the partner anchor sends NGNT to her wallet (+ advance repayment). Idempotent on ref. */
   bankTransferIn(userId: string, amount: bigint, repay: bigint, ref: string, sender: string): Promise<{ transaction_id: string; repay: bigint; loan?: boolean }>;
   /** Her credit picture's inputs: weeks with Plus (real + compressed demo history), assets, loans with balances, recent loan steps. */
@@ -141,7 +149,7 @@ const PIN_ON_SCREEN = "Ask her to check her screen and type her PIN there. Never
  */
 export const NG_PIN_KINDS = ["pay", "pay_code", "group_contribution", "cash_out", "advance", "loan_repay", "bank_send"];
 export function ngNeedsPin(a: Pick<Action, "kind" | "params">): boolean {
-  if (a.kind === "loan" || a.kind === "record_share") return true;
+  if (a.kind === "loan" || a.kind === "record_share" || a.kind === "vouch") return true;
   if (!NG_PIN_KINDS.includes(a.kind)) return false;
   return BigInt(String(a.params.amount ?? 0)) > BigInt(getMarket(M).pinThreshold) * 100n;
 }
@@ -211,6 +219,28 @@ export function newShareCode(): string {
 
 /** "ABCD-EFGH": how the code is shown and typed. */
 export const showShareCode = (c: string) => `${c.slice(0, 4)}-${c.slice(4)}`;
+
+export type Vouch = {
+  id: string;
+  status: "active" | "used" | "revoked" | "defaulted";
+  /** The borrower (for vouches she gave) or the voucher (for vouches for her). */
+  other_user_id: string;
+  other_name: string | null;
+  group_name: string | null;
+  loan_id: string | null;
+  credit_tx_hash: string | null;
+  created_at: string;
+};
+
+export type VouchCheck = {
+  ok: boolean;
+  reason?: string;
+  until?: string;
+  weeks?: number;
+  late?: number;
+  group_name?: string;
+  borrower_name?: string | null;
+};
 
 export type RecordShare = {
   id: string;
@@ -806,6 +836,8 @@ function doneText(a: Action): string {
       return `Done: her next payment is now due ${spokenDate(String(r.next_due_at ?? a.params.new_due_at))}. New borrowing is paused until this loan is repaid.`;
     case "loan_restructure":
       return `Done: smaller payments now, ${say(String(r.minimum ?? a.params.minimum))} every two weeks.`;
+    case "vouch":
+      return `Done: she vouches for ${String(a.params.borrower_name ?? "them")}'s next loan. It is being recorded on Stellar.`;
   }
   return "Okay." + tail;
 }
@@ -918,9 +950,14 @@ export function spokenDate(iso: string): string {
 }
 
 async function picture(store: NgStore, user: User, now: Date) {
-  const c = await store.credit(user.id);
-  const p = creditPicture({ member_since: user.member_since ?? new Date().toISOString(), kyc_tier: user.kyc_tier, frozen_until: c.frozen_until, weeks: c.weeks, assets: c.assets, loans: c.loans, now });
-  return { c, p };
+  const [c, v] = await Promise.all([store.credit(user.id), store.vouches(user.id)]);
+  // Oldest first: "Amaka and Tunde" in the order they vouched.
+  const waiting = v.received.filter((x) => x.status === "active").reverse().map((x) => ({ name: x.other_name }));
+  const p = creditPicture({
+    member_since: user.member_since ?? new Date().toISOString(), kyc_tier: user.kyc_tier, frozen_until: c.frozen_until,
+    weeks: c.weeks, assets: c.assets, loans: c.loans, vouches: waiting, now,
+  });
+  return { c, p, v };
 }
 
 function loanView(l: CreditLoan, now: Date) {
@@ -957,7 +994,7 @@ function loanView(l: CreditLoan, now: Date) {
 /** Her loan picture: progress before unlock, the offer (and why) once unlocked, or the loan she is repaying. */
 export const ngLoanStatus: NgTool = async ({ user, store, now = new Date() }) => {
   if (!getMarket(M).lending) return refuse("Loans are not offered here yet.", "not_available");
-  const { c, p } = await picture(store, user, now);
+  const { c, p, v } = await picture(store, user, now);
   const L = lendingRules();
   const repayLine = `${L.repay.fromMoneyInBps / 100}% of every money-in, and at least ${say(BigInt(L.repay.minimum) * 100n)} every two weeks`;
   const ladder = p.ladder.map((s) => ({ ...s, max: String(s.max), max_text: show(s.max), cost_pct: s.cost_bps / 100, collateral_text: collateralWords(s.collateral_pct) }));
@@ -974,16 +1011,21 @@ export const ngLoanStatus: NgTool = async ({ user, store, now = new Date() }) =>
     score: p.score,
     lender: L.lenderLabel,
     events: c.events.slice(0, 5).map((e) => ({ ...e, amount_text: e.amount !== null ? show(e.amount) : null })),
+    vouch: { ...p.vouch, text: vouchLine(p.vouch) },
   };
   if (p.open) {
-    const v = loanView(p.open, now);
+    const lv = loanView(p.open, now);
     const text = `Her loan: ${say(p.open.outstanding)} left of ${say(p.open.total)}. ` +
-      (v.overdue ? `${say(BigInt(v.due_now_minor))} is due now${p.open.grace_until ? `; she has until ${spokenDate(p.open.grace_until)}` : ""}. `
-        : `Next: at least ${say(BigInt(v.due_now_minor))} by ${v.next_due_text}. `) +
+      (lv.overdue ? `${say(BigInt(lv.due_now_minor))} is due now${p.open.grace_until ? `; she has until ${spokenDate(p.open.grace_until)}` : ""}. `
+        : `Next: at least ${say(BigInt(lv.due_now_minor))} by ${lv.next_due_text}. `) +
       `${p.open.repay_bps / 100}% of every money-in pays it by itself.` +
       (p.open.status === "late" ? " A payment is late: she can ask for smaller payments (restructure). Nobody else is ever contacted." : "") +
       (p.open.borrowing_paused ? " New borrowing is paused until it is repaid." : "");
-    return { ...base, text, view: "repay", loan: v };
+    const backers = v.received.filter((x) => x.loan_id === p.open!.id).reverse().map((x) => x.other_name ?? "An ajo member");
+    return {
+      ...base, text: text + (backers.length ? ` Vouched for by ${names(backers)}.` : ""), view: "repay",
+      loan: { ...loanView(p.open, now), vouched_by: backers },
+    };
   }
   if (p.blocked === "frozen") {
     return { ...base, text: "New borrowing is frozen after missed payments. Her record keeps building; it opens again once things are back on track.", view: "paused" };
@@ -1006,6 +1048,7 @@ export const ngLoanStatus: NgTool = async ({ user, store, now = new Date() }) =>
     text: `She has a loan offer from the partner lender: she receives ${say(o.amount)}, the cost is ${say(o.cost)}, total ${say(o.total)}. ` +
       `Why: activity ${why[0].weight}%, verified assets ${why[1].weight}%, savings consistency ${why[2].weight}%. ` +
       `Repay ${repayLine}. After she repays, the next loan can be ${ladder[Math.min(p.step + 1, ladder.length - 1)].max_text} at ${ladder[Math.min(p.step + 1, ladder.length - 1)].cost_pct}%. ` +
+      (p.vouch.count ? `${vouchLine(p.vouch)} ` : "") +
       `Accepting needs her PIN on the screen.`,
     offer: {
       amount_minor: String(o.amount), amount_text: show(o.amount), cost_text: show(o.cost), total_text: show(o.total),
@@ -1042,10 +1085,12 @@ export const ngPrepareLoan: NgTool = async ({ user, store, args, now = new Date(
     params: {
       amount: String(asked), cost: String(cost), total: String(asked + cost), step: p.step,
       repay_bps: L.repay.fromMoneyInBps, minimum: String(BigInt(L.repay.minimum) * 100n), every_days: L.repay.everyDays,
-      collateral_asset_id: p.collateral_asset?.id ?? null, collateral_pct: step.collateralPct,
+      collateral_asset_id: p.collateral_asset?.id ?? null, collateral_pct: p.offer.collateral_pct,
+      vouches_needed: p.vouch.applied ? p.vouch.needed : 0,
     },
     readback: `Loan from the partner lender: you receive ${show(asked)}, cost ${show(cost)}, total ${show(asked + cost)}. ` +
-      `Repay ${L.repay.fromMoneyInBps / 100}% of every money-in, at least ${show(BigInt(L.repay.minimum) * 100n)} every two weeks.`,
+      `Repay ${L.repay.fromMoneyInBps / 100}% of every money-in, at least ${show(BigInt(L.repay.minimum) * 100n)} every two weeks.` +
+      (p.vouch.applied ? ` Backed by ${names(p.vouch.names)}'s vouches: collateral ${p.vouch.collateral_pct}% instead of ${p.vouch.collateral_pct_without}%.` : ""),
     ttl_secs: ACTION_TTL_SECS,
   });
   return {
@@ -1133,6 +1178,7 @@ export const ngHelp: NgTool = async ({ user, store }) => {
     "pay a saved person, or anyone by phone number (not on Plus: they get a code and collect cash at any agent)",
     "send to a bank account: a saved one like her landlord's, or a bank and 10-digit account number",
     "share her record with a lender: a one-time code (24 hours) the lender types on plus-wallet.vercel.app/verify; revoke it any time",
+    "vouch for an ajo member's next loan (\"I vouch for Funmi\"), with her PIN: two vouches lower the collateral a first loan needs; no money is ever taken from her",
     "pay her ajo and hear who collects this round",
     "see her loan: her progress, her offer and why, repay, or ask for more time",
     "register what she owns for her business (stock, tools, a machine, a motorcycle, livestock) and get it verified: a live photo, two witnesses, an agent's inspection",
@@ -1307,6 +1353,113 @@ export const ngRevokeRecordShare: NgTool = async ({ user, store, args, now = new
   return { text: n ? `Done: ${n === 1 ? "that code no longer works" : `${n} codes no longer work`}. The lender can't open her record with it.` : "Already closed.", ok: n > 0, revoked: n };
 };
 
+// ---------------------------------------------------------------------------
+// Ajo vouches (piece 10): vouch for an ajo member's next loan, with her PIN; recorded on plus_credit
+// ---------------------------------------------------------------------------
+
+const names = (xs: string[]) => xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
+
+/** The offer's vouch line: why the collateral is lower, or how many more would lower it. */
+export function vouchLine(v: { count: number; names: string[]; needed: number | null; applied: boolean; collateral_pct: number; collateral_pct_without: number }): string {
+  if (v.applied) return `${names(v.names)} vouched for her (ajo members in good standing), so this loan needs ${v.collateral_pct}% collateral instead of ${v.collateral_pct_without}%.`;
+  if (v.count > 0 && v.needed && v.count < v.needed) {
+    const L = lendingRules();
+    const more = v.needed - v.count;
+    return `${names(v.names)} vouched for her. ${more} more ajo member${more === 1 ? "" : "s"} vouching would lower the collateral to ${L.vouch?.collateralPct ?? 100}%.`;
+  }
+  return v.count > 0 ? `${names(v.names)} vouched for her.` : "";
+}
+
+const MONTHS = () => lendingRules().vouch?.banMonths ?? 6;
+
+function vouchRefusal(c: VouchCheck, who: string): ToolResult {
+  const L = lendingRules();
+  const weeks = L.vouch?.minWeeks ?? 6;
+  switch (c.reason) {
+    case "self": return refuse("She can't vouch for herself.", "vouch_self");
+    case "not_same_ajo": return refuse(`She can vouch only for members of her own ajo, and ${who} isn't in one with her on Plus.`, "not_same_ajo");
+    case "banned": return refuse(`She can't vouch until ${spokenDate(String(c.until))}: a loan she vouched for wasn't repaid. Nothing was taken from her.`, "vouch_banned", { until: c.until });
+    case "identity": return refuse("Vouching needs a verified ID first (her NIN, in Profile).", "vouch_identity");
+    case "too_new": return refuse(`Vouching opens after ${weeks} weeks with Plus; she is in week ${(c.weeks ?? 0) + 1}.`, "vouch_too_new");
+    case "standing": return refuse("Vouching needs her own payments on track first.", "vouch_standing");
+    case "no_ajo_payments": return refuse("Vouching needs ajo payments on Stellar first: pay into her ajo, then she can vouch.", "vouch_no_ajo_payments");
+    case "ajo_late": return refuse("Vouching needs every ajo payment on time, and one of hers came late.", "vouch_ajo_late");
+    case "already": return refuse(`She already vouches for ${who}'s next loan.`, "vouch_already");
+    case "too_many": return refuse(`${who} already has the most vouches a loan can carry.`, "vouch_too_many");
+    default: return refuse("I couldn't find that person.", "not_found");
+  }
+}
+
+/** "I vouch for Funmi": a member of her ajo, checked now; then her PIN on the screen. */
+export const ngPrepareVouch: NgTool = async ({ user, store, args }) => {
+  if (!lendingRules().vouch) return refuse("Vouching isn't offered here yet.", "not_available");
+  const peers = await store.ajoPeers(user.id);
+  const id = typeof args.user_id === "string" ? args.user_id : null;
+  const name = typeof args.name === "string" ? args.name.trim().toLowerCase() : "";
+  const found = id ? peers.filter((p) => p.user_id === id)
+    : name ? peers.filter((p) => (p.name ?? "").toLowerCase() === name || (p.name ?? "").toLowerCase().split(/\s+/).includes(name)) : [];
+  if (found.length === 0) {
+    const list = names(peers.map((p) => p.name ?? "").filter(Boolean));
+    return refuse(peers.length ? `Who? She can vouch for members of her ajo on Plus: ${list}.` : "She can vouch only for members of her ajo who are on Plus, and none are yet.", "who", { peers });
+  }
+  if (found.length > 1) return refuse(`Which one? ${names(found.map((p) => `${p.name} (${p.group_name})`))}.`, "which", { peers: found });
+  const b = found[0];
+  const who = b.name ?? "that member";
+  const c = await store.vouchCheck(user.id, b.user_id);
+  if (!c.ok) return vouchRefusal(c, who);
+  const months = MONTHS();
+  const a = await store.createAction({
+    user_id: user.id,
+    kind: "vouch",
+    params: { borrower_user_id: b.user_id, borrower_name: b.name, group_name: c.group_name ?? b.group_name },
+    readback: `You vouch for ${who}'s next loan, as a member of ${c.group_name ?? b.group_name}. It is recorded on Stellar. ` +
+      `No money is ever taken from you. If ${who} doesn't repay, you can't vouch for anyone for ${months} months.`,
+    ttl_secs: ACTION_TTL_SECS,
+  });
+  return {
+    text: `Read back: she vouches for ${who}'s next loan. No money is ever taken from her; if ${who} doesn't repay, she can't vouch for anyone for ${months} months. ${PIN_ON_SCREEN}`,
+    ok: true,
+    ...actionFields(a),
+    borrower_name: b.name,
+  };
+};
+
+/** Vouches she gave (waiting, used on a loan, withdrawn, defaulted) and vouches for her, plus who she can vouch for. */
+export const ngMyVouches: NgTool = async ({ user, store, now = new Date() }) => {
+  const [v, peers] = await Promise.all([store.vouches(user.id), store.ajoPeers(user.id)]);
+  const waitingFor = v.received.filter((x) => x.status === "active");
+  const mine = v.given.filter((x) => x.status === "active");
+  const can = await Promise.all(peers.map(async (p) => ({ ...p, check: await store.vouchCheck(user.id, p.user_id) })));
+  const banned = can.find((p) => p.check.reason === "banned" && p.check.until && new Date(p.check.until) > now)?.check.until ?? null;
+  const parts = [
+    mine.length ? `She vouches for ${names(mine.map((x) => x.other_name ?? "an ajo member"))}'s next loan.` : "She isn't vouching for anyone right now.",
+    waitingFor.length ? `${names(waitingFor.map((x) => x.other_name ?? "An ajo member"))} vouched for her next loan.` : "",
+    banned ? `She can't vouch until ${spokenDate(banned)}.` : "",
+  ];
+  return {
+    text: parts.filter(Boolean).join(" "),
+    ok: true,
+    given: v.given,
+    received: v.received,
+    banned_until: banned,
+    can_vouch_for: can.map((p) => ({ user_id: p.user_id, name: p.name, group_name: p.group_name, ok: p.check.ok, reason: p.check.reason ?? null, why: p.check.ok ? null : String(vouchRefusal(p.check, p.name ?? "them").text) })),
+  };
+};
+
+/** Withdraw a vouch before the loan opens (one id, or by name). */
+export const ngWithdrawVouch: NgTool = async ({ user, store, args }) => {
+  const { given } = await store.vouches(user.id);
+  const waiting = given.filter((x) => x.status === "active");
+  const id = typeof args.vouch_id === "string" ? args.vouch_id : null;
+  const name = typeof args.name === "string" ? args.name.trim().toLowerCase() : "";
+  const t = id ? waiting.filter((x) => x.id === id) : name ? waiting.filter((x) => (x.other_name ?? "").toLowerCase().split(/\s+/).includes(name) || (x.other_name ?? "").toLowerCase() === name) : waiting;
+  if (t.length === 0) return refuse(given.some((x) => x.status === "used") && !waiting.length ? "Her vouch is already on a loan; it can't be withdrawn now." : "She has no waiting vouch to withdraw.", "nothing_to_withdraw");
+  if (t.length > 1) return refuse(`Which one? ${names(t.map((x) => x.other_name ?? "an ajo member"))}.`, "which");
+  const ok = await store.withdrawVouch(user.id, t[0].id);
+  return ok ? { text: `Done: she no longer vouches for ${t[0].other_name ?? "them"}. Recorded on Stellar.`, ok: true, vouch_id: t[0].id }
+    : refuse("That vouch is already on a loan or withdrawn.", "nothing_to_withdraw");
+};
+
 function spokenTime(iso: string): string {
   return new Date(iso).toLocaleString("en-NG", { weekday: "long", hour: "numeric", minute: "2-digit", timeZone: "Africa/Lagos" });
 }
@@ -1333,6 +1486,9 @@ export const NG_VOICE_TOOLS: Record<string, NgTool> = {
   share_record: ngShareRecord,
   record_shares: ngRecordShares,
   revoke_record_share: ngRevokeRecordShare,
+  prepare_vouch: ngPrepareVouch,
+  my_vouches: ngMyVouches,
+  withdraw_vouch: ngWithdrawVouch,
   prepare_bank_send: ngPrepareBankSend,
   bank_details: ngBankDetails,
   confirm_action: ngConfirmAction,

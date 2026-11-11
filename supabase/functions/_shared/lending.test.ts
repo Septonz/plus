@@ -117,3 +117,24 @@ Deno.test("one loan at a time; a late payment or a freeze blocks new borrowing",
   const late = creditPicture(funmi({ loans: [loan({ status: "late" })] }));
   assertEquals(late.checklist.find((c) => c.key === "standing")?.done, false);
 });
+
+Deno.test("vouches: two ajo members lower a first loan's collateral from 150% to 100%; one is not enough", () => {
+  const one = creditPicture(funmi({ vouches: [{ name: "Amaka" }] }));
+  assertEquals(one.offer?.collateral_pct, 150);
+  assertEquals(one.vouch.applied, false);
+  assertEquals(one.vouch.count, 1);
+  const two = creditPicture(funmi({ vouches: [{ name: "Amaka" }, { name: "Tunde" }] }));
+  assertEquals(two.offer?.collateral_pct, 100);
+  assertEquals(two.vouch, { count: 2, names: ["Amaka", "Tunde"], needed: 2, applied: true, collateral_pct: 100, collateral_pct_without: 150 });
+  assertEquals(two.affordability.by_collateral, N(54_000)); // ₦54,000 lending value / 100%
+  assertEquals(two.offer?.amount, N(30_000)); // still the ladder's first step
+  // With evidence-verified stock (₦27,000) the vouches raise what the collateral allows: ₦18,000 -> ₦27,000.
+  assertEquals(creditPicture(funmi({ assets: [{ ...STOCK, level: "evidence_verified" }], vouches: [{ name: "A" }, { name: "B" }] })).offer?.amount, N(27_000));
+});
+
+Deno.test("vouches never raise collateral: at a step that already needs 100% or less they change nothing", () => {
+  const p = creditPicture(funmi({ weeks: weeks(1, 21, 40_000), loans: [loan({ status: "repaid" }), loan({ status: "repaid" })], vouches: [{ name: "A" }, { name: "B" }] }));
+  assertEquals(p.step, 2);
+  assertEquals(p.offer?.collateral_pct, 100);
+  assertEquals(p.vouch.applied, false);
+});

@@ -126,10 +126,18 @@ Two demo users (naira, illustrative numbers), both with demo login buttons.
 
 ## Piece 10 (after piece 8; reads from `plus_credit`): The ajo vouches
 
-- [ ] Members of an ajo in good standing (verified ID, 6+ weeks, all ajo payments on time) can
+- [x] Members of an ajo in good standing (verified ID, 6+ weeks, all ajo payments on time) can
   vouch for another member's loan by voice ("I vouch for Funmi") or tap, with PIN.
-- [ ] Each vouch is recorded on `plus_credit`. A loan backed by two or more vouches needs less
+- [x] Each vouch is recorded on `plus_credit`. A loan backed by two or more vouches needs less
   collateral (a first loan drops from 150% to 100%), and the offer screen explains why.
-- [ ] A voucher whose vouched loan defaults loses vouching rights for 6 months; no money is taken
+- [x] A voucher whose vouched loan defaults loses vouching rights for 6 months; no money is taken
   from them.
-- [ ] Show vouches on the loan offer and on the `/verify` page.
+- [x] Show vouches on the loan offer and on the `/verify` page.
+- Done 2026-11-10: "I vouch for Funmi" (voice) or **Vouch** on the Ajo screen, with her PIN.
+  Good standing is checked when she asks and again on her PIN: verified ID, 6+ weeks, no late or
+  defaulted loan, not banned, and every ajo payment on time, read from her `contributed` events
+  on the plus contract. Each vouch and withdrawal goes to plus_credit through the partner's queue;
+  at loan_open the waiting vouches attach to the loan. Two vouches: 100% collateral instead of 150%
+  (market pack `lending.vouch`), explained on the offer ("Amaka and Tunde vouched for you"), on the
+  loan ("Vouched for by"), and on `/verify`. Default: vouchers banned 6 months, their other waiting
+  vouches withdrawn, a `VouchedLoanDefaulted` event each; no money moves. `pnpm e2e:vouch`.

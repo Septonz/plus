@@ -58,6 +58,8 @@ export interface CreditInput {
   weeks: CreditWeek[];
   assets: CreditAsset[];
   loans: CreditLoan[];
+  /** Piece 10: ajo members' vouches waiting for her next loan (first names only). */
+  vouches?: { name: string | null }[];
   now: Date;
 }
 
@@ -139,10 +141,14 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
   const repaidLoans = input.loans.filter((l) => l.status === "repaid" && !l.closed_by_reset).length;
   const stepIndex = Math.min(repaidLoans, L.ladder.length - 1);
   const step = L.ladder[stepIndex];
+  // Piece 10: enough ajo vouches lower the collateral this step needs (never raise it).
+  const vouches = input.vouches ?? [];
+  const vouched = L.vouch !== undefined && vouches.length >= L.vouch.min && L.vouch.collateralPct < step.collateralPct;
+  const collateralPct = vouched ? L.vouch!.collateralPct : step.collateralPct;
 
   const afford = affordable(input.weeks, week, L);
   const value = lendingValue(input.assets, L);
-  const byCollateral = (value * 100n) / BigInt(step.collateralPct);
+  const byCollateral = (value * 100n) / BigInt(collateralPct);
   const ladderMax = BigInt(step.max) * N;
   const amount = floorTo([ladderMax, afford, byCollateral].reduce((a, b) => (b < a ? b : a)), 1000n * N);
   const limitedBy = amount === floorTo(afford, 1000n * N) && afford <= ladderMax && afford <= byCollateral ? "affordability"
@@ -178,8 +184,16 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
     blocked,
     step: stepIndex,
     offer: unlocked && !blocked && amount > 0n
-      ? { amount, cost: costOf(amount, step.costBps), total: amount + costOf(amount, step.costBps), cost_bps: step.costBps, collateral_pct: step.collateralPct, approval: step.approval }
+      ? { amount, cost: costOf(amount, step.costBps), total: amount + costOf(amount, step.costBps), cost_bps: step.costBps, collateral_pct: collateralPct, approval: step.approval }
       : null,
+    vouch: {
+      count: vouches.length,
+      names: vouches.map((v) => v.name ?? "An ajo member"),
+      needed: L.vouch?.min ?? null,
+      applied: vouched,
+      collateral_pct: collateralPct,
+      collateral_pct_without: step.collateralPct,
+    },
     affordability: { estimated_value: verified.reduce((s, a) => s + (a.status === "active" ? a.estimated_value : 0n), 0n), lending_value: value, affordable: afford, by_collateral: byCollateral, ladder_max: ladderMax, limited_by: limitedBy },
     collateral_asset: verified[0] ?? null,
     why,

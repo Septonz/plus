@@ -142,6 +142,13 @@ async function credit() {
       const assets = await creditRead(id, "assets_of", [StellarSdk.xdr.ScVal.scvBytes(Buffer.from(String(ref), "hex"))]) as unknown[];
       line(assets.length > 0, "Funmi's verified assets are on it", `${assets.length} asset(s)`);
       if (assets.length === 0) problems.push("Funmi has no assets on plus_credit: run the backfill (select public.credit_backfill())");
+      // Piece 10: Tunde's vouch is waiting on-chain; Amaka can vouch live (the second one).
+      const vouches = await creditRead(id, "vouches_for", [StellarSdk.xdr.ScVal.scvBytes(Buffer.from(String(ref), "hex"))]) as unknown[];
+      const { data: amaka } = await db.from("users").select("id").eq("name", "Amaka").eq("market_id", "ng").is("archived_at", null).maybeSingle();
+      const { data: can } = amaka ? await db.rpc("vouch_check", { p_voucher: amaka.id, p_borrower: funmi.id }) : { data: null };
+      const vok = vouches.length === 1 && (can as { ok?: boolean } | null)?.ok === true;
+      line(vok, "vouches: Tunde's is waiting for Funmi's loan; Amaka can vouch", `${vouches.length} waiting; Amaka ${(can as { ok?: boolean; reason?: string } | null)?.ok ? "can" : `can't (${(can as { reason?: string } | null)?.reason})`}`);
+      if (!vok) problems.push("Funmi's vouches aren't in the demo state (one waiting from Tunde, Amaka able to vouch): pnpm demo:reset ng");
     }
   } catch (e) {
     problems.push(`plus_credit read failed: ${e instanceof Error ? e.message : e}`);

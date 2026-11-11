@@ -12,6 +12,9 @@
 //               5. Mama Bisi's float: exactly ₦200,000 NGNT.
 //               6. Kemi: created on first run (a real sign-up on a test number, then the demo login);
 //                  put back in week 4 of 6 with money in during 3 of those weeks and no asset.
+//               6b. Vouches (piece 10): Tunde (an ajo member, made a Plus user) has vouched for her
+//                  next loan on plus_credit; any other waiting vouch (Amaka's) is withdrawn, so Amaka
+//                  can vouch live and the offer drops from 150% to 100% collateral.
 //               7. Ajo: if she already paid this round, a new Bodija Market Ajo round starts as a new
 //                  on-chain group with the same members; everyone except Funmi pays in (4 of 5 paid).
 //   in (Selvi)  1. Pending actions and helper cash-ins waiting for her Yes -> expired.
@@ -56,7 +59,8 @@ const ANCHOR_MIN = 2_000_000n; // naira: the partner bank's anchor pays bank tra
 const LENDING_MIN = 1_000_000n; // naira: the partner lender's lending account pays loans out from this
 const KEMI_PHONE = "+2347000000401"; // a test number
 const KEMI_EMAIL = "demo-kemi@example.com";
-const AMAKA_EMAIL = "demo-amaka@example.com"; // Amaka witnesses Kemi's asset (piece 5)
+const AMAKA_EMAIL = "demo-amaka@example.com"; // Amaka witnesses Kemi's asset (piece 5) and vouches for Funmi (piece 10)
+const TUNDE_PHONE = "+2340000000302"; // Tunde (ajo member ng_member2), a Plus user from piece 10: he has vouched for Funmi
 const SELVI_SPEND = 235_000n; // paise
 const SELVI_SAVED = 141_500n; // paise
 
@@ -355,6 +359,38 @@ async function ensureAmaka(): Promise<string> {
 }
 
 /**
+ * Tunde: an ajo member (ng_member2) on Plus for 18 weeks, verified ID, every ajo payment on time on
+ * Stellar, so he can vouch. No login (the demo shows Amaka vouching live).
+ */
+async function ensureTunde(): Promise<string> {
+  const found = must(await db.from("users").select("id").eq("stellar_pub", pub("ng_member2")).is("archived_at", null).maybeSingle(), "Tunde") as { id: string } | null;
+  const attrs = { kyc_tier: 2, borrowing_frozen_until: null, vouch_banned_until: null, member_since: new Date(Date.now() - 18 * 7 * 86_400_000).toISOString() };
+  const id = found
+    ? (must(await db.from("users").update(attrs).eq("id", found.id).select("id").single(), "Tunde") as { id: string }).id
+    : (must(await db.from("users").insert({ market_id: "ng", wa_phone: TUNDE_PHONE, name: "Tunde", language: "en", stellar_pub: pub("ng_member2"), auto_save_bps: 1000, ...attrs })
+      .select("id").single(), "Tunde") as { id: string }).id;
+  // His place in every ajo he is in (the Bodija Market Ajo rounds) points at his Plus account.
+  must(await db.from("group_members").update({ user_id: id }).eq("member_ref", pub("ng_member2")).is("user_id", null), "Tunde's ajo places");
+  return id;
+}
+
+/**
+ * Piece 10: Tunde has vouched for Funmi's next loan (on plus_credit); Amaka hasn't yet, so she can
+ * say "I vouch for Funmi" in the demo and Funmi's offer drops from 150% to 100% collateral.
+ */
+async function resetVouches(funmiId: string, amakaId: string, tundeId: string) {
+  must(await db.from("users").update({ vouch_banned_until: null }).in("id", [amakaId, tundeId]), "vouch bans");
+  const waiting = must(await db.from("vouches").select("id, voucher_user_id").eq("borrower_user_id", funmiId).eq("status", "active"), "vouches") as { id: string; voucher_user_id: string }[];
+  for (const v of waiting.filter((x) => x.voucher_user_id !== tundeId)) {
+    must(await db.rpc("vouch_withdraw", { p_voucher: v.voucher_user_id, p_vouch_id: v.id }), "withdraw vouch");
+  }
+  if (!waiting.some((x) => x.voucher_user_id === tundeId)) must(await db.rpc("vouch_record", { p_voucher: tundeId, p_borrower: funmiId }), "Tunde vouches");
+  const { data: check } = await db.rpc("vouch_check", { p_voucher: amakaId, p_borrower: funmiId });
+  console.log(`  Tunde vouches for Funmi's next loan (plus_credit); ${waiting.length - (waiting.some((x) => x.voucher_user_id === tundeId) ? 1 : 0)} other waiting vouch(es) withdrawn; ` +
+    `Amaka ${(check as { ok: boolean; reason?: string })?.ok ? "can vouch (1 of 2: her vouch drops the collateral to 100%)" : `can NOT vouch (${(check as { reason?: string })?.reason})`}`);
+}
+
+/**
  * Nothing waiting for Amaka or Mama Bisi: their witness requests, and inspections in Nigeria that no
  * agent has taken yet (from any customer, e2e test people included), are cancelled.
  */
@@ -387,6 +423,7 @@ async function resetNigeria() {
 
   const kemi = await ensureKemi();
   const amaka = await ensureAmaka();
+  const tunde = await ensureTunde();
   const bisi = must(await db.from("helpers").select("id").eq("stellar_pub", pub("agent_ng")).single(), "Mama Bisi") as { id: string };
   const people: [string, string][] = [[funmi.id, "Funmi"], [kemi.id, "Kemi"], [amaka, "Amaka"]];
 
@@ -486,6 +523,9 @@ async function resetNigeria() {
   must(await db.from("payees").upsert({ user_id: kemi.id, name: "Amaka", stellar_address: pub("amaka") }, { onConflict: "user_id,name" }), "Kemi's payee Amaka");
   const { data: ok } = await db.rpc("asset_witness_eligible", { p_user_id: amaka });
   console.log(`  ${AMAKA_EMAIL}: tier 2, 20 weeks with Plus, ${ok ? "can witness" : "NOT eligible to witness"}; Kemi's saved payee`);
+
+  console.log("\n4e. Ajo vouches (Tunde has vouched for Funmi; Amaka vouches live)");
+  await resetVouches(funmi.id, amaka, tunde);
 
   console.log("\n5. Ajo round");
   const links = must(await db.from("group_members").select("group_id, groups!inner(id, name, onchain_id, mode, amount, period_secs, created_at)")
