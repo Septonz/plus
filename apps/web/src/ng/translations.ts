@@ -115,6 +115,8 @@ export const W = {
   agentCash: { en: 'Cash with an agent', yo: 'Owó lọ́wọ́ aṣojú' }, // check
   savedPeople: { en: 'Saved people', yo: 'Àwọn tí o fi pamọ́' }, // check
   newNumber: { en: 'By phone number', yo: 'Nọ́mbà fóònù' },
+  toBank: { en: 'To a bank', yo: 'Sí báǹkì' }, // check
+  accountName: { en: 'Account name', yo: 'Orúkọ àkáǹtì' }, // check
   saveThisPerson: { en: 'Save this person', yo: 'Fi ẹni yìí pamọ́' }, // check
 
   // The mic

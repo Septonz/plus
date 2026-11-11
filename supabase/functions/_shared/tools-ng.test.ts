@@ -27,6 +27,7 @@ import {
   ngAdvanceStatus,
   ngSavePayee,
   ngSimulateBankTransfer,
+  NG_VOICE_TOOLS,
   type PlusPeer,
 } from "./tools-ng.ts";
 
@@ -47,6 +48,8 @@ type World = {
   /** Other Plus users by phone, with their balances. */
   peers: Map<string, PlusPeer & { balance: bigint }>;
   saved: { name: string; phone: string; stellar_address: string | null }[];
+  /** Saved bank accounts (piece 7). */
+  bankPayees: { id: string; name: string; bank_code: string; account_number: string; account_name: string }[];
   bankIns: { amount: bigint; repay: bigint; ref: string }[];
   credit: { frozen_until: string | null; weeks: CreditWeek[]; assets: CreditAsset[]; loans: CreditLoan[] };
 };
@@ -62,7 +65,7 @@ function fakeStore(w: World): NgStore {
     available: () => Promise.resolve(w.available),
     hasPin: () => Promise.resolve(true),
     verifyPin: (_u, pin) => Promise.resolve(pin === "1234" ? { ok: true } : { ok: false, outcome: "wrong", attemptsLeft: 2 }) as never,
-    payees: () => Promise.resolve([{ id: "p1", name: "Iya Tunde (tomato wholesaler)", stellar_address: TUNDE }]),
+    payees: () => Promise.resolve([{ id: "p1", name: "Iya Tunde (tomato wholesaler)", stellar_address: TUNDE }, ...w.bankPayees]),
     paidSince: () => Promise.resolve(w.paidToday),
     createAction: (a) => {
       const action: Action = {
@@ -118,6 +121,11 @@ function fakeStore(w: World): NgStore {
       w.saved.push(p);
       return Promise.resolve({ id: `p${w.saved.length + 1}`, name: p.name, phone: p.phone, stellar_address: p.stellar_address });
     },
+    saveBankPayee: (_u, p) => {
+      const saved = { id: `b${w.bankPayees.length + 1}`, ...p };
+      w.bankPayees.push(saved);
+      return Promise.resolve(saved);
+    },
     bankTransferIn: (_u, amount, repay, ref) => {
       w.bankIns.push({ amount, repay, ref });
       return Promise.resolve({ transaction_id: "bank-t1", repay });
@@ -153,6 +161,7 @@ function setup(over: Partial<World> = {}) {
     executed: [],
     peers: new Map(),
     saved: [],
+    bankPayees: [],
     bankIns: [],
     credit: { frozen_until: null, weeks: [], assets: [], loans: [] },
     ...over,
@@ -584,4 +593,51 @@ Deno.test("loans: repay and more time while a loan is open; one loan at a time",
   assertMatch(String(yes.text), /next payment is now due/);
   const again = await ngLoanMoreTime(setup({ credit: { frozen_until: null, weeks: [], assets: [], loans: [{ ...open, extended_once: true }] } }).ctx());
   assertEquals(again.error, "already_extended");
+});
+
+// ---------------------------------------------------------------------------- Send to a bank account (piece 7)
+
+Deno.test("bank_lookup: the simulated name enquiry, before anything is sent", async () => {
+  const { ctx } = setup();
+  const r = await NG_VOICE_TOOLS.bank_lookup(ctx({ bank: "Ironwood", account_number: "012 345 6789" }));
+  assert(r.ok, r.text);
+  assertEquals(r.account_name, "ADEBAYO STORES");
+  assertEquals(r.account_text, "•••• 6789");
+  assertEquals((await NG_VOICE_TOOLS.bank_lookup(ctx({ bank: "Ironwood", account_number: "12345" }))).error, "invalid_account");
+  assertEquals((await NG_VOICE_TOOLS.bank_lookup(ctx({ bank: "Some Real Bank", account_number: "0123456789" }))).error, "invalid_bank");
+  assertEquals((await NG_VOICE_TOOLS.bank_lookup(ctx({ bank: "D01", account_number: "9990000001" }))).error, "account_not_found");
+});
+
+Deno.test("prepare_bank_send: by account number, read back with the name, PIN above the threshold", async () => {
+  const { ctx, w } = setup();
+  const r = await NG_VOICE_TOOLS.prepare_bank_send(ctx({ amount: "8000", bank: "Ironwood Bank", account_number: "0123456789" }));
+  assert(r.ok, r.text);
+  assert(String(r.text).includes("ADEBAYO STORES") && String(r.text).includes("ending 6 7 8 9"), r.text);
+  const a = w.actions.get(String(r.action_id))!;
+  assertEquals(a.kind, "bank_send");
+  assertEquals(a.params.amount, String(N(8_000)));
+  assertEquals(a.params.account_number, "0123456789");
+  assertEquals(r.requires_pin, true, "₦8,000 is above the ₦5,000 voice-Yes threshold");
+  const small = await NG_VOICE_TOOLS.prepare_bank_send(ctx({ amount: "2000", bank: "D01", account_number: "0123456789" }));
+  assertEquals(small.requires_pin, false);
+  const c = await NG_VOICE_TOOLS.confirm_action(ctx({ action_id: small.action_id }));
+  assert(c.ok && String(c.text).includes("partner bank"), c.text);
+});
+
+Deno.test("prepare_bank_send: \"my landlord's bank account\" from a saved bank payee", async () => {
+  const { ctx, w } = setup();
+  const saved = await NG_VOICE_TOOLS.save_payee(ctx({ name: "Landlord", bank: "Ironwood", account_number: "0123456789" }));
+  assert(saved.ok, saved.text);
+  assertEquals(w.bankPayees[0].account_name, "ADEBAYO STORES");
+  const r = await NG_VOICE_TOOLS.prepare_bank_send(ctx({ amount: "8000", payee: "my landlord's bank account" }));
+  assert(r.ok, r.text);
+  assertEquals(w.actions.get(String(r.action_id))!.params.payee_name, "Landlord");
+  const none = await NG_VOICE_TOOLS.prepare_bank_send(ctx({ amount: "8000", payee: "my brother" }));
+  assertEquals(none.error, "unknown_payee");
+});
+
+Deno.test("prepare_bank_send: the daily limit and her balance still apply", async () => {
+  const { ctx } = setup({ available: N(1_000) });
+  const r = await NG_VOICE_TOOLS.prepare_bank_send(ctx({ amount: "8000", bank: "D01", account_number: "0123456789" }));
+  assert(!r.ok);
 });

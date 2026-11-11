@@ -1,0 +1,50 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "prepare_bank_send",
+    "description": "Send money to a bank account: a saved one (\"my landlord's bank account\": pass payee) or a bank and account number. Plus reads back the account name; she confirms like any payment (a Yes, or her PIN on the screen above ₦5,000). It goes through the partner bank (simulated).",
+    "response_timeout_secs": 10,
+    "api_schema": {
+      "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/prepare_bank_send",
+      "method": "POST",
+      "request_headers": {
+        "x-plus-secret": {
+          "secret_id": "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>"
+        }
+      },
+      "content_type": "application/json",
+      "request_body_schema": {
+        "type": "object",
+        "properties": {
+          "plus_session": {
+            "type": "string",
+            "dynamic_variable": "plus_session"
+          },
+          "caller_id": {
+            "type": "string",
+            "dynamic_variable": "system__caller_id"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Amount in naira, digits only (\"8000\")."
+          },
+          "payee": {
+            "type": "string",
+            "description": "A saved bank account by her name for it (\"landlord\"). Leave out when she gives a number."
+          },
+          "bank": {
+            "type": "string",
+            "description": "The bank, as she says it (\"Ironwood\"). The tool lists the banks if it doesn't know it."
+          },
+          "account_number": {
+            "type": "string",
+            "description": "The 10-digit account number, digits only."
+          }
+        },
+        "required": [
+          "amount"
+        ]
+      }
+    }
+  }
+}

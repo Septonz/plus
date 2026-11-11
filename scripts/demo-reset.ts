@@ -439,6 +439,10 @@ async function resetNigeria() {
   if (stock) must(await db.from("assets").update(asset).eq("id", stock.id), "stock");
   else must(await db.from("assets").insert(asset), "stock");
   console.log("  stall stock: ₦90,000, independently verified (lending value ₦54,000)");
+  // Piece 7: "Send ₦8,000 to my landlord's bank account" (a fictional bank; the name is the simulated enquiry's).
+  must(await db.from("payees").upsert({ user_id: funmi.id, name: "Landlord", bank_code: "D01", account_number: "0123456789", account_name: "ADEBAYO STORES" },
+    { onConflict: "user_id,name" }), "Funmi's landlord");
+  console.log("  saved bank account: Landlord, ADEBAYO STORES, Ironwood Bank •••• 6789 (simulated)");
 
   console.log("\n4. Funmi's wallet and Mama Bisi's float");
   for (const [name, target, userId] of [["funmi", FUNMI_START * UNIT, funmi.id], ["agent_ng", FLOAT_START * UNIT, null]] as const) {

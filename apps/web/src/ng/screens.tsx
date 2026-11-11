@@ -312,23 +312,36 @@ const localPhone = (e164: string | null | undefined) =>
 /** Pay: a saved person, or anyone by phone number (on Plus: wallet to wallet; not on Plus: a cash code). */
 export function Pay({ data }: Props) {
   const payees = data.payees
-  const [tab, setTab] = useState<'saved' | 'phone'>(payees.length > 0 ? 'saved' : 'phone')
+  const [tab, setTab] = useState<'saved' | 'phone' | 'bank'>(payees.length > 0 ? 'saved' : 'phone')
   const [who, setWho] = useState<string | null>(null)
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
+  const bank = useBankAccount()
   const { busy, msg, run } = useSubmit()
-  const ready = tab === 'saved' ? Boolean(who) : phone.replace(/\D/g, '').length >= 10
+  const chosen = payees.find((p) => p.name === who) ?? null
+  const ready = tab === 'saved' ? Boolean(who) : tab === 'bank' ? Boolean(bank.found) : phone.replace(/\D/g, '').length >= 10
   useSays(
     'Pay. ' +
       (tab === 'saved'
-        ? payees.length ? `Saved people: ${payees.map((p) => p.name).join(', ')}.${who ? ` ${who} is chosen.` : ''}` : 'No saved people yet.'
+        ? payees.length ? `Saved: ${payees.map((p) => p.account_number ? `${p.name} (bank account)` : p.name).join(', ')}.${who ? ` ${who} is chosen.` : ''}` : 'No saved people yet.'
+        : tab === 'bank'
+        ? `To a bank account: she picks the bank and types the 10-digit account number${bank.found ? `; account name ${bank.found.account_name}` : ''}.`
         : `Pay a phone number${phone ? ` (${phone} typed)` : ''}. On Plus it goes to their wallet; not on Plus, they get a code for cash at any agent.`) +
       (ready ? ` Amount: ${amount ? naira(BigInt(amount) * 100n) : 'not typed yet'}; then Next.` : ''),
   )
+  async function next() {
+    const r = tab === 'bank'
+      ? await run('prepare_bank_send', { bank: bank.code, account_number: bank.acct, amount })
+      : tab === 'saved' && chosen?.account_number
+      ? await run('prepare_bank_send', { payee: chosen.name, amount })
+      : await run('prepare_pay', tab === 'saved' ? { payee: who, amount } : { phone, name: name.trim() || undefined, amount })
+    if (r.ok) setAmount('')
+  }
   return (
     <div className="space-y-6">
-      <Segmented label="Pay" value={tab} onChange={(t) => { setTab(t); setAmount('') }} options={[['saved', W.savedPeople.en], ['phone', W.newNumber.en]]} />
+      <Segmented label="Pay" value={tab} onChange={(t) => { setTab(t); setAmount('') }}
+        options={[['saved', W.savedPeople.en], ['phone', 'By phone'], ['bank', W.toBank.en]]} />
 
       {tab === 'saved' ? (
         payees.length === 0 ? (
@@ -339,11 +352,15 @@ export function Pay({ data }: Props) {
           <Section title={W.whoPay.en}>
             <ListGroup>
               {payees.map((p) => (
-                <ListRow key={p.id} icon="person" iconTone={who === p.name ? 'accent' : 'neutral'} title={p.name} subtitle={p.phone ? localPhone(p.phone) : undefined} selected={who === p.name} onClick={() => setWho(p.name)} />
+                <ListRow key={p.id} icon={p.account_number ? 'bank' : 'person'} iconTone={who === p.name ? 'accent' : 'neutral'} title={p.name}
+                  subtitle={p.account_number ? `${p.account_name ?? ''} · ${bankName(p.bank_code)} •••• ${p.account_number.slice(-4)}` : p.phone ? localPhone(p.phone) : undefined}
+                  selected={who === p.name} onClick={() => setWho(p.name)} />
               ))}
             </ListGroup>
           </Section>
         )
+      ) : tab === 'bank' ? (
+        <BankAccountForm b={bank} />
       ) : (
         <Card className="space-y-4">
           <TextField label="Their phone number" value={phone} onChange={setPhone} inputMode="tel" placeholder="0803 555 0101" autoComplete="off" />
@@ -360,16 +377,86 @@ export function Pay({ data }: Props) {
           <Card className="space-y-4">
             <AmountEntry value={amount} onChange={setAmount} />
             {msg && <Notice tone="danger">{msg}</Notice>}
-            <Button className="w-full" loading={busy} disabled={!amount} onClick={async () => {
-              const r = await run('prepare_pay', tab === 'saved' ? { payee: who, amount } : { phone, name: name.trim() || undefined, amount })
-              if (r.ok) setAmount('')
-            }}>
+            <Button className="w-full" loading={busy} disabled={!amount} onClick={() => void next()}>
               {W.next.en}
             </Button>
           </Card>
         </Section>
       )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------- Send to a bank account (piece 7)
+
+const BANKS = NG.bankSend?.banks ?? []
+const bankName = (code: string | null | undefined) => BANKS.find((b) => b.code === code)?.name ?? ''
+type Found = { account_name: string; bank_name: string; account_text: string }
+
+/** The bank, the 10-digit number, and the account name from the (simulated) name enquiry. */
+function useBankAccount() {
+  const [code, setCode] = useState(BANKS[0]?.code ?? '')
+  const [acct, setAcct] = useState('')
+  const [found, setFound] = useState<Found | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [looking, setLooking] = useState(false)
+  useEffect(() => {
+    setFound(null)
+    setErr(null)
+    if (acct.length !== (NG.bankSend?.accountDigits ?? 10)) return
+    let live = true
+    setLooking(true)
+    void tool('bank_lookup', { bank: code, account_number: acct })
+      .then((r) => {
+        if (!live) return
+        if (r.ok) setFound({ account_name: String(r.account_name), bank_name: String(r.bank_name), account_text: String(r.account_text) })
+        else setErr(forScreen(r.text))
+      })
+      .catch(() => live && setErr('No connection. Try again.'))
+      .finally(() => live && setLooking(false))
+    return () => { live = false }
+  }, [code, acct])
+  return { code, setCode, acct, setAcct, found, err, looking }
+}
+
+function BankAccountForm({ b }: { b: ReturnType<typeof useBankAccount> }) {
+  const [saveAs, setSaveAs] = useState('')
+  const [saved, setSaved] = useState<string | null>(null)
+  return (
+    <Card className="space-y-4">
+      <label className="block">
+        <span className="text-base font-medium">Bank</span>
+        <select value={b.code} onChange={(e) => b.setCode(e.target.value)}
+          className="mt-1 min-h-11 w-full rounded-control bg-fill px-3 text-lg text-label">
+          {BANKS.map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}
+        </select>
+      </label>
+      <TextField label="Account number (10 digits)" value={b.acct} onChange={(v) => b.setAcct(v.replace(/\D/g, '').slice(0, 10))}
+        inputMode="numeric" placeholder="0123456789" maxLength={10} />
+      {b.looking && <p className="flex items-center gap-2 text-secondary" role="status"><Spinner /> Checking the account…</p>}
+      {b.found && (
+        <div className="rounded-control bg-success-soft px-4 py-3 text-success-strong">
+          <p className="text-sm">{W.accountName.en}</p>
+          <p className="text-xl font-semibold">{b.found.account_name}</p>
+          <p className="text-sm">{b.found.bank_name} · {b.found.account_text}</p>
+        </div>
+      )}
+      {b.err && <Notice tone="danger">{b.err}</Notice>}
+      {b.found && !saved && (
+        <div className="flex items-end gap-2">
+          <div className="min-w-0 flex-1"><TextField label="Save it as (optional)" value={saveAs} onChange={setSaveAs} placeholder="Landlord" maxLength={40} /></div>
+          <Button variant="secondary" size="md" disabled={saveAs.trim().length < 2} onClick={async () => {
+            const r = await tool('save_payee', { name: saveAs.trim(), bank: b.code, account_number: b.acct })
+            if (r.ok) setSaved(saveAs.trim())
+          }}>Save</Button>
+        </div>
+      )}
+      {saved && <Notice tone="success">Saved as {saved}.</Notice>}
+      <p className="flex gap-2 text-sm text-secondary">
+        <Icon name="info" className="mt-0.5" />
+        <span>It goes on Stellar to the partner bank, which pays the account. Banks and names are simulated.</span>
+      </p>
+    </Card>
   )
 }
 

@@ -34,7 +34,11 @@ export type PendingAction = {
   created_by: 'user' | 'helper'
   created_at: string
 }
-export type Payee = { id: string; name: string; upi_handle: string | null; phone?: string | null }
+export type Payee = {
+  id: string; name: string; upi_handle: string | null; phone?: string | null
+  /** Nigeria: a saved bank account (piece 7). */
+  bank_code?: string | null; account_number?: string | null; account_name?: string | null
+}
 
 export type PlusData = {
   me: Me | null
@@ -100,7 +104,7 @@ export function usePlusData(authUserId: string | null): PlusData {
         .eq('status', 'pending')
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false }),
-      supabase.from('payees').select('id, name, upi_handle, phone').eq('user_id', uid).order('name'),
+      supabase.from('payees').select('id, name, upi_handle, phone, bank_code, account_number, account_name').eq('user_id', uid).order('name'),
     ])
     setMe(meRes.data as Me)
     setAccount((acct.data as Account) ?? null)

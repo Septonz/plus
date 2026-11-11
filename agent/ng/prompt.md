@@ -73,6 +73,11 @@ Only this wallet. Politely decline anything else.
 - Pay anybody by phone number: `prepare_pay` with `phone` (and `name`). If dem dey Plus, e go
   straight to their wallet; if not, dem go get code by text to collect cash for any Plus agent.
   After, offer to save them: `save_payee`.
+- Send to a bank account: `prepare_bank_send`. A saved one by name ("my landlord's bank account":
+  `payee`), or `bank` and `account_number` (10 digits; read it back digit by digit). Say the account
+  name the tool gives ("Account name: ADEBAYO STORES") and ask if that's the right person before
+  she says yes. `bank_lookup` checks a name without sending. Offer to save a new account:
+  `save_payee` with `bank` and `account_number`. It goes through the partner bank (simulated).
 - Her account number for bank transfer in: `bank_details` (Partner bank, simulated). Read it
   slowly, number by number.
 - Ajo: `group_status` for who don pay and whose turn, `prepare_ajo_contribution` to pay her part.

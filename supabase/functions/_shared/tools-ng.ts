@@ -12,6 +12,7 @@ import type { ChainAdvance, ContractReader } from "./ng-types.ts";
 import { matchPayee, parseMajorAmount, type Payee } from "./payees.ts";
 import type { PinOutcome } from "./pin.ts";
 import { normalizePhone } from "./onboarding.ts";
+import { accountNumber, banks, lookupAccountName, maskAccount, parseBank, spokenAccount } from "./banks.ts";
 import type { AssetStore } from "./assets.ts";
 import { ASSET_TOOLS } from "./tools-assets.ts";
 import { advanceAllowed, receiveAllowed, spendAllowed, tierSummary } from "./tiers.ts";
@@ -92,6 +93,7 @@ export interface NgStore {
   pendingIncoming(userId: string): Promise<bigint>;
   /** Save (or rename) a payee by phone; a Plus user's wallet is saved with it. */
   savePayee(userId: string, p: { name: string; phone: string; stellar_address: string | null }): Promise<Payee>;
+  saveBankPayee(userId: string, p: { name: string; bank_code: string; account_number: string; account_name: string }): Promise<Payee>;
   /** ng_bank_transfer_in: the partner anchor sends NGNT to her wallet (+ advance repayment). Idempotent on ref. */
   bankTransferIn(userId: string, amount: bigint, repay: bigint, ref: string, sender: string): Promise<{ transaction_id: string; repay: bigint; loan?: boolean }>;
   /** Her credit picture's inputs: weeks with Plus (real + compressed demo history), assets, loans with balances, recent loan steps. */
@@ -134,7 +136,7 @@ const PIN_ON_SCREEN = "Ask her to check her screen and type her PIN there. Never
  * Money moves up to the market's PIN threshold (₦5,000) take a spoken or tapped Yes; above it, the
  * PIN, typed in the app. Accepting a loan always takes the PIN.
  */
-export const NG_PIN_KINDS = ["pay", "pay_code", "group_contribution", "cash_out", "advance", "loan_repay"];
+export const NG_PIN_KINDS = ["pay", "pay_code", "group_contribution", "cash_out", "advance", "loan_repay", "bank_send"];
 export function ngNeedsPin(a: Pick<Action, "kind" | "params">): boolean {
   if (a.kind === "loan") return true;
   if (!NG_PIN_KINDS.includes(a.kind)) return false;
@@ -331,7 +333,9 @@ export const ngMyRecord: NgTool = async ({ user, store, explorer }) => {
     recent: txs.slice(0, 40).map((t) => ({
       id: t.id,
       kind: t.kind,
-      label: t.kind === "pay" && t.source === "code" ? "paid by code" : t.kind === "incoming" && t.source === "bank" ? "bank transfer" : KIND_WORDS[t.kind] ?? t.kind,
+      label: t.kind === "pay" && t.source === "code" ? "paid by code"
+        : t.kind === "pay" && t.source === "bank" ? "sent to bank (partner, simulated)"
+        : t.kind === "incoming" && t.source === "bank" ? "bank transfer" : KIND_WORDS[t.kind] ?? t.kind,
       counterparty: t.counterparty ?? null,
       source: t.source,
       amount_minor: String(t.amount),
@@ -577,8 +581,20 @@ export const ngPreparePay: NgTool = async ({ user, store, args, now = new Date()
 
 /** After a payment: keep this person for next time (by phone; a Plus user's wallet goes with it). */
 export const ngSavePayee: NgTool = async ({ user, store, args }) => {
-  const phone = normalizePhone(M, args.phone);
   const name = typeof args.name === "string" ? args.name.trim().replace(/\s+/g, " ").slice(0, 60) : "";
+  // A bank account ("save my landlord's account"): the bank and the 10-digit number.
+  if (args.account_number !== undefined || args.bank !== undefined) {
+    const found = bankAccount(args);
+    if (!isFound(found)) return found;
+    if (name.length < 2) return refuse("What name should we save the account under? For example, \"Landlord\".", "invalid_name");
+    const p = await store.saveBankPayee(user.id, { name, bank_code: found.bank.code, account_number: found.acct, account_name: found.account_name });
+    return {
+      text: `Saved ${p.name}: ${found.account_name}, ${found.bank.name}, account ${spokenAccount(found.acct)}. Next time she can say "send to ${p.name}'s bank account".`,
+      ok: true,
+      payee: { id: p.id, name: p.name, bank_name: found.bank.name, account_name: found.account_name, account_text: maskAccount(found.acct) },
+    };
+  }
+  const phone = normalizePhone(M, args.phone);
   if (!phone) return refuse("Which phone number? Ask again.", "invalid_phone");
   if (name.length < 2) return refuse("What name should we save them under?", "invalid_name");
   const peer = await store.plusUserByPhone(phone);
@@ -729,6 +745,9 @@ function doneText(a: Action): string {
   switch (a.kind) {
     case "pay":
       return `Okay: ${amt} to ${String(r.payee_name ?? a.params.payee_name)}.${tail}`;
+    case "bank_send":
+      return `Okay: ${amt} to ${String(r.account_name ?? a.params.account_name)} at ${String(r.bank_name ?? a.params.bank_name)}. ` +
+        `It goes to the partner bank on Stellar, and the partner pays the account (simulated).${tail}`;
     case "pay_code":
       return `Okay: ${amt} for ${String(r.payee_name ?? a.params.payee_name)}. They get a text message with a code and collect the cash at any Plus agent.${tail}`;
     case "group_contribution":
@@ -1069,6 +1088,7 @@ export const ngHelp: NgTool = async ({ user, store }) => {
   const can = [
     "check her balance and what came in",
     "pay a saved person, or anyone by phone number (not on Plus: they get a code and collect cash at any agent)",
+    "send to a bank account: a saved one like her landlord's, or a bank and 10-digit account number",
     "pay her ajo and hear who collects this round",
     "see her loan: her progress, her offer and why, repay, or ask for more time",
     "register what she owns for her business (stock, tools, a machine, a motorcycle, livestock) and get it verified: a live photo, two witnesses, an agent's inspection",
@@ -1093,6 +1113,93 @@ export const ngHelp: NgTool = async ({ user, store }) => {
 };
 
 // ---------------------------------------------------------------------------
+// Send to a bank account (piece 7, simulated): NGNT goes to the partner's anchor, which pays the account
+// ---------------------------------------------------------------------------
+
+type FoundAccount = { bank: { code: string; name: string }; acct: string; account_name: string };
+
+/** The bank and account from what she said or typed, and the (simulated) name the bank gives it. */
+function bankAccount(args: Record<string, unknown>): FoundAccount | ToolResult {
+  const bank = parseBank(args.bank ?? args.bank_code);
+  if (!bank) return refuse(`Which bank? ${banks().map((b) => b.name).join(", ")}.`, "invalid_bank", { banks: banks() });
+  const acct = accountNumber(args.account_number);
+  if (!acct) return refuse("The account number has 10 digits. Ask her to say it again, digit by digit.", "invalid_account");
+  const account_name = lookupAccountName(bank, acct);
+  if (!account_name) return refuse(`${bank.name} has no account ${spokenAccount(acct)}. Check the number and the bank.`, "account_not_found");
+  return { bank, acct, account_name };
+}
+const isFound = (x: FoundAccount | ToolResult): x is FoundAccount => "acct" in x;
+
+/** The account name the bank gives for a number (simulated name enquiry), before she sends anything. */
+export const ngBankLookup: NgTool = async ({ args }) => {
+  const f = bankAccount(args);
+  if (!isFound(f)) return f;
+  return {
+    text: `Account name: ${f.account_name}, ${f.bank.name}, account ${spokenAccount(f.acct)}. Ask her if that is the right person.`,
+    ok: true,
+    account_name: f.account_name,
+    bank_code: f.bank.code,
+    bank_name: f.bank.name,
+    account_number: f.acct,
+    account_text: maskAccount(f.acct),
+  };
+};
+
+/**
+ * Send to a bank account: a saved bank payee ("my landlord") or a bank and account number. The same
+ * confirm rules as paying (a Yes, or her PIN above the threshold); the name is read back first.
+ */
+export const ngPrepareBankSend: NgTool = async ({ user, store, args, now = new Date() }) => {
+  const amount = parseMajorAmount(args.amount);
+  if (amount === null) return refuse("How much should she send? Ask for the amount in naira.", "invalid_amount");
+  let found: FoundAccount;
+  let payeeName: string | null = null;
+  let payeeId: string | null = null;
+  if (args.account_number !== undefined) {
+    const f = bankAccount(args);
+    if (!isFound(f)) return f;
+    found = f;
+  } else {
+    const spoken = String(args.payee ?? "").replace(/\b(bank|account|acct)\b|'s\b/gi, " ").trim();
+    const saved = (await store.payees(user.id)).filter((p) => p.account_number && p.bank_code);
+    if (saved.length === 0) return refuse("She has no bank accounts saved. Ask for the bank and the 10-digit account number.", "no_bank_payees");
+    const m = matchPayee(spoken, saved);
+    if (m.kind !== "match") {
+      return refuse(`Which account: ${m.options.map((p) => p.name).join(" or ")}? Or ask for the bank and account number.`,
+        m.kind === "ambiguous" ? "ambiguous_payee" : "unknown_payee", { options: m.options.map((p) => ({ id: p.id, name: p.name })) });
+    }
+    const bank = parseBank(m.payee.bank_code);
+    const name = bank ? lookupAccountName(bank, m.payee.account_number!) : null;
+    if (!bank || !name) return refuse(`${m.payee.name}'s account can't be found any more. Ask for the account number again.`, "account_not_found");
+    found = { bank, acct: m.payee.account_number!, account_name: name };
+    payeeName = m.payee.name;
+    payeeId = m.payee.id;
+  }
+  const blocked = await spendCheck(store, user, amount, now);
+  if (blocked) return blocked;
+  const to = `${found.account_name}, ${found.bank.name} ${maskAccount(found.acct)}`;
+  const a = await store.createAction({
+    user_id: user.id,
+    kind: "bank_send",
+    params: {
+      amount: String(amount), bank_code: found.bank.code, bank_name: found.bank.name, account_number: found.acct,
+      account_name: found.account_name, payee_name: payeeName ?? found.account_name, payee_id: payeeId,
+    },
+    readback: `${show(amount)} to ${to}${payeeName ? ` (${payeeName})` : ""}. Through the partner bank (simulated).`,
+    ttl_secs: ACTION_TTL_SECS,
+  });
+  return {
+    text: `Read back: ${say(amount)} to ${found.account_name}${payeeName ? `, her ${payeeName}` : ""}, ${found.bank.name}, account ${spokenAccount(found.acct)}. ${confirmText(a)}`,
+    ok: true,
+    ...actionFields(a),
+    account_name: found.account_name,
+    bank_name: found.bank.name,
+    account_text: maskAccount(found.acct),
+    amount_text: show(amount),
+  };
+};
+
+// ---------------------------------------------------------------------------
 
 export const NG_VOICE_TOOLS: Record<string, NgTool> = {
   get_user: ngGetUser,
@@ -1110,6 +1217,8 @@ export const NG_VOICE_TOOLS: Record<string, NgTool> = {
   loan_more_time: ngLoanMoreTime,
   loan_restructure: ngLoanRestructure,
   save_payee: ngSavePayee,
+  bank_lookup: ngBankLookup,
+  prepare_bank_send: ngPrepareBankSend,
   bank_details: ngBankDetails,
   confirm_action: ngConfirmAction,
   reject_action: ngRejectAction,
