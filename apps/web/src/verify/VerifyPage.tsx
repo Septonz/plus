@@ -5,6 +5,7 @@ import { formatTime } from '../lib/time'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Button, Card, Icon, ListGroup, Notice, Section, Spinner } from '../ds/components'
 import { supabase } from '../lib/supabase'
+import { tool } from '../plus/api'
 import {
   ASSET_LEVEL, ASSET_STATUS, CREDIT_CONTRACT, EXPLORER, LOAN_STATUS, PLUS_CONTRACT, ajoSummary, loadSdk, naira, readRecord,
   type Record as ChainRecord,
@@ -26,6 +27,22 @@ export default function VerifyPage() {
   const [err, setErr] = useState<string | null>(null)
   const [res, setRes] = useState<Result | null>(null)
   useEffect(() => { void loadSdk() }, [])
+  // Demo only (DEMO_LOGINS_ENABLED): a fresh sample code for Funmi's record, so anyone can try it.
+  const [sampleOn, setSampleOn] = useState(false)
+  const [sampling, setSampling] = useState(false)
+  useEffect(() => {
+    let live = true
+    void tool<{ enabled?: boolean }>('demo_logins').then((r) => live && setSampleOn(r.enabled === true)).catch(() => {})
+    return () => { live = false }
+  }, [])
+  async function sample() {
+    setSampling(true)
+    setErr(null)
+    const r = await tool<{ ok?: boolean; code?: string }>('sample_record').catch(() => null)
+    setSampling(false)
+    if (r?.ok && r.code) setCode(r.code)
+    else setErr('No sample record just now. Try again in a minute.')
+  }
 
   async function verify(e?: FormEvent) {
     e?.preventDefault()
@@ -69,6 +86,9 @@ export default function VerifyPage() {
           <p id="code-hint" className="text-sm text-secondary">8 letters and numbers. It works for 24 hours, for one lender.</p>
           {err && <Notice tone="danger">{err}</Notice>}
           <Button type="submit" className="w-full" loading={busy} disabled={code.replace(/[^A-Za-z0-9]/g, '').length !== 8}>Verify</Button>
+          {sampleOn && (
+            <Button variant="plain" className="w-full" loading={sampling} onClick={() => void sample()}>Try a sample record (Funmi, demo)</Button>
+          )}
         </form>
       </Card>
 

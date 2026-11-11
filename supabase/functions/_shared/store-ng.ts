@@ -152,7 +152,7 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
     async recordShares(userId) {
       return must(
         await db.from("record_shares").select("id, created_at, expires_at, revoked_at, first_viewed_at, views, last_viewed_at")
-          .eq("user_id", userId).order("created_at", { ascending: false }).limit(50),
+          .eq("user_id", userId).not("action_id", "is", null).order("created_at", { ascending: false }).limit(50), // /verify's samples are not hers to see
         "recordShares",
       ) as RecordShare[];
     },

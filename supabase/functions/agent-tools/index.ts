@@ -23,7 +23,7 @@ import { supabaseStore } from "../_shared/store.ts";
 import { supabaseNgStore } from "../_shared/store-ng.ts";
 import { supabaseAssetStore } from "../_shared/store-assets.ts";
 import { APP_TOOLS, type Channel, type Store, type Tool, type ToolResult, type User, VOICE_TOOLS } from "../_shared/tools.ts";
-import { NG_APP_TOOLS, NG_VOICE_TOOLS, type NgTool } from "../_shared/tools-ng.ts";
+import { NG_APP_TOOLS, NG_VOICE_TOOLS, newShareCode, type NgTool, showShareCode } from "../_shared/tools-ng.ts";
 import type { MarketId } from "../_shared/markets.ts";
 import { finishCheck, normalizePhone, OB_TOOLS, type ObChannel, type ObSession } from "../_shared/onboarding.ts";
 import { signInToken, supabaseOnboardingStore } from "../_shared/store-onboarding.ts";
@@ -262,6 +262,15 @@ Deno.serve(withCors(async (req) => {
     if (tool === "sign_in") return json(await signIn(args));
     // Public: whether the front door shows the demo people (DEMO_LOGINS_ENABLED).
     if (tool === "demo_logins") return json({ enabled: demoLoginsEnabled() });
+    // Public, demo only: /verify's "Try a sample record" (a fresh 24-hour share of Funmi's record).
+    if (tool === "sample_record") {
+      if (!demoLoginsEnabled()) return json({ ok: false, error: "disabled" }, 404);
+      const code = newShareCode();
+      const { data, error } = await db.rpc("sample_record_share", { p_code: code });
+      if (error) throw new Error(`sample_record_share: ${error.message}`);
+      const r = data as { ok: boolean; error?: string; expires_at?: string };
+      return json(r.ok ? { ok: true, code: showShareCode(code), expires_at: r.expires_at } : r);
+    }
 
     const who = await identify(req, args);
     if ("error" in who) return who.error;
