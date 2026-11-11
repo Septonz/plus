@@ -14,6 +14,8 @@ export interface Market {
   country: string;
   currency: { code: CurrencyCode; symbol: string; onChain: boolean };
   languages: string[];
+  /** What the voice agent actually speaks, as shown to people (piece 11: only what's real). */
+  spokenLanguages: string[];
   custody: "partner_bank" | "stellar_account";
   usdBalance: boolean;
   domesticRail: "upi_sim" | "stellar";
@@ -156,6 +158,7 @@ export const MARKETS: Record<MarketId, Market> = {
     country: "India",
     currency: { code: "INR", symbol: "₹", onChain: false },
     languages: ["ta", "en"],
+    spokenLanguages: ["Tamil", "English"],
     custody: "partner_bank",
     usdBalance: false,
     domesticRail: "upi_sim",
@@ -195,6 +198,7 @@ export const MARKETS: Record<MarketId, Market> = {
     currency: { code: "NGN", symbol: "₦", onChain: true },
     // English covers Nigerian Pidgin.
     languages: ["en", "yo", "ha", "ig"],
+    spokenLanguages: ["English", "Pidgin", "Yoruba"],
     custody: "stellar_account",
     usdBalance: true,
     domesticRail: "stellar",

@@ -42,12 +42,19 @@ function App() {
         <Segmented label="Market" value={marketId} onChange={setMarketId} options={MARKET_IDS.map((id) => [id, getMarket(id).country])} />
         <ListGroup>
           <ListRow title="Currency" trailing={<span className="text-base text-secondary">{market.currency.code} ({market.currency.symbol})</span>} />
-          <ListRow title="Languages" trailing={<span className="text-base text-secondary">{market.languages.join(', ')}</span>} />
+          <ListRow title="Languages" trailing={<span className="text-base text-secondary">{market.spokenLanguages.join(', ')}</span>} />
           <ListRow title="Group savings" trailing={<span className="text-base text-secondary">{market.groupSavings.localName}</span>} />
-          <ListRow
-            title="Advance"
-            trailing={<span className="num text-base text-secondary">{formatMoney(BigInt(market.advance.min) * 100n, market.id)} to {formatMoney(BigInt(market.advance.max) * 100n, market.id)}</span>}
-          />
+          {market.lending ? (
+            <ListRow
+              title="Loans"
+              trailing={<span className="num text-base text-secondary">{formatMoney(BigInt(market.lending.ladder[0].max) * 100n, market.id)} → {formatMoney(BigInt(Math.max(...market.lending.ladder.map((s) => s.max))) * 100n, market.id)}, from {market.lending.ladder[0].costBps / 100}%</span>}
+            />
+          ) : (
+            <ListRow
+              title="Advance"
+              trailing={<span className="num text-base text-secondary">{formatMoney(BigInt(market.advance.min) * 100n, market.id)} to {formatMoney(BigInt(market.advance.max) * 100n, market.id)}</span>}
+            />
+          )}
         </ListGroup>
       </Section>
 
