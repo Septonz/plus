@@ -32,6 +32,8 @@ export interface Market {
   lending: Lending | null;
   /** claimable_code cash-outs: agents can claim at once; the user can take it back after returnAfterDays. */
   cashOutCode: { digits: number; returnAfterDays: number; maxAttempts: number } | null;
+  /** A cash agent's commission on cash in and out, basis points. `simulated`: a demo figure, not a real fee. */
+  agentCommission?: { bps: number; simulated: boolean };
   /** Hours a helper's or agent's cash-in waits for the user's Yes before it expires. */
   cashInExpiryHours: number;
   /** App screens, in bottom-nav order; the app picks screens and wording from this. */
@@ -227,6 +229,7 @@ export const MARKETS: Record<MarketId, Market> = {
       vouch: { min: 2, collateralPct: 100, minWeeks: 6, banMonths: 6, max: 10 },
     },
     cashOutCode: { digits: 6, returnAfterDays: 7, maxAttempts: 5 },
+    agentCommission: { bps: 50, simulated: true }, // 0.5%, for the agent page's "Earned today" (no fee is charged)
     cashInExpiryHours: 24,
     screens: ["home", "add_cash", "pay", "group", "loan", "cash_out", "record", "settings"],
     record: "native",

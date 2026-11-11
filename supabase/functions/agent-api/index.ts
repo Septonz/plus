@@ -86,21 +86,37 @@ async function floatOf(a: Agent): Promise<{ float: bigint; horizon_ms: number }>
   return { float: r.balances.NGNT ?? 0n, horizon_ms: r.ms };
 }
 
+/** Cash handled today (confirmed cash-ins and redeemed codes), for "Earned today". */
+async function handledToday(a: Agent): Promise<bigint> {
+  const since = dayStart("ng", new Date());
+  const [ins, outs] = await Promise.all([
+    db.from("cash_events").select("amount").eq("helper_id", a.id).eq("status", "confirmed").gte("created_at", since),
+    db.from("cash_out_codes").select("amount").eq("redeemed_by", a.id).gte("redeemed_at", since),
+  ]);
+  const rows = [...(must(ins, "cash in today") as { amount: number }[]), ...(must(outs, "codes today") as { amount: number }[])];
+  return rows.reduce((s, r) => s + BigInt(r.amount), 0n);
+}
+
 async function me(a: Agent) {
-  const [used, held, f] = await Promise.all([usedToday(a), committed(a), floatOf(a)]);
+  const [used, held, f, handled] = await Promise.all([usedToday(a), committed(a), floatOf(a), handledToday(a)]);
+  const commission = getMarket("ng").agentCommission;
+  const earned = commission ? (handled * BigInt(commission.bps)) / 10000n : null;
   const limit = BigInt(a.daily_limit);
   const left = limit > used ? limit - used : 0n;
   const free = f.float > held ? f.float - held : 0n;
   const recent = must(
     await db.from("cash_events").select("id, amount, status, created_at, rail_ref, users(name)").eq("helper_id", a.id)
-      .gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString()).order("created_at", { ascending: false }).limit(20),
+      .neq("status", "expired").gte("created_at", new Date(Date.now() - 10 * 86_400_000).toISOString()).order("created_at", { ascending: false }).limit(40),
     "recent",
   ) as unknown as { id: string; amount: number; status: string; created_at: string; rail_ref: string | null; users: { name: string | null } | null }[];
   const txIds = recent.map((r) => r.rail_ref).filter((x): x is string => Boolean(x));
   const txs = txIds.length
-    ? must(await db.from("transactions").select("id, status, chain_tx_hash").in("id", txIds), "recent txs") as { id: string; status: string; chain_tx_hash: string | null }[]
+    ? must(await db.from("transactions").select("id, status, chain_tx_hash, hidden_from_history").in("id", txIds), "recent txs") as
+      { id: string; status: string; chain_tx_hash: string | null; hidden_from_history: boolean }[]
     : [];
   const byId = new Map(txs.map((t) => [t.id, t]));
+  // Demo resets and test runs stay out of her list (their rows are hidden from the customer's history too).
+  const shown = recent.filter((r) => !(r.rail_ref && byId.get(r.rail_ref)?.hidden_from_history)).slice(0, 10);
   const redeemed = must(
     await db.from("cash_out_codes").select("id, amount, redeemed_at, claim_outbox_id, recipient_name, users(name)").eq("redeemed_by", a.id)
       .order("redeemed_at", { ascending: false }).limit(10),
@@ -122,7 +138,10 @@ async function me(a: Agent) {
     used_today_text: show(used),
     left_today_minor: String(left),
     left_today_text: show(left),
-    recent: recent.map((r) => {
+    earned_today_text: earned === null ? null : show(earned),
+    earned_simulated: commission?.simulated ?? false,
+    commission_pct: commission ? commission.bps / 100 : null,
+    recent: shown.map((r) => {
       const t = r.rail_ref ? byId.get(r.rail_ref) : undefined;
       return {
         id: r.id,

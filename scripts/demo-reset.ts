@@ -263,6 +263,12 @@ async function curateFunmi(funmiId: string, NGNT: Asset) {
     }
     const hash = await send(s.label, await pay(s.from, s.to, s.naira));
     await addHistory({ user_id: funmiId, kind: s.kind, source: s.source, counterparty: s.counterparty, amount: (s.kind === "incoming" ? 1n : -1n) * s.naira * 100n, hash, at: s.at });
+    if (s.source === "cash") {
+      // Mama Bisi's side: the cash-in shows in her agent page's recent list too (the same Stellar transaction).
+      const tx = must(await db.from("transactions").select("id").eq("rail", "stellar").eq("ref", `demo_history:${hash}`).single(), "cash-in row") as { id: string };
+      const bisi = must(await db.from("helpers").select("id").eq("stellar_pub", pub("agent_ng")).single(), "Mama Bisi") as { id: string };
+      must(await db.from("cash_events").insert({ helper_id: bisi.id, user_id: funmiId, direction: "in", amount: (s.naira * 100n).toString(), status: "confirmed", rail_ref: tx.id, created_at: s.at }), "cash event");
+    }
   }
   await waitForOutbox(["anchor_ng"]); // the transfers in land before her balance is set
   // Her last ajo payment (a real group_contribute on the plus contract) shows too.
