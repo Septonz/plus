@@ -12,8 +12,16 @@ export const softSpring = { type: 'spring', stiffness: 260, damping: 30 } as con
 // ---------------------------------------------------------------------------- text
 
 /** English (or the main language) with an optional second language in a smaller muted line beneath. */
+/** The same words once tone marks and case are set aside ("Ajo" and "Àjọ"): no subtitle needed. */
+export function sameWords(a: ReactNode, b: ReactNode): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false
+  const n = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  return n(a) === n(b)
+}
+
 export function Bilingual({ main, sub, className = '', subClass = '' }: { main: ReactNode; sub?: ReactNode; className?: string; subClass?: string }) {
-  if (!sub) return <span className={className}>{main}</span>
+  // Global rule: a subtitle that only repeats the title (in any sheet header or label) is left out.
+  if (!sub || sameWords(main, sub)) return <span className={className}>{main}</span>
   return (
     <span className={`inline-flex flex-col leading-tight ${className}`}>
       <span>{main}</span>

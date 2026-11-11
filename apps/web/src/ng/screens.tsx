@@ -501,6 +501,13 @@ export function Ajo({ version }: Props) {
 function AjoBody({ g, busy, msg, pay }: { g: ToolResult; busy: boolean; msg: string | null; pay: () => void }) {
   const members = (g.members ?? []) as Row[]
   const paid = members.filter((m) => m.paid_this_round).length
+  const n = members.length
+  const me = members.find((m) => m.is_me)
+  const days = Number(g.period_days)
+  // Her turn: rounds from now (0 = this round), on the date that round pays out.
+  const ahead = me && n ? (Number(me.position) - Number(g.turn) + n) % n : null
+  const herDay = ahead === null ? null : new Date(new Date(String(g.next_due)).getTime() + ahead * days * 86_400_000)
+  const pot = BigInt(String(g.amount_minor ?? 0)) * BigInt(n)
   return (
     <>
       <Card className="space-y-4">
@@ -514,6 +521,12 @@ function AjoBody({ g, busy, msg, pay }: { g: ToolResult; busy: boolean; msg: str
             <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${members.length ? (paid / members.length) * 100 : 0}%` }} />
           </div>
         </div>
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div><dt className="text-sm text-secondary">Contribution</dt><dd className="num text-lg font-medium">{String(g.amount_text)} / {days === 1 ? 'day' : `${days} days`}</dd></div>
+          <div><dt className="text-sm text-secondary">{W.members.en}</dt><dd className="num text-lg font-medium">{n}</dd></div>
+          <div><dt className="text-sm text-secondary">Payout</dt><dd className="num text-lg font-medium">{naira(pot)}</dd></div>
+          <div><dt className="text-sm text-secondary">Your turn</dt><dd className="text-lg font-medium">{ahead === null ? '—' : ahead === 0 ? 'This round' : `${herDay!.toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' })}`}</dd></div>
+        </dl>
         <p className="text-base">
           This round's pot goes to <b className="font-semibold">{members.find((m) => m.is_turn)?.is_me ? 'you' : String(g.turn_name)}</b> on{' '}
           {formatTime(String(g.next_due), { weekday: 'long' })}.
