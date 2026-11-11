@@ -154,7 +154,7 @@ export default function NgApp({ data }: { data: PlusData }) {
 
   return (
     <LangContext.Provider value={ENGLISH}>
-      <main className="mx-auto max-w-md px-4 pb-44 pt-[max(env(safe-area-inset-top),1.25rem)]">
+      <main className="mx-auto max-w-md px-4 pb-32 pt-[max(env(safe-area-inset-top),1.25rem)]">
         {tab === 'home' && <Home {...props} onAnswer={onAnswer} open={open} onOpen={(d) => openDetail(d)} />}
         {tab === 'pay' && <div className="space-y-5"><PageHeader title={W.pay.en} /><Pay {...props} /></div>}
         {tab === 'record' && <div className="space-y-5"><PageHeader title="Activity" /><Record {...props} /></div>}
@@ -174,9 +174,8 @@ export default function NgApp({ data }: { data: PlusData }) {
         )}
       </AnimatePresence>
 
-      <VoiceButton words={MIC_WORDS} />
-
       <BottomNav<Tab>
+        center={<VoiceButton size="dock" words={MIC_WORDS} />}
         active={open ? null : tab}
         onSelect={(k) => go(k)}
         items={[

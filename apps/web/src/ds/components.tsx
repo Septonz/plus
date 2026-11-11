@@ -146,7 +146,7 @@ export function CardDetail({ id, title, sub, onClose, children, fromPass = true 
             <IconButton icon="x" label="Close" onClick={onClose} />
           </div>
         </header>
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.08 }} className="mx-auto max-w-md space-y-6 px-4 pb-40 pt-5">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.08 }} className="mx-auto max-w-md space-y-6 px-4 pb-28 pt-5">
           {children}
         </motion.div>
       </div>
@@ -343,11 +343,18 @@ export function PageHeader({ title, sub, onBack, right }: { title: ReactNode; su
 export type NavItem<K extends string> = { key: K; label: ReactNode; icon: string; aria?: string }
 
 /** Four items with thin icons, on frosted glass. */
-export function BottomNav<K extends string>({ items, active, onSelect }: { items: NavItem<K>[]; active: K | null; onSelect: (k: K) => void }) {
+/**
+ * The tab bar. `center` (the mic) docks in the middle as a raised button, so it can never sit on
+ * top of a keypad or a list: voice is the main way in.
+ */
+export function BottomNav<K extends string>({ items, active, onSelect, center }: { items: NavItem<K>[]; active: K | null; onSelect: (k: K) => void; center?: ReactNode }) {
+  const half = Math.ceil(items.length / 2)
+  const cells: (NavItem<K> | 'center')[] = center ? [...items.slice(0, half), 'center', ...items.slice(half)] : items
   return (
     <nav className="glass fixed inset-x-0 bottom-0 z-40 border-t border-hairline/70 pb-[env(safe-area-inset-bottom)]" aria-label="Main">
-      <ul className="mx-auto grid max-w-md" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0,1fr))` }}>
-        {items.map((it) => {
+      <ul className="mx-auto grid max-w-md" style={{ gridTemplateColumns: `repeat(${cells.length}, minmax(0,1fr))` }}>
+        {cells.map((it) => {
+          if (it === 'center') return <li key="center" className="relative flex justify-center">{center}</li>
           const on = active === it.key
           return (
             <li key={it.key}>

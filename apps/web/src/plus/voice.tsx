@@ -221,7 +221,11 @@ export function VoiceButton({ size = 'float', words, body }: { size?: 'float' | 
     )
   }
 
-  // 'float' (and the older 'hero' / 'dock' names): the round mic, bottom centre.
+  // 'dock': the round mic raised in the middle of the tab bar (BottomNav's `center`); the
+  // conversation floats above the bar. 'float' (and 'hero'): the older floating mic.
+  if (configured === false && size === 'dock') {
+    return <span role="status" className="flex min-h-16 items-center px-1 text-center text-[0.7rem] leading-tight text-secondary">{t('micSoon')}</span>
+  }
   if (configured === false) {
     return (
       <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 flex justify-center">
@@ -240,7 +244,7 @@ export function VoiceButton({ size = 'float', words, body }: { size?: 'float' | 
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 40, opacity: 0 }}
             transition={spring}
-            className="fixed inset-x-0 bottom-[calc(10rem+env(safe-area-inset-bottom))] z-40 mx-auto w-[calc(100%-2rem)] max-w-md"
+            className={`fixed inset-x-0 ${size === 'dock' ? 'bottom-[calc(5.5rem+env(safe-area-inset-bottom))]' : 'bottom-[calc(10rem+env(safe-area-inset-bottom))]'} z-40 mx-auto w-[calc(100%-2rem)] max-w-md`}
             role="log"
             aria-live="polite"
             aria-label="Conversation"
@@ -266,8 +270,8 @@ export function VoiceButton({ size = 'float', words, body }: { size?: 'float' | 
           </motion.div>
         )}
       </AnimatePresence>
-      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 flex flex-col items-center gap-1.5">
-        {error && <span className="glass pointer-events-auto rounded-full px-3 py-1 text-sm text-danger shadow-card">{error}</span>}
+      <div className={size === 'dock' ? 'pointer-events-none absolute -top-6 flex flex-col items-center gap-1' : 'pointer-events-none fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 flex flex-col items-center gap-1.5'}>
+        {error && <span className={`glass pointer-events-auto rounded-full px-3 py-1 text-sm text-danger shadow-card ${size === 'dock' ? 'absolute bottom-full mb-2 w-max max-w-[80vw]' : ''}`}>{error}</span>}
         <motion.button
           onClick={toggle}
           whileTap={{ scale: 0.93 }}
