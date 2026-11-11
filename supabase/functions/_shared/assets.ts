@@ -21,6 +21,8 @@ export interface Asset {
   evidence_at: string | null;
   inspected_at: string | null;
   created_at: string;
+  /** The last plus_credit transaction for it (piece 8): the "Verified on Stellar" tick. */
+  credit_tx_hash?: string | null;
   /** Community witnesses: confirmed and still waiting. */
   witnesses_confirmed: number;
   witnesses_waiting: number;

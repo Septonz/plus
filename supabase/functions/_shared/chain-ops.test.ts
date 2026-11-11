@@ -1,5 +1,5 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert@1";
-import { operationFor, railOf, stroopsToAmount } from "./chain-ops.ts";
+import { assertEquals, assertNotEquals, assertThrows } from "jsr:@std/assert@1";
+import { type ContractArg, operationFor, railOf, scVal, stroopsToAmount } from "./chain-ops.ts";
 import { StellarSdk } from "./stellar.ts";
 
 const CONTRACT = "CA4VEZZOSQR3RLPN2SF4FLAB5FVPLYH3C635ZSSIEJDE4ZPADGMFQJP4";
@@ -64,4 +64,34 @@ Deno.test("contract calls: typed arguments, bad values refused", () => {
   assertThrows(() => operationFor({ kind: "contract", args: { fn: "Bad-Name", args: [] } }, CONTRACT));
   assertThrows(() => operationFor({ kind: "contract", args: { fn: "f", args: [{ t: "bytes32", v: "xyz" }] } }, CONTRACT));
   assertThrows(() => operationFor({ kind: "attest", args: { kind: "stolen", user_ref: "0".repeat(64), amount: "1", payment_ref: "0".repeat(64) } }, CONTRACT));
+});
+
+const CREDIT = "CCLO7QV3LC4MPC46ZBYZDGNOVEYTY62SDRV6S4KZ7O5LVAA7RMX6DZCC";
+
+Deno.test("plus_credit calls go to the credit contract, never to plus", () => {
+  const row = {
+    kind: "contract" as const,
+    args: {
+      contract: "credit",
+      fn: "loan_open",
+      args: [
+        { t: "address", v: A }, { t: "bytes32", v: "a".repeat(64) }, { t: "bytes32", v: "b".repeat(64) },
+        { t: "address", v: B }, { t: "i128", v: "300000000000" }, { t: "i128", v: "18000000000" }, { t: "u32", v: 1000 },
+        { t: "i128", v: "30000000000" }, { t: "opt_bytes32", v: null }, { t: "u32", v: 150 },
+      ],
+    },
+  };
+  const op = operationFor(row, { plus: CONTRACT, credit: CREDIT });
+  const args = row.args.args.map((x) => scVal(x as ContractArg));
+  assertEquals(roundTrip(op), roundTrip(new StellarSdk.Contract(CREDIT).call("loan_open", ...args)));
+  assertNotEquals(roundTrip(op), roundTrip(new StellarSdk.Contract(CONTRACT).call("loan_open", ...args)));
+  // No collateral: an empty Option (void), not zero bytes.
+  assertEquals(scVal({ t: "opt_bytes32", v: null }).toXDR("base64"), StellarSdk.xdr.ScVal.scvVoid().toXDR("base64"));
+  // An optional reference that is set.
+  const set = operationFor({ kind: "contract", args: { contract: "credit", fn: "f", args: [{ t: "opt_bytes32", v: "c".repeat(64) }] } }, { plus: CONTRACT, credit: CREDIT });
+  assertEquals(roundTrip(set).type, "invokeHostFunction");
+  // Not configured, or an unknown contract: refused (nothing is sent to the wrong contract).
+  assertThrows(() => operationFor(row, CONTRACT), Error, "PLUS_CREDIT_CONTRACT_ID");
+  assertThrows(() => operationFor({ kind: "contract", args: { contract: "other", fn: "f", args: [] } }, { plus: CONTRACT, credit: CREDIT }));
+  assertThrows(() => operationFor({ kind: "contract", args: { contract: "credit", fn: "f", args: [{ t: "opt_bytes32", v: "xyz" }] } }, { plus: CONTRACT, credit: CREDIT }));
 });

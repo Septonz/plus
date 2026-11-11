@@ -6,7 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Asset, AssetStore, AssetType, WitnessRequest } from "./assets.ts";
 export type { AssetStore, Candidate, WitnessRequest, Who } from "./assets.ts";
 
-const ASSET_COLS = "id, user_id, type, description, estimated_value, level, status, evidence_at, inspected_at, created_at";
+const ASSET_COLS = "id, user_id, type, description, estimated_value, level, status, evidence_at, inspected_at, created_at, credit_tx_hash";
 const BUCKET = "asset-evidence";
 
 function must<T>(r: { data: T | null; error: { message: string } | null }, what: string): T {

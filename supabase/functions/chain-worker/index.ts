@@ -37,6 +37,8 @@ const RPC_URLS = [...new Set([Deno.env.get("STELLAR_RPC_URL") || DEFAULT_RPC, DE
 const HORIZON_URL = Deno.env.get("STELLAR_HORIZON_URL") || "https://horizon-testnet.stellar.org";
 const PASSPHRASE = Deno.env.get("STELLAR_NETWORK_PASSPHRASE") || "Test SDF Network ; September 2015";
 const CONTRACT_ID = Deno.env.get("PLUS_CONTRACT_ID") ?? "";
+// plus_credit (piece 8): loans, assets and vouches; partner writes, anyone reads.
+const CREDIT_CONTRACT_ID = Deno.env.get("PLUS_CREDIT_CONTRACT_ID") ?? "";
 const MAX_ATTEMPTS = 8;
 const RUN_BUDGET_MS = 120_000; // stay inside the Edge Function wall-clock limit
 const TX_TIMEOUT_SECS = 60;
@@ -266,7 +268,7 @@ async function submitRow(kp: InstanceType<typeof Keypair>, seq: { next: bigint |
       for (const op of createWalletOps(row.args, partner.publicKey())) b.addOperation(op);
     } else {
       if (sponsor) b.addOperation(Operation.beginSponsoringFutureReserves({ sponsoredId: kp.publicKey(), source: partner.publicKey() }));
-      b.addOperation(operationFor(row, CONTRACT_ID));
+      b.addOperation(operationFor(row, { plus: CONTRACT_ID, credit: CREDIT_CONTRACT_ID }));
       if (sponsor) b.addOperation(Operation.endSponsoringFutureReserves({}));
     }
     const built = b.build();
