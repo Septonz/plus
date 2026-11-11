@@ -34,7 +34,7 @@ import { Asset, BASE_FEE, Horizon, Keypair, Operation, rpc, scValToNative, Trans
 import { basicNodeSigner } from "@stellar/stellar-sdk/contract";
 import { createClient } from "@supabase/supabase-js";
 import type * as PlusClient from "@plus/client";
-import { OutcomeUnknownError, submitTransaction } from "../supabase/functions/_shared/stellar-retry.ts";
+import { OutcomeUnknownError, SubmitRejectedError, submitTransaction } from "../supabase/functions/_shared/stellar-retry.ts";
 import { signUp, testNin, testPin } from "./lib/onboard.ts";
 import { adminClient, loadLocalEnv, ROOT } from "./lib/supabase-admin.ts";
 
@@ -129,6 +129,17 @@ async function send(label: string, tx: Transaction, existing?: Entry): Promise<s
     if (res.status !== rpc.Api.GetTransactionStatus.SUCCESS) throw new Error(`${label}: ${hash} failed on-chain`);
   } catch (e) {
     if (e instanceof OutcomeUnknownError) throw new Error(`${label}: ${hash} not found yet; rerun to look it up again`);
+    if (e instanceof SubmitRejectedError) {
+      // deno-lint-ignore no-explicit-any
+      const r = e.result.errorResult as any;
+      let why = "";
+      try {
+        const inner = r?.result?.()?.switch?.()?.name === "txFeeBumpInnerFailed" ? r.result().innerResultPair().result().result() : r?.result?.();
+        why = inner?.switch?.()?.name ?? "";
+        if (why === "txFailed") why += ` (${inner.results().map((o: any) => o.tr?.()?.value?.()?.switch?.()?.name ?? "?").join(", ")})`;
+      } catch { /* keep the status only */ }
+      throw new Error(`${label}: ${hash} rejected by RPC (${e.result.status}${why ? `: ${why}` : ""}); nothing was applied`);
+    }
     throw e;
   }
   entry.status = "done";
@@ -577,6 +588,11 @@ async function resetNigeria() {
   for (const [id, who] of people) await expireWaiting(id, who);
   await expireHelperCashIns(bisi.id, "Mama Bisi");
   await waitForOutbox(["funmi", "agent_ng", "partner", "anchor_ng", "lending_ng"]);
+  // A rehearsal just before the real demo shouldn't use up the 10-minute demo limit (15 money
+  // actions per person). Only the last 10 minutes are cleared; the daily limit still counts.
+  const recent = new Date(Date.now() - 10 * 60_000).toISOString();
+  const cleared = must(await db.from("demo_action_log").delete().in("actor_id", [...people.map(([id]) => id), bisi.id]).gte("at", recent).select("id"), "demo limit") as unknown[];
+  console.log(`  demo limit: ${cleared.length} money action(s) from the last 10 minutes cleared (the daily limit still counts)`);
 
   console.log("\n2. Unused cash-out codes");
   const codes = must(await db.from("cash_out_codes").select("id, amount, create_outbox_id").in("user_id", people.map(([id]) => id)).eq("status", "issued"), "codes") as
@@ -631,6 +647,15 @@ async function resetNigeria() {
   await curateFunmi(funmi.id, NGNT);
 
   console.log("\n3d. Savings (her goal pot on Stellar)");
+  // The money in from 3c auto-saves a share (a pot_fund the chain-worker signs as Funmi). It is
+  // queued only once that money in lands, and Stellar takes one transaction per account at a time
+  // (a second one is refused as txInsufficientFee), so wait until her queue stays empty.
+  for (let quiet = 0; quiet < 2;) {
+    await waitForOutbox(["funmi"]);
+    const { count } = await db.from("transactions").select("id", { count: "exact", head: true }).eq("user_id", funmi.id).eq("status", "pending");
+    quiet = count ? 0 : quiet + 1;
+    await sleep(2500);
+  }
   await resetSavings(funmi.id, NGNT, NGNT_SAC);
 
   console.log("\n4. Funmi's wallet and Mama Bisi's float");
