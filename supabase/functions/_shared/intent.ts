@@ -674,5 +674,10 @@ export function toYou(t: string): string {
     .replace(/\bShe is\b/g, "You are").replace(/\bshe is\b/g, "you are")
     .replace(/\bShe\b/g, "You").replace(/\bshe\b/g, "you")
     .replace(/\bHer\b/g, "Your").replace(/\bher\b/g, "your")
-    .replace(/\bherself\b/g, "yourself").trim();
+    .replace(/\bherself\b/g, "yourself")
+    // "you receives" -> "you receive": the verb after a new "you" loses its -s.
+    .replace(/\b([Yy]ou) ([a-z]+?)(ies|es|s)\b/g, (m, y: string, stem: string, end: string) =>
+      /^(?:has|is|was|does|always|also|just|still)$/.test(stem + end) ? m
+        : `${y} ${end === "ies" ? `${stem}y` : end === "es" && /(?:sh|ch|ss|x|o)$/.test(stem) ? stem : stem + (end === "es" ? "e" : "")}`)
+    .trim();
 }

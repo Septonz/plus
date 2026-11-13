@@ -434,4 +434,6 @@ Deno.test("toYou: the voice agent's answers read as 'you' on her own screen", ()
   eq(toYou("She has 26,400 naira in her wallet."), "You have 26,400 naira in your wallet.");
   eq(toYou("Read back: 2,000 naira to Iya Tunde. Ask her to check her screen and tap Yes, or say yes."), "Read back: 2,000 naira to Iya Tunde. Check it below and tap Yes.");
   eq(toYou("There is nothing here; other people are fine."), "There is nothing here; other people are fine.");
+  eq(toYou("she receives 30,000 naira. After she repays, she saves and she qualifies."), "you receive 30,000 naira. After you repay, you save and you qualify.");
+  eq(toYou("She has a loan; she owes 2,500 and she pushes on."), "You have a loan; you owe 2,500 and you push on.");
 });

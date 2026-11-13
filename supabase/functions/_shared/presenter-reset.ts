@@ -76,7 +76,7 @@ export async function recordingDbReset(db: Db, now = new Date()): Promise<number
   const open = must(await db.from("loans").update({ status: "repaid", closed_by_reset: true, repaid_at: iso, borrowing_paused: false })
     .eq("user_id", f.id).in("status", ["active", "late", "restructured"]).select("id"), "settle loans") as { id: string }[];
   for (const l of open) must(await db.from("loan_events").insert({ loan_id: l.id, user_id: f.id, kind: "reset", note: "settled by Reset for recording" }), "loan event");
-  must(await db.from("users").update({ borrowing_frozen_until: null, vouch_banned_until: null }).eq("id", f.id), "borrowing open");
+  must(await db.from("users").update({ borrowing_frozen_until: null, vouch_banned_until: null, language: "en" }).eq("id", f.id), "borrowing open, English");
 
   // Stall stock verified (the offer's asset).
   const stock = must(await db.from("assets").select("id").eq("user_id", f.id).eq("description", GUEST.stock.description).limit(1).maybeSingle(), "stock") as { id: string } | null;
