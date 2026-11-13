@@ -21,6 +21,7 @@
     "e2e:verify": "node scripts/e2e-verify.ts",
     "e2e:vouch": "node scripts/e2e-vouch.ts",
     "e2e:savings": "node scripts/e2e-savings.ts",
+    "e2e:guest": "node scripts/e2e-guest.ts",
     "demo:new-user": "node scripts/demo-new-user.ts",
     "screens": "node scripts/screens.ts",
     "demo:logins": "node scripts/demo-logins.ts",
