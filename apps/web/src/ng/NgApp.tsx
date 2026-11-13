@@ -14,7 +14,7 @@ import { VoiceButton, type VoiceExample } from '../plus/voice'
 import { Assets, requestPhoto } from './assets'
 import { Receive, Scan } from './shop'
 import { NgConfirmSheet } from './confirm'
-import { AddCash, Ajo, CashOut, Home, Loan, Pay, Record, Savings, Settings, WalletDetail, type Detail } from './screens'
+import { AddCash, CashOut, Home, Loan, Pay, Record, Savings, Settings, WalletDetail, type Detail } from './screens'
 import { MIC_WORDS, naira, W, yo } from './words'
 import { GuestContext, GuestShop, useGuestFlag } from './guest'
 
@@ -62,7 +62,6 @@ const VOICE_SCREENS: Record<string, { tab?: Tab; detail?: Detail }> = {
   receive: { detail: 'receive' },
   my_code: { detail: 'receive' },
   scan: { detail: 'scan' },
-  ajo: { detail: 'group' },
   savings: { detail: 'savings' },
   loan: { detail: 'loan' },
   assets: { detail: 'assets' },
@@ -76,7 +75,6 @@ const TABS: Tab[] = ['home', 'pay', 'record', 'settings']
 const DETAIL_TITLE: Record<Detail, [string, string | undefined]> = {
   wallet: [W.wallet.en, yo('wallet')],
   savings: [W.savings.en, yo('savings')],
-  group: [W.ajo.en, yo('ajo')],
   loan: [W.loan.en, yo('loan')],
   assets: [W.assets.en, yo('assets')],
   add_cash: [W.addMoney.en, yo('addMoney')],
@@ -117,7 +115,7 @@ export default function NgApp({ data }: { data: PlusData }) {
       setOpen(null)
       setTab(s as Tab)
       window.scrollTo({ top: 0 })
-    } else if (s === 'group' || s === 'loan' || s === 'add_cash' || s === 'cash_out') {
+    } else if (s === 'loan' || s === 'add_cash' || s === 'cash_out') {
       openDetail(s, false)
     }
   }, [openDetail])
@@ -128,7 +126,6 @@ export default function NgApp({ data }: { data: PlusData }) {
     { say: 'How much do I have?', tap: 'Home → Wallet', go: detail('wallet') },
     { say: 'Send Iya Tunde two thousand', tap: 'Pay tab', go: () => go('pay') },
     { say: 'Pay Mama Put Canteen', tap: 'Pay → Scan', go: detail('scan') },
-    { say: 'Pay my ajo', tap: 'Home → Ajo', go: detail('group') },
     { say: 'Save a thousand', tap: 'Home → Savings', go: detail('savings') },
     { say: 'Can I get a loan?', tap: 'Home → Loan', go: detail('loan') },
     { say: 'Share my record with a lender', tap: 'Activity → Share my record', go: () => go('record') },
@@ -196,7 +193,6 @@ export default function NgApp({ data }: { data: PlusData }) {
           <CardDetail key={open} id={open} title={DETAIL_TITLE[open][0]} sub={DETAIL_TITLE[open][1]} fromPass={fromPass} onClose={() => setOpen(null)}>
             {open === 'wallet' && <WalletDetail wallet={wallet} version={data.version} onOpen={(d) => openDetail(d, false)} />}
             {open === 'savings' && <Savings {...props} />}
-            {open === 'group' && <Ajo {...props} />}
             {open === 'loan' && <Loan {...props} />}
             {open === 'assets' && <Assets version={data.version} />}
             {open === 'add_cash' && <AddCash {...props} onAnswer={onAnswer} />}

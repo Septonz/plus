@@ -11,11 +11,9 @@ Webhook tools for the Plus voice agent. Each JSON file is a `POST /v1/convai/too
 | `what_arrived` | Money in, cash-ins first | none |
 | `set_auto_save` | Prepares an auto-save change (0–30%) | `percent` |
 | `prepare_pay` | Prepares a payment; Tamil/English payee matching | `payee`, `amount` (rupees) |
-| `prepare_group_contribution` | Prepares this month's seettu | none |
 | `confirm_action` | Confirms by voice, only up to the PIN threshold (₹500) | `action_id` |
 | `reject_action` | Cancels, or says No to a cash-in | `action_id` |
 | `my_record` | Totals, count confirmed on Stellar, link | none |
-| `group_status` | Seettu and members' records | none |
 | `advance_status` | Eligibility, limit, cost in rupees | none |
 
 **Screen tools.** Everything on her screen is also by voice. `help` is a webhook (works on a call

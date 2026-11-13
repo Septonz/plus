@@ -274,7 +274,7 @@ async function main() {
     contractId,
     onchainId: seettuId,
     market: "in",
-    name: india.groupSavings.localName,
+    name: "seettu", // retired in piece 13 (history only; the app no longer shows it)
     memberName: (p) => {
       const ref = p.tag === "Ref" ? Buffer.from(p.values[0]).toString("hex") : p.values[0];
       const n = nameByRef[ref];
@@ -387,7 +387,7 @@ async function main() {
     const ref = p.tag === "Account" ? p.values[0] : Buffer.from(p.values[0]).toString("hex");
     return { ref, name: nameByPub[ref] ?? "Member", userId: userByPub[ref] ?? null };
   };
-  await mirrorGroup({ contractId, onchainId: ajoId, market: "ng", name: nigeria.groupSavings.localName, memberName });
+  await mirrorGroup({ contractId, onchainId: ajoId, market: "ng", name: "ajo", memberName }); // retired in piece 13 (history only)
   const bodijaId = Number(state?.steps?.["bodija:create"]?.value);
   if (Number.isInteger(bodijaId) && bodijaId > 0) {
     await mirrorGroup({ contractId, onchainId: bodijaId, market: "ng", name: "Bodija Market Ajo", memberName });

@@ -9,7 +9,7 @@ import { AutoSignIn, useSession } from './auth'
 import { ConfirmSheet } from './confirm'
 import { usePlusData, type PendingAction } from './data'
 import { T, type Key, type Lang } from './i18n'
-import { AddMoney, Advance, Home, Pay, Record, Savings, Seettu, Settings, type Detail, type Screen } from './screens'
+import { AddMoney, Advance, Home, Pay, Record, Savings, Settings, type Detail, type Screen } from './screens'
 import { call, newKey, tool, type ToolResult } from './api'
 import { settle, useScreenTools } from './screen'
 import { LangContext, Notice, Spinner, useLang as useLangContext } from './ui'
@@ -73,10 +73,10 @@ type Tab = 'home' | 'pay' | 'record' | 'settings'
 const TABS: Tab[] = ['home', 'pay', 'record', 'settings']
 /** The screens the voice agent can open (navigate), by the names she would use. */
 const VOICE_SCREENS: Record<string, Screen> = {
-  home: 'home', money: 'add', add_money: 'add', savings: 'savings', seettu: 'seettu', advance: 'advance',
+  home: 'home', money: 'add', add_money: 'add', savings: 'savings', advance: 'advance',
   pay: 'pay', activity: 'record', record: 'record', profile: 'settings', settings: 'settings',
 }
-const DETAIL_KEY: Record<Detail, Key> = { add: 'toSpend', savings: 'savings', seettu: 'seettu', advance: 'advance' }
+const DETAIL_KEY: Record<Detail, Key> = { add: 'toSpend', savings: 'savings', advance: 'advance' }
 
 function Signed({ authUserId }: { authUserId: string }) {
   const data = usePlusData(authUserId)
@@ -107,7 +107,7 @@ function Signed({ authUserId }: { authUserId: string }) {
       setOpen(null)
       setTab(s as Tab)
       window.scrollTo({ top: 0 })
-    } else if (s === 'add' || s === 'savings' || s === 'seettu' || s === 'advance') {
+    } else if (s === 'add' || s === 'savings' || s === 'advance') {
       openDetail(s, false)
     }
   }, [openDetail])
@@ -191,7 +191,6 @@ function Signed({ authUserId }: { authUserId: string }) {
           <CardDetail key={open} id={open} title={T[DETAIL_KEY[open]].en} sub={ta ? T[DETAIL_KEY[open]].ta : undefined} fromPass={fromPass} onClose={() => setOpen(null)}>
             {open === 'add' && <AddMoney {...props} />}
             {open === 'savings' && <Savings {...props} />}
-            {open === 'seettu' && <Seettu {...props} />}
             {open === 'advance' && <Advance {...props} />}
           </CardDetail>
         )}

@@ -25,12 +25,9 @@ import {
   ngPrepareLoan,
   ngPrepareLoanRepay,
   ngPrepareAdvance,
-  ngPrepareAjo,
   ngPrepareCashout,
   ngPreparePay,
   newCashOutCode,
-  payoutSplit,
-  ngGroupStatus,
   ngAdvanceStatus,
   ngSavePayee,
   ngSimulateBankTransfer,
@@ -68,9 +65,9 @@ type World = {
   credit: { frozen_until: string | null; weeks: CreditWeek[]; assets: CreditAsset[]; loans: CreditLoan[] };
   /** Record shares (piece 9). */
   shares?: RecordShare[];
-  /** Piece 10: vouches, her ajo peers, and why each one can't be vouched for (absent: can). */
+  /** Piece 10: vouches, the people she trades with, and why each one can't be vouched for (absent: can). */
   vouches?: { given: Vouch[]; received: Vouch[] };
-  ajoPeers?: { user_id: string; name: string | null; group_name: string }[];
+  tradePeers?: { user_id: string; name: string | null; trades: number }[];
   vouchBlock?: Record<string, VouchCheck>;
   withdrawn?: string[];
 };
@@ -123,14 +120,6 @@ function fakeStore(w: World): NgStore {
     rejectAction: (id) => Promise.resolve({ ...w.actions.get(id)!, status: "rejected" }),
     awaitingCashIns: () => Promise.resolve([]),
     transactions: () => Promise.resolve([]),
-    myGroup: () =>
-      Promise.resolve({
-        id: "g1",
-        name: "Bodija Market Ajo",
-        onchain_id: 3,
-        members: ["Amaka", "Funmi", "Tunde", "Halima", "Kemi"].map((name, position) => ({ name, position, user_id: name === "Funmi" ? "u1" : null })),
-      }),
-    contributionTxs: () => Promise.resolve(new Map()),
     agentWallets: () => Promise.resolve([AGENT]),
     cashOuts: () => Promise.resolve([]),
     setCashOutCode: () => Promise.resolve(true),
@@ -141,8 +130,8 @@ function fakeStore(w: World): NgStore {
       return Promise.resolve(Boolean(s));
     },
     vouches: () => Promise.resolve(w.vouches ?? { given: [], received: [] }),
-    ajoPeers: () => Promise.resolve(w.ajoPeers ?? []),
-    vouchCheck: (_v, b) => Promise.resolve(w.vouchBlock?.[b] ?? { ok: true, group_name: "Bodija Market Ajo" }),
+    tradePeers: () => Promise.resolve(w.tradePeers ?? []),
+    vouchCheck: (_v, b) => Promise.resolve(w.vouchBlock?.[b] ?? { ok: true, trades: 4 }),
     withdrawVouch: (_v, id) => {
       const v = w.vouches?.given.find((x) => x.id === id && x.status === "active");
       if (v) { v.status = "revoked"; (w.withdrawn ??= []).push(id); }
@@ -309,16 +298,7 @@ Deno.test("confirming a cash-in with an advance open queues the 10% repayment wi
   assertEquals(r.sending, true);
 });
 
-// --- ajo payout repays an advance first ---------------------------------------------------------------
-
-Deno.test("ajo payout: the recipient's open advance is repaid from the pot first", () => {
-  const adv = (owed: number): ChainAdvance => ({ principal_minor: N(1), fee_minor: 0n, owed_minor: N(owed), opened_at: new Date() });
-  assertEquals(payoutSplit(N(5_000), null), { repaid: 0n, net: N(5_000) });
-  assertEquals(payoutSplit(N(5_000), adv(2_030)), { repaid: N(2_030), net: N(2_970) });
-  assertEquals(payoutSplit(N(5_000), adv(20_300)), { repaid: N(5_000), net: 0n });
-});
-
-// --- pay and ajo ---------------------------------------------------------------------------------------
+// --- pay ---------------------------------------------------------------------------------------
 
 Deno.test("pay Iya Tunde: NGNT to her Stellar wallet, read back in naira", async () => {
   const { w, ctx } = setup();
@@ -363,18 +343,6 @@ Deno.test("help: says what she can do, the voice-yes limit, and what is waiting 
   assertMatch(r.text, /pay a saved person/);
   assertMatch(r.text, /up to 5,000 naira she confirms by saying yes/);
   assertMatch(r.text, /move to any screen/);
-});
-
-Deno.test("ajo contribution: only if her part of this round is not paid yet", async () => {
-  const r = await ngPrepareAjo(setup().ctx());
-  assertEquals(r.ok, true);
-  assertMatch(r.text, /1,000 naira for Bodija Market Ajo/);
-  const { ctx } = setup();
-  const paid = await ngPrepareAjo({
-    ...ctx(),
-    store: { ...ctx().store, chain: { ...ctx().store.chain, group: () => Promise.resolve({ ...setup().w.group!, contributed: [true, true, true, true, true] }) } },
-  });
-  assertEquals(paid.error, "already_paid");
 });
 
 // --- cash-out codes -------------------------------------------------------------------------------------
@@ -438,21 +406,6 @@ Deno.test("agent finds customers by Nigerian phone number", () => {
   assertEquals(normalizeNgPhone("+234 803 123 4567"), "+2348031234567");
   assertEquals(normalizeNgPhone("2348031234567"), "+2348031234567");
   assertEquals(normalizeNgPhone("+91 98765 43210"), null);
-});
-
-Deno.test("ajo ticks link to each member's own contribution on Stellar", async () => {
-  const { ctx } = setup();
-  const hash = "ab".repeat(32);
-  const r = await ngGroupStatus({
-    ...ctx(),
-    explorer: "https://stellar.expert/explorer/testnet",
-    store: { ...ctx().store, contributionTxs: () => Promise.resolve(new Map([["A", hash]])) },
-  });
-  const m = r.members as { paid_this_round: boolean; url: string | null }[];
-  assertEquals(m[0].url, `https://stellar.expert/explorer/testnet/tx/${hash}`); // paid, event indexed
-  assertEquals(m[1].url, null); // Funmi has not paid this round
-  assertEquals(m[2].paid_this_round, true);
-  assertEquals(m[2].url, null); // paid on the contract, event not indexed yet: no link rather than a wrong one
 });
 
 // --- KYC tiers -----------------------------------------------------------------------------------------
@@ -583,7 +536,7 @@ Deno.test("bank transfer in: demo button only, inside her balance limit, 10% rep
 // --- loans (piece 4) -----------------------------------------------------------------------------
 
 const STOCK = { id: "a1", type: "stock", description: "Stall stock (tomatoes)", estimated_value: N(90_000), level: "independently_verified" as const, status: "active" };
-const fullWeeks = (to: number) => Array.from({ length: to }, (_, i) => ({ week: i + 1, money_in: N(12_500), qualifying_tx: 6, saved: N(1_000) }));
+const fullWeeks = (to: number) => Array.from({ length: to }, (_, i) => ({ week: i + 1, money_in: N(12_500), qualifying_tx: 6, saved: 0n, savings: N(1_000) }));
 
 Deno.test("loans: Kemi sees her progress and an estimate, and can't accept anything yet", async () => {
   const { ctx } = setup({ credit: { frozen_until: null, weeks: fullWeeks(3), assets: [], loans: [] } });
@@ -746,13 +699,13 @@ Deno.test("record_shares and revoke_record_share: her log, revoke one or all", a
 // ---------------------------------------------------------------------------- Piece 10: vouches
 
 const vouch = (o: Partial<Vouch>): Vouch => ({
-  id: "v1", status: "active", other_user_id: "u2", other_name: "Amaka", group_name: "Bodija Market Ajo", loan_id: null,
+  id: "v1", status: "active", other_user_id: "u2", other_name: "Amaka", group_name: null, loan_id: null,
   credit_tx_hash: null, created_at: new Date().toISOString(), ...o,
 });
-const PEERS = [{ user_id: "u1", name: "Funmi", group_name: "Bodija Market Ajo" }, { user_id: "u3", name: "Tunde", group_name: "Bodija Market Ajo" }];
+const PEERS = [{ user_id: "u1", name: "Funmi", trades: 5 }, { user_id: "u3", name: "Tunde", trades: 3 }];
 
-Deno.test("prepare_vouch: an ajo member by name; always her PIN, never by voice; the read back says no money is taken", async () => {
-  const { ctx, w } = setup({ ajoPeers: PEERS });
+Deno.test("prepare_vouch: someone she trades with, by name; always her PIN, never by voice; the read back says no money is taken", async () => {
+  const { ctx, w } = setup({ tradePeers: PEERS });
   const amaka = { id: "u2", name: "Amaka" };
   const r = await NG_VOICE_TOOLS.prepare_vouch(ctx({ name: "funmi" }, "voice", amaka));
   assert(r.ok, r.text);
@@ -764,7 +717,7 @@ Deno.test("prepare_vouch: an ajo member by name; always her PIN, never by voice;
   const yes = await NG_VOICE_TOOLS.confirm_action(ctx({ action_id: r.action_id, pin: "1234" }, "app", amaka));
   assert(yes.ok, yes.text);
   assertMatch(String(yes.text), /vouch for Funmi's next loan/);
-  // Someone not in her ajo: she hears who she can vouch for.
+  // Someone she has never paid or been paid by: she hears who she can vouch for.
   const who = await NG_VOICE_TOOLS.prepare_vouch(ctx({ name: "Bola" }, "voice", amaka));
   assertEquals(who.error, "who");
   assertMatch(String(who.text), /Funmi and Tunde/);
@@ -774,12 +727,12 @@ Deno.test("prepare_vouch: the reasons she can't vouch, in plain words (and no ac
   const cases: [VouchCheck, string, RegExp][] = [
     [{ ok: false, reason: "too_new", weeks: 3 }, "vouch_too_new", /after 6 weeks with Plus; they are in week 4/],
     [{ ok: false, reason: "identity" }, "vouch_identity", /verified ID/],
-    [{ ok: false, reason: "ajo_late", late: 1 }, "vouch_ajo_late", /every ajo payment on time/],
+    [{ ok: false, reason: "few_trades", trades: 2 }, "vouch_few_trades", /at least 3 times on Plus. With Funmi it is 2 so far/],
     [{ ok: false, reason: "banned", until: "2027-05-10T00:00:00Z" }, "vouch_banned", /Nothing was taken from them/],
     [{ ok: false, reason: "already" }, "vouch_already", /already vouch for Funmi/],
   ];
   for (const [check, error, text] of cases) {
-    const { ctx, w } = setup({ ajoPeers: PEERS, vouchBlock: { u1: check } });
+    const { ctx, w } = setup({ tradePeers: PEERS, vouchBlock: { u1: check } });
     const r = await NG_VOICE_TOOLS.prepare_vouch(ctx({ name: "Funmi" }, "voice", { id: "u2", name: "Amaka" }));
     assertEquals(r.error, error);
     assertMatch(String(r.text), text);
@@ -793,7 +746,7 @@ Deno.test("loans: two vouches lower the offer's collateral to 100%, the offer sa
   const { ctx, w } = setup({ credit: { frozen_until: null, weeks: fullWeeks(24), assets: [STOCK], loans: [] }, vouches: { given: [], received } });
   const s = await ngLoanStatus(ctx());
   assertEquals((s.offer as Record<string, unknown>).collateral_pct, 100);
-  assertMatch(String(s.text), /Amaka and Tunde vouched for this loan \(ajo members in good standing\), so it needs 100% collateral instead of 150%/);
+  assertMatch(String(s.text), /Amaka and Tunde vouched for this loan \(people she trades with, in good standing\), so it needs 100% collateral instead of 150%/);
   assertEquals((s.vouch as Record<string, unknown>).applied, true);
   const p = await ngPrepareLoan(ctx());
   const a = w.actions.get(String(p.action_id))!;
@@ -803,14 +756,14 @@ Deno.test("loans: two vouches lower the offer's collateral to 100%, the offer sa
   const one = setup({ credit: { frozen_until: null, weeks: fullWeeks(24), assets: [STOCK], loans: [] }, vouches: { given: [], received: [received[1]] } });
   const s1 = await ngLoanStatus(one.ctx());
   assertEquals((s1.offer as Record<string, unknown>).collateral_pct, 150);
-  assertMatch(String(s1.text), /Amaka vouched for the next loan. 1 more ajo member vouching would lower the collateral to 100%/);
+  assertMatch(String(s1.text), /Amaka vouched for the next loan. 1 more person vouching would lower the collateral to 100%/);
   const p1 = await ngPrepareLoan(one.ctx());
   assertEquals(one.w.actions.get(String(p1.action_id))!.params.vouches_needed, 0);
 });
 
 Deno.test("my_vouches and withdraw_vouch: what she gave, who vouched for her; withdraw only a waiting one", async () => {
   const given = [vouch({ id: "v1", other_user_id: "u1", other_name: "Funmi" }), vouch({ id: "v0", other_user_id: "u9", other_name: "Kemi", status: "used", loan_id: "l1" })];
-  const { ctx, w } = setup({ ajoPeers: PEERS, vouches: { given, received: [] }, vouchBlock: { u1: { ok: false, reason: "already" } } });
+  const { ctx, w } = setup({ tradePeers: PEERS, vouches: { given, received: [] }, vouchBlock: { u1: { ok: false, reason: "already" } } });
   const me = { id: "u2", name: "Amaka" };
   const m = await NG_VOICE_TOOLS.my_vouches(ctx({}, "voice", me));
   assertMatch(String(m.text), /They vouch for Funmi's next loan/);

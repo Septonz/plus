@@ -18,7 +18,6 @@ function readback(a: PendingAction): { to: string | null; toTa: string | null; l
     const name = String(a.params.payee_name ?? '')
     return { to: `To ${name}`, toTa: `${PAYEE_TA[name] ?? name}க்கு`, lines: total }
   }
-  if (a.kind === 'group_contribution') return { to: 'To your seettu', toTa: 'உங்க சீட்டுக்கு', lines: total }
   if (a.kind === 'confirm_cash_in') {
     const h = String(a.params.helper_name ?? 'Helper')
     return { to: `Cash you gave ${h}`, toTa: `${h} கிட்ட கையில கொடுத்தது`, lines: [] }

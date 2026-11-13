@@ -2,7 +2,8 @@
 // does it (Funmi's and Mama Bisi's demo logins). Run by hand; it moves testnet money.
 //
 //   The 60-second demo (README "Demo"), as the app does it:
-//   1. Balance.  2. Pay Iya Tunde ₦2,000.  3. Pay ajo.  4. Save ₦1,000 (the Stall shade pot).
+//   1. Balance.  2. Pay Iya Tunde ₦2,000.  3. Pay a shop by its pay code (Mama Put Canteen, the code
+//   its QR holds).  4. Save ₦1,000 (the Stall shade pot).
 //   5. Loan offer.  6. Accept with the PIN (a test PIN, set for the run and removed after it;
 //      refused without it and with a wrong one; confirming twice returns the same result).
 //   7. Share her record.  8. A lender verifies the code through /verify's public call.
@@ -17,7 +18,7 @@
 // (the app's tick: chain-worker saw it in a closed ledger and refreshed the balance cache).
 //
 //   pnpm e2e:ng            the 60-second demo (run pnpm demo:reset ng first: it needs the loan
-//                          offer, an unpaid ajo round, and Funmi without a PIN)
+//                          offer and Funmi without a PIN)
 //   pnpm e2e:ng --all      the demo, then a new person from sign-up to first payment
 //   pnpm e2e:ng --read     read-only tools and timings; moves nothing
 //   pnpm e2e:ng --new-user only the new person
@@ -34,6 +35,7 @@ const { db: admin, url } = adminClient();
 const HORIZON = "https://horizon-testnet.stellar.org";
 const EXPERT = "https://stellar.expert/explorer/testnet";
 const FUNMI_PHONE = "+2340000000501";
+const SHOP_PHONE = "+2347000000690"; // Mama Put Canteen, the test shop (pnpm guests:seed)
 const readOnly = process.argv.includes("--read");
 const newUserOnly = process.argv.includes("--new-user");
 const NEW_USER_PHONE = "+2347000000301"; // a test number: each run archives the previous e2e person
@@ -117,7 +119,7 @@ async function main() {
   console.log("Read paths (app -> agent-tools; balances from the cache, contract views by simulation)");
   const sched = await job("scheduler");
   console.log(`  scheduler: ${JSON.stringify(sched.balances)} (Horizon read for every Nigeria wallet), ${sched.ms} ms`);
-  for (const t of ["get_balance", "what_arrived", "group_status", "savings_status", "loan_status", "my_record"]) {
+  for (const t of ["get_balance", "what_arrived", "savings_status", "loan_status", "my_record"]) {
     const r = await funmi(t);
     console.log(`  ${t.padEnd(15)} ${String(r.ms).padStart(5)} ms  ${r.text}`);
   }
@@ -159,12 +161,14 @@ async function demo(funmi: ReturnType<typeof caller>, bisi: ReturnType<typeof ca
   console.log(`  confirm answered in ${c.ms} ms`);
   done("pay Iya Tunde ₦2,000 (payment, fee-bumped by partner)", await tick(c.transaction_id, t0));
 
-  console.log("\n3. Pay ajo");
-  const g = must(await funmi("prepare_ajo_contribution"), "prepare_ajo_contribution");
+  console.log("\n3. Pay a shop by its pay code (the code in its QR)");
+  const shop = (await admin.from("users").select("pay_code").eq("wa_phone", SHOP_PHONE).is("archived_at", null).single()).data?.pay_code as string | undefined;
+  if (!shop) throw new Error("no test shop (Mama Put Canteen): run pnpm guests:seed");
+  const g = must(await funmi("prepare_pay", { code: shop, amount: "1500" }), "prepare_pay by code");
   console.log(`  read-back: ${g.text}`);
   t0 = Date.now();
-  c = await yes(g.action_id, "confirm ajo");
-  done("Bodija Market Ajo (group_contribute, contract call)", await tick(c.transaction_id, t0));
+  c = await yes(g.action_id, "confirm shop");
+  done("pay Mama Put Canteen ₦1,500 by its pay code (payment, fee-bumped by partner)", await tick(c.transaction_id, t0));
 
   console.log("\n4. Save ₦1,000");
   const sv = must(await funmi("prepare_save", { amount: "1000" }), "prepare_save");

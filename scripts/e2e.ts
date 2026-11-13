@@ -3,10 +3,9 @@
 //   1. state transfer arrives (payout-sim)            -> Rs 1,000 in, 10% auto-saved
 //   2. what_arrived (voice)                           -> mentions it
 //   3. pay the flower wholesaler Rs 300               -> prepared by voice ("poo kadai"), Yes tapped in the app
-//   4. seettu contribution                            -> prepared and confirmed by voice (below the PIN threshold)
-//   5. helper cash-in                                 -> Meena records Rs 500 on the helper page, Selvi says Yes
-//   6. my_record
-//   7. wait for chain_outbox, then check every contract event on-chain (RPC), and time
+//   4. helper cash-in                                 -> Meena records Rs 500 on the helper page, Selvi says Yes
+//   5. my_record
+//   6. wait for chain_outbox, then check every contract event on-chain (RPC), and time
 //      "confirmed in Plus" -> "attest in a closed ledger".
 //
 // Voice calls go to agent-tools exactly as ElevenLabs sends them (x-plus-secret + plus_session from
@@ -99,22 +98,10 @@ async function main() {
   const pc2 = await voice("confirm_action", { action_id: pp.action_id });
   ok(pc2.status === "done" && pc2.result?.transaction_id === pc.result?.transaction_id, "a second confirm returns the stored result (no double pay)");
 
-  // 4. Seettu contribution
-  log("\n4. Seettu contribution (voice)");
-  const gc = await voice("prepare_group_contribution");
-  let groupConfirmAt: Date | null = null;
-  if (gc.error === "already_paid") {
-    log(`  (already paid this month on an earlier run: "${gc.text}")`);
-  } else {
-    log(`  agent hears: "${gc.text}"`);
-    ok(gc.ok && gc.requires_pin === false, `read-back ${gc.readback}`);
-    groupConfirmAt = new Date();
-    const gcc = await voice("confirm_action", { action_id: gc.action_id });
-    ok(gcc.status === "done", `voice yes: ${gcc.text}`);
-  }
+  // Piece 13: the seettu (community savings) is retired; no group contribution step any more.
 
-  // 5. Helper cash-in
-  log("\n5. Helper cash-in (Meena records ₹500, Selvi says Yes)");
+  // 4. Helper cash-in
+  log("\n4. Helper cash-in (Meena records ₹500, Selvi says Yes)");
   const me = await post("helper-api/me", {}, { authorization: `Bearer ${meena.token}` });
   const selviRow = (me.people as { user_id: string; name: string }[]).find((p) => p.name === "Selvi");
   ok(selviRow, `helper page lists Selvi (Meena can record ${me.left_today_text} more today)`);
@@ -136,14 +123,14 @@ async function main() {
   const balAfterCash = await voice("get_balance");
   ok(d(balAfterCash.balance_minor, balBeforeCash.balance_minor) === 45000, "₹500 cash credited (₹450 to spend, ₹50 auto-saved)");
 
-  // 6. my_record
-  log("\n6. my_record");
+  // 5. my_record
+  log("\n5. my_record");
   const mr = await voice("my_record");
   log(`  agent hears: "${mr.text}"`);
   ok(mr.record_url?.includes(CONTRACT), "links to the contract on Stellar Expert");
 
-  // 7. Outbox -> chain
-  log("\n7. Waiting for chain_outbox (chain-worker) ...");
+  // 6. Outbox -> chain
+  log("\n6. Waiting for chain_outbox (chain-worker) ...");
   const deadline = Date.now() + 8 * 60_000;
   let rows: any[] = [];
   let lastKick = 0;
@@ -164,7 +151,7 @@ async function main() {
     await new Promise((r) => setTimeout(r, 3000));
   }
   log("");
-  const expected = groupConfirmAt ? 6 : 5; // received+saved (state transfer), paid, [group_record], received+saved (cash)
+  const expected = 5; // received+saved (state transfer), paid, received+saved (cash)
   ok(rows.length === expected, `${rows.length} outbox rows done, all on-chain`);
 
   // Verify each contract event on-chain.
@@ -192,7 +179,6 @@ async function main() {
     const closed = new Date(Number(tx.createdAt) * 1000);
     const confirmedAt = r.ref.includes(String(pp.action_id)) ? payConfirmAt
       : r.ref.includes(rec.cash_event.id) ? cashConfirmAt
-      : r.kind === "group_record" ? groupConfirmAt
       : null;
     if (confirmedAt) timings.push(`${r.kind}${r.args.kind ? `:${r.args.kind}` : ""}  ${((closed.getTime() - confirmedAt.getTime()) / 1000).toFixed(1)} s`);
   }

@@ -7,7 +7,7 @@ import { Button, Card, Icon, ListGroup, Notice, Section, Spinner } from '../ds/c
 import { supabase } from '../lib/supabase'
 import { tool } from '../plus/api'
 import {
-  ASSET_LEVEL, ASSET_STATUS, CREDIT_CONTRACT, EXPLORER, LOAN_STATUS, PLUS_CONTRACT, ajoSummary, loadSdk, naira, readRecord,
+  ASSET_LEVEL, ASSET_STATUS, CREDIT_CONTRACT, EXPLORER, LOAN_STATUS, PLUS_CONTRACT, savingSummary, loadSdk, naira, readRecord,
   type Record as ChainRecord,
 } from './stellar'
 
@@ -123,7 +123,7 @@ const day = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { day: 'num
 
 function Summary({ r }: { r: Result }) {
   const { rec } = r
-  const ajo = ajoSummary(rec)
+  const saving = savingSummary(rec)
   const account = `${EXPLORER}/account/${rec.wallet}`
   const credit = `${EXPLORER}/contract/${CREDIT_CONTRACT}`
   const days = rec.firstActivity ? Math.max(0, Math.floor((Date.now() - rec.firstActivity) / 86_400_000)) : 0
@@ -146,8 +146,8 @@ function Summary({ r }: { r: Result }) {
       <Section title="History">
         <ListGroup>
           <Line label="With Plus" value={history} sub={rec.firstActivity ? `First activity on her wallet: ${day(rec.firstActivity)}` : undefined} href={account} />
-          <Line label="Ajo payments" value={ajo.payments} sub={ajo.payments ? `${ajo.onTime} of ${ajo.payments} on time (${ajo.onTimePct}%): each within its round` : 'None yet'} href={`${EXPLORER}/contract/${PLUS_CONTRACT}`} />
-          <Line label="Saving" value={`${ajo.weeksPaid} of ${ajo.weeks} weeks`} sub="Weeks with at least one ajo payment" href={account} />
+          <Line label="Savings deposits" value={saving.deposits} sub={saving.deposits ? 'Into her savings goal on Stellar, by her or her auto-save; only she can take them out' : 'None yet'} href={`${EXPLORER}/contract/${PLUS_CONTRACT}`} />
+          <Line label="Saving" value={`${saving.weeksSaved} of ${saving.weeks} weeks`} sub="Weeks with at least one savings deposit" href={account} />
         </ListGroup>
       </Section>
 
@@ -155,11 +155,11 @@ function Summary({ r }: { r: Result }) {
         <ListGroup>
           <Line label="Taken" value={counted.length} sub={`${repaid} repaid${defaulted ? `, ${defaulted} defaulted` : ''}${cancelled ? `; ${cancelled} closed by the demo reset (not counted)` : ''}`} href={credit} />
           <Line label="Now" value={open ? LOAN_STATUS[open.status] : 'No open loan'}
-            sub={open ? `${naira(open.repaid)} repaid of ${naira(open.total)} (borrowed ${naira(open.principal)}, cost ${naira(open.cost)})${open.collateral ? `; secured by a verified asset (${open.collateral_pct}%)` : ''}${open.vouchers.length ? `; ${open.vouchers.length} ajo member${open.vouchers.length === 1 ? '' : 's'} vouched` : ''}` : undefined}
+            sub={open ? `${naira(open.repaid)} repaid of ${naira(open.total)} (borrowed ${naira(open.principal)}, cost ${naira(open.cost)})${open.collateral ? `; secured by a verified asset (${open.collateral_pct}%)` : ''}${open.vouchers.length ? `; ${open.vouchers.length} ${open.vouchers.length === 1 ? 'person' : 'people'} vouched` : ''}` : undefined}
             href={credit} />
-          {vouchedLoans.length > 0 && <Line label="Backed by ajo vouches" value={`${vouchedLoans.length} loan${vouchedLoans.length === 1 ? '' : 's'}`}
-            sub={`${vouchedLoans.reduce((n, l) => n + l.vouchers.length, 0)} vouches from ajo members in good standing (verified ID, 6+ weeks, every ajo payment on time). Each voucher is a 32-byte reference.`} href={credit} />}
-          {rec.vouches.length > 0 && <Line label="Vouches for the next loan" value={rec.vouches.length} sub={`Ajo members in good standing${rec.vouches.length >= 2 ? '; with two or more, a first loan needs 100% collateral instead of 150%' : ''}`} href={credit} />}
+          {vouchedLoans.length > 0 && <Line label="Backed by vouches" value={`${vouchedLoans.length} loan${vouchedLoans.length === 1 ? '' : 's'}`}
+            sub={`${vouchedLoans.reduce((n, l) => n + l.vouchers.length, 0)} vouches from people she trades with, in good standing (verified ID, 6+ weeks, no missed loan payments, 3+ payments between them). Each voucher is a 32-byte reference.`} href={credit} />}
+          {rec.vouches.length > 0 && <Line label="Vouches for the next loan" value={rec.vouches.length} sub={`People she trades with, in good standing${rec.vouches.length >= 2 ? '; with two or more, a first loan needs 100% collateral instead of 150%' : ''}`} href={credit} />}
         </ListGroup>
       </Section>
 

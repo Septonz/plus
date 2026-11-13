@@ -78,7 +78,6 @@ const APP_ONLY = {
 // The same action under the agent's own name.
 const ALIASES = {
   update_settings: ["set_language", "set_auto_save"],
-  prepare_ajo_contribution: ["prepare_ajo_contribution", "prepare_group_contribution"],
 };
 
 const ngServed = new Set([...keysOf("supabase/functions/_shared/tools-ng.ts", "NG_APP_TOOLS"), ...keysOf("supabase/functions/_shared/onboarding.ts", "OB_TOOLS"), "set_pin"]);

@@ -1,7 +1,7 @@
 // Plus Nigeria screens. Every money action goes prepare -> confirm sheet -> Stellar; reads come
 // from the balance cache and the agent-tools read tools (the same tools the voice agent uses).
 // Each screen has a loading state (skeletons), an empty state and an error state with a retry.
-// Home is a stack of passes (Wallet, Ajo, Loan); a pass opens full-screen (NgApp's CardDetail).
+// Home is a stack of passes (Wallet, Savings, Loan, Assets); a pass opens full-screen (NgApp's CardDetail).
 import { formatTime } from '../lib/time'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { getMarket } from '@plus/markets'
@@ -54,10 +54,9 @@ function Waiting({ data, onAnswer }: { data: PlusData; onAnswer: (a: PendingActi
 
 // ---------------------------------------------------------------------------- Home
 
-export type Detail = 'wallet' | 'savings' | 'group' | 'loan' | 'assets' | 'add_cash' | 'cash_out' | 'receive' | 'scan'
+export type Detail = 'wallet' | 'savings' | 'loan' | 'assets' | 'add_cash' | 'cash_out' | 'receive' | 'scan'
 
 export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Props & { onAnswer: (a: PendingAction) => void; open: Detail | null; onOpen: (d: Detail) => void }) {
-  const ajo = useTool('group_status', version)
   const sav = useTool('savings_status', version)
   const loan = useTool('loan_status', version)
   const assets = useTool('my_assets', version)
@@ -67,18 +66,15 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
   const latest = ((rec?.recent ?? []) as Row[]).filter((t) => t.kind !== 'adjustment').slice(0, 5)
   const sending = data.txs.filter((t) => t.status === 'pending').length
   const name = data.me?.name ?? ''
-  const members = (ajo?.members ?? []) as Row[]
-  const paid = members.filter((m) => m.paid_this_round).length
   const cashIns = data.pending.filter((a) => a.kind === 'confirm_cash_in')
   useSays(
     `Home. Wallet: ${wallet ? naira(wallet.NGNT) : 'loading'}${sending ? `, ${sending} sending` : ''}. ` +
-      (ajo ? (ajo.in_group ? `Ajo ${String(ajo.name)}: ${paid} of ${members.length} paid this round; her part ${ajo.paid_this_period ? 'is paid' : ajo.on_its_way ? 'is sending' : `is not paid (${String(ajo.amount_text)})`}. ` : 'Not in an ajo. ') : '') +
       (sav?.has_goal ? `Savings: ${String(sav.saved_text)} of ${String(sav.goal_text)} for ${String(sav.goal_name)}. ` : '') +
       (loan?.ok ? `Loan: ${loanLine(loan)}. ` : '') +
       (cashIns.length ? `Waiting for her answer: ${cashIns.map((a) => a.readback).join('; ')}. ` : '') +
       (latest.length ? `Latest: ${latest.slice(0, 3).map((t) => `${String(t.label)} ${t.outgoing ? '-' : '+'}${String(t.amount_text)}`).join(', ')}. ` : '') +
       (assets?.ok ? `Assets: ${owned.length} registered, ${verified} verified. ` : '') +
-      'Cards: Wallet, Savings, Ajo, Loan, Assets. Tabs: Home, Pay, Activity, Profile.',
+      'Cards: Wallet, Savings, Loan, Assets. Tabs: Home, Pay, Activity, Profile.',
   )
 
   return (
@@ -119,24 +115,6 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
           onOpen={() => onOpen('savings')}
         >
           {sav?.has_goal ? <Progress pct={savedPct(sav)} label={`${String(sav.left_text)} to go`} /> : null}
-        </Pass>
-        <Pass
-          id="group"
-          icon="group"
-          title={W.ajo.en}
-          sub={ajo ? (ajo.in_group ? String(ajo.name) : 'Not in one yet') : ' '}
-          value={ajo?.in_group ? (ajo.paid_this_period ? 'Paid' : ajo.on_its_way ? 'Sending' : String(ajo.amount_text)) : undefined}
-          hidden={open === 'group'}
-          onOpen={() => onOpen('group')}
-        >
-          {ajo?.in_group ? (
-            <span className="block">
-              <span className="mb-1.5 flex justify-between text-sm text-secondary"><span>{paid} of {members.length} paid this round</span></span>
-              <span className="block h-1.5 overflow-hidden rounded-full bg-fill">
-                <span className="block h-full rounded-full bg-accent" style={{ width: `${members.length ? (paid / members.length) * 100 : 0}%` }} />
-              </span>
-            </span>
-          ) : null}
         </Pass>
         <Pass
           id="loan"
@@ -485,86 +463,9 @@ function BankAccountForm({ b }: { b: ReturnType<typeof useBankAccount> }) {
   )
 }
 
-// ---------------------------------------------------------------------------- Ajo
-
-export function Ajo({ version }: Props) {
-  const g = useTool('group_status', version)
-  const { busy, msg, run } = useSubmit()
-  useSays(g ? `Ajo. ${g.text}${g.in_group && !g.paid_this_period && !g.on_its_way ? ' Button: Pay my part.' : ''} Each paid member has a Verified on Stellar tick.` : 'Ajo, loading.')
-  return (
-    <Loaded r={g} rows={5}>
-      {(g) => !g.in_group ? (
-        <EmptyState icon="group" title="Not in an ajo yet">{forScreen(g.text)}</EmptyState>
-      ) : (
-        <AjoBody g={g} busy={busy} msg={msg} pay={() => void run('prepare_ajo_contribution', {})} />
-      )}
-    </Loaded>
-  )
-}
-
-function AjoBody({ g, busy, msg, pay }: { g: ToolResult; busy: boolean; msg: string | null; pay: () => void }) {
-  const members = (g.members ?? []) as Row[]
-  const paid = members.filter((m) => m.paid_this_round).length
-  const n = members.length
-  const me = members.find((m) => m.is_me)
-  const days = Number(g.period_days)
-  // Her turn: rounds from now (0 = this round), on the date that round pays out.
-  const ahead = me && n ? (Number(me.position) - Number(g.turn) + n) % n : null
-  const herDay = ahead === null ? null : new Date(new Date(String(g.next_due)).getTime() + ahead * days * 86_400_000)
-  const pot = BigInt(String(g.amount_minor ?? 0)) * BigInt(n)
-  return (
-    <>
-      <Card className="space-y-4">
-        <div>
-          <h2 className="text-2xl font-semibold">{String(g.name)}</h2>
-          <p className="text-base text-secondary">{String(g.amount_text)} each, every {Number(g.period_days) === 1 ? 'day' : `${String(g.period_days)} days`}</p>
-        </div>
-        <div>
-          <div className="mb-1.5 flex justify-between text-sm text-secondary"><span>{paid} of {members.length} paid</span><span>this round</span></div>
-          <div className="h-2 overflow-hidden rounded-full bg-fill" aria-hidden="true">
-            <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${members.length ? (paid / members.length) * 100 : 0}%` }} />
-          </div>
-        </div>
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-          <div><dt className="text-sm text-secondary">Contribution</dt><dd className="num text-lg font-medium">{String(g.amount_text)} / {days === 1 ? 'day' : `${days} days`}</dd></div>
-          <div><dt className="text-sm text-secondary">{W.members.en}</dt><dd className="num text-lg font-medium">{n}</dd></div>
-          <div><dt className="text-sm text-secondary">Payout</dt><dd className="num text-lg font-medium">{naira(pot)}</dd></div>
-          <div><dt className="text-sm text-secondary">Your turn</dt><dd className="text-lg font-medium">{ahead === null ? '—' : ahead === 0 ? 'This round' : `${herDay!.toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' })}`}</dd></div>
-        </dl>
-        <p className="text-base">
-          This round's pot goes to <b className="font-semibold">{members.find((m) => m.is_turn)?.is_me ? 'you' : String(g.turn_name)}</b> on{' '}
-          {formatTime(String(g.next_due), { weekday: 'long' })}.
-        </p>
-        {!g.paid_this_period && !g.on_its_way && (
-          <Button className="w-full" loading={busy} onClick={pay}>
-            {W.payMyPart.en} · {String(g.amount_text)}
-          </Button>
-        )}
-        {msg && <Notice tone="danger">{msg}</Notice>}
-      </Card>
-      <Section title={W.members.en}>
-        <ListGroup>
-          {members.map((m) => (
-            <ListRow
-              key={String(m.position)}
-              icon="person"
-              iconTone={m.is_me ? 'accent' : 'neutral'}
-              title={`${String(m.name)}${m.is_me ? ' (you)' : ''}`}
-              subtitle={m.is_turn ? 'Collects this round' : undefined}
-              trailing={m.paid_this_round ? <VerifiedMark url={(m.url as string | null) ?? (g.contract_url as string | null)} label="Paid" /> : m.is_me && g.on_its_way ? <VerifiedMark pending pendingLabel="Sending" /> : <span className="text-sm text-secondary">{W.notYet.en}</span>}
-            />
-          ))}
-        </ListGroup>
-        <p className="px-1 text-sm text-secondary">Each tick is verified on Stellar, not just in our records.</p>
-      </Section>
-      <Vouches />
-    </>
-  )
-}
-
 // ---------------------------------------------------------------------------- Vouches (piece 10)
 
-/** Vouch for an ajo member's next loan (their PIN), see who vouched for them, withdraw a waiting one. */
+/** Vouch for the next loan of someone she trades with (her PIN), see who vouched for her, withdraw a waiting one. */
 function Vouches() {
   const [bump, setBump] = useState(0)
   const v = useTool('my_vouches', bump)
@@ -576,7 +477,7 @@ function Vouches() {
   if (!can.length && !given.length && !received.length) return null
   const after = (r: ToolResult) => { if (r.ok) setBump((b) => b + 1) }
   return (
-    <Section title="Vouch for a member's loan">
+    <Section title="Vouch for someone's loan">
       <ListGroup>
         {can.map((p) => {
           const mine = given.find((g) => g.other_user_id === p.user_id)
@@ -728,8 +629,8 @@ function VouchNote({ l }: { l: ToolResult }) {
   return (
     <Notice tone={v.applied ? 'success' : undefined}>
       <span className="font-medium">{((v.names ?? []) as string[]).join(' and ')} vouched for you.</span>{' '}
-      {v.applied ? `Two ajo members in good standing back this loan, so it needs ${String(v.collateral_pct)}% collateral instead of ${String(v.collateral_pct_without)}%.`
-        : `One more vouch from an ajo member in good standing would lower the collateral this loan needs (now ${String(v.collateral_pct_without)}%).`}
+      {v.applied ? `Two people you trade with back this loan, so it needs ${String(v.collateral_pct)}% collateral instead of ${String(v.collateral_pct_without)}%.`
+        : `One more vouch from someone you trade with would lower the collateral this loan needs (now ${String(v.collateral_pct_without)}%).`}
     </Notice>
   )
 }
@@ -759,7 +660,7 @@ function Repaying({ l, busy, run }: { l: ToolResult; busy: boolean; run: Run }) 
       </div>
       <ListGroup>
         <ListRow icon="loan" title={`You received ${String(v.principal_text)}`} subtitle={`Cost ${String(v.cost_text)} · total ${String(v.total_text)}`} />
-        {((v.vouched_by ?? []) as string[]).length > 0 && <ListRow icon="vouch" title={`Vouched for by ${((v.vouched_by ?? []) as string[]).join(' and ')}`} subtitle="Ajo members; recorded on this loan on Stellar" />}
+        {((v.vouched_by ?? []) as string[]).length > 0 && <ListRow icon="vouch" title={`Vouched for by ${((v.vouched_by ?? []) as string[]).join(' and ')}`} subtitle="Recorded on this loan on Stellar" />}
       </ListGroup>
       {/* The agreement and every repayment are on plus_credit: any lender can read them from Stellar. */}
       <div className="px-1"><VerifiedMark url={v.credit_tx_hash ? `${EXPLORER}/tx/${String(v.credit_tx_hash)}` : null} pending={!v.credit_tx_hash} /></div>
@@ -782,6 +683,7 @@ export function Loan({ version }: Props) {
           : <Card><p className="text-lg">{forScreen(String(l.text))}</p></Card>}
       </Loaded>
       {msg && <Notice tone="danger">{msg}</Notice>}
+      <Vouches />
       <Notice><Bilingual main={W.nobodyElse.en} sub={yo('nobodyElse')} /></Notice>
       <p className="px-1 text-sm text-secondary">Loans come from a partner lender (simulated). The money moves on Stellar Testnet.</p>
     </>
@@ -926,7 +828,7 @@ export function CashOut({ version, shownCode, onShowCode }: Props & { shownCode:
 // ---------------------------------------------------------------------------- Activity
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
-const KIND_ICON: Record<string, string> = { incoming: 'in', pay: 'pay', group_contribution: 'group', advance: 'advance', repay: 'advance', loan: 'loan', loan_repay: 'loan', cash_out: 'cash', saved: 'savings', savings_out: 'savings' }
+const KIND_ICON: Record<string, string> = { incoming: 'in', pay: 'pay', advance: 'advance', repay: 'advance', loan: 'loan', loan_repay: 'loan', cash_out: 'cash', saved: 'savings', savings_out: 'savings' }
 
 /** One transaction with its "Verified on Stellar" tick, which links to the transaction. */
 function TxRow({ t }: { t: Row }) {
@@ -971,7 +873,6 @@ function ShareRecord({ version }: { version: number }) {
             <p className="text-base font-medium">The lender sees, read from Stellar:</p>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-base text-secondary">
               <li>how long you've been with Plus</li>
-              <li>your ajo payments, and how many were on time</li>
               <li>how steadily you save</li>
               <li>your verified assets: level and status only</li>
               <li>loans taken and repaid, and your loan now</li>
@@ -1022,7 +923,7 @@ export function Record({ version }: Props) {
             <GuestSeen what="activity" version={version} />
             <Card>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-5">
-                {([['Came in', totals.received_text], ['Paid', totals.paid_text], ['Into ajo', totals.ajo_text], ['Agent cash-ins', r.cash_ins]] as const).map(([k, v]) => (
+                {([['Came in', totals.received_text], ['Paid', totals.paid_text], ['Cashed out', totals.cashed_out_text], ['Agent cash-ins', r.cash_ins]] as const).map(([k, v]) => (
                   <div key={k}><dt className="text-sm text-secondary">{k}</dt><dd className="num text-2xl font-light">{String(v ?? '—')}</dd></div>
                 ))}
               </dl>

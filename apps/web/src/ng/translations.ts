@@ -17,7 +17,6 @@ export const W = {
   home: { en: 'Home', yo: 'Ilé' },
   addCash: { en: 'Add cash', yo: 'Fi owó sí' },
   pay: { en: 'Pay', yo: 'Sanwó' },
-  ajo: { en: 'Ajo', yo: 'Àjọ' },
   advance: { en: 'Advance', yo: 'Yá owó' },
   cashOut: { en: 'Cash out', yo: 'Gba owó' },
   record: { en: 'My record', yo: 'Ìwé mi' },
@@ -58,13 +57,6 @@ export const W = {
   // Pay
   whoPay: { en: 'Who are you paying?', pcm: 'Who you wan pay?', yo: 'Ta ni o fẹ́ san fún?' },
   howMuch: { en: 'How much?', yo: 'Èló ni?' },
-
-  // Ajo
-  members: { en: 'Members', yo: 'Àwọn ọmọ ẹgbẹ́' },
-  turn: { en: 'Turn', yo: 'Ìgbà' },
-  paid: { en: 'Paid', yo: 'Ó ti san' },
-  notYet: { en: 'Not yet', yo: 'Kò tíì san' },
-  payMyPart: { en: 'Pay my part', yo: 'San ìpín mi' },
 
   // Advance
   takeAdvance: { en: 'Take an advance', yo: 'Yá owó' },

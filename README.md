@@ -7,7 +7,7 @@ Built for the Stellar Blockchain Innovation Challenge, Problem Space 1: fair fin
 ## Try it now
 
 **https://plus-wallet.vercel.app** → tap **Try Plus now**. No sign-up: you get a test market trader
-of your own (Adaeze, Bola, Chiamaka…) with 8 weeks of history, an ajo, a savings goal, verified
+of your own (Adaeze, Bola, Chiamaka…) with 8 weeks of history, a savings goal, verified
 stall stock and a ₦30,000 loan offer. The same browser keeps the same trader for 2 hours.
 
 Test it in 2 minutes:
@@ -46,11 +46,11 @@ same page makes you a test cash agent.
 
 ## Selvi's story
 
-Selvi sells flowers in Madurai and gets a ₹1,000 monthly state transfer into her bank account, saves with neighbours in a seettu, and turns to moneylenders when an emergency hits. With Plus she talks in Tamil on WhatsApp: she hears what arrived, saves a share of it automatically, pays her seettu, and gets a small advance whose full cost is said out loud before she agrees. Every rupee stays in her bank, while Stellar quietly builds a verifiable record that she can share, by consent, to earn fairer credit.
+Selvi sells flowers in Madurai and gets a ₹1,000 monthly state transfer into her bank account, and turns to moneylenders when an emergency hits. With Plus she talks in Tamil on WhatsApp: she hears what arrived, saves a share of it automatically, pays people, and gets a small advance whose full cost is said out loud before she agrees. Every rupee stays in her bank, while Stellar quietly builds a verifiable record that she can share, by consent, to earn fairer credit.
 
 ## Funmi's story (Nigeria)
 
-Funmi sells tomatoes at Bodija market in Ibadan and has no bank account. Her Plus wallet on Stellar is her account: she hands cash to Mama Bisi, a Plus cash agent at the market, says Yes in her app, and naira (test NGNT) lands in her wallet. She talks to Plus in Pidgin or Yoruba, pays her supplier, pays her ajo (held by the contract, paid out on time), takes a small advance with one fee said out loud (no interest, no late fees, 10% of each cash-in repays it), and cashes out with a 6-digit code. The demo ends with a switch to India: the same agent for people who do have bank accounts.
+Funmi sells tomatoes at Bodija market in Ibadan and has no bank account. Her Plus wallet on Stellar is her account: she hands cash to Mama Bisi, a Plus cash agent at the market, says Yes in her app, and naira (test NGNT) lands in her wallet. She talks to Plus in Pidgin or Yoruba, pays her supplier, saves toward a goal in her own pot on Stellar, takes a small advance with one fee said out loud (no interest, no late fees, 10% of each cash-in repays it), and cashes out with a 6-digit code. The demo ends with a switch to India: the same agent for people who do have bank accounts.
 
 **Live:** https://plus-wallet.vercel.app (Stellar testnet, all money simulated). The front door has
 one-tap demo logins for the fictional demo people; `/agent` is the cash-agent page.
@@ -72,11 +72,11 @@ first tap as Funmi, and prints a green **READY** or exactly what is wrong (about
 
 | Who | Login | What she shows |
 | --- | ----- | -------------- |
-| **Funmi** (Nigeria) | demo button | The unlocked borrower: no bank account, a wallet on Stellar, ₦26,400, Stall shade savings (₦18,500 of ₦50,000, auto-save 10%), an ajo round to pay, verified stall stock and a ₦30,000 loan offer. |
+| **Funmi** (Nigeria) | demo button | The unlocked borrower: no bank account, a wallet on Stellar, ₦26,400, Stall shade savings (₦18,500 of ₦50,000, auto-save 10%), verified stall stock and a ₦30,000 loan offer. |
 | **Kemi** (Nigeria) | demo button | New to Plus: "week 4 of 6", building her history toward a first loan, and verifying an asset from scratch (live photo, two witnesses, an inspection). |
-| **Amaka** (Nigeria) | demo button | A stall to pay by QR (Pay → My code). A witness: 20 weeks with Plus and a verified ID, so she can confirm Kemi's asset in her own app. In Funmi's ajo, so she can vouch for Funmi's loan ("I vouch for Funmi"). |
+| **Amaka** (Nigeria) | demo button | A stall to pay by QR (Pay → My code). A witness: 20 weeks with Plus and a verified ID, so she can confirm Kemi's asset in her own app. Has traded with Funmi on Stellar (3+ payments), so she can vouch for Funmi's loan ("I vouch for Funmi"). |
 | **Mama Bisi** (Nigeria) | /agent | The cash agent: records cash in, pays out codes, confirms and inspects assets. Float ₦200,000. |
-| **Selvi** (India) | demo button | The same record for someone who does have a bank account: ₹2,350 to spend, ₹1,415 saved, a seettu. Meena is her group leader (helper page). |
+| **Selvi** (India) | demo button | The same record for someone who does have a bank account: ₹2,350 to spend, ₹1,415 saved. Meena is her helper (helper page). |
 
 ### The 60-second script
 
@@ -88,13 +88,13 @@ then reset again before the real thing).
 | ---- | --------- | --- |
 | 0:00–0:05 | Funmi: "How much do I have?" ₦26,400; the wallet card | "Funmi has no bank account. This wallet on Stellar is her account." |
 | 0:05–0:15 | She buys from Amaka's stall: **Scan** on Pay, Amaka's QR (Amaka's phone: Pay → **My code**), ₦2,000, Yes. The tick on both phones | "A shop is paid by scanning its code, like any QR payment, and it lands on Stellar in about four seconds." |
-| 0:15–0:22 | "Pay my ajo." Plus reads it back; yes; the ajo pot grows | "Her ajo's pot is held by a contract that nobody can edit or run off with." |
+| 0:15–0:22 | "Pay Iya Tunde two thousand." Plus reads it back; yes; the tick | "Her supplier is paid from her wallet in seconds, with the receipt on Stellar." |
 | 0:22–0:30 | "Save a thousand." Yes; Stall shade goes from ₦18,500 to ₦19,500 of ₦50,000 | "Her savings sit in her own pot on Stellar, apart from her spending money. 10% of every money in is saved by itself." |
 | 0:30–0:42 | "Can I get a loan?" You receive ₦30,000, cost ₦1,800, total ₦31,800, and why. She types her PIN; the money arrives | "The full cost in naira before she agrees, and why she qualifies: her activity, her verified stall stock, her saving. 10% of each money in repays it on its own." |
-| 0:42–0:52 | "Share my record with a lender." A code on her screen. **/verify**: type it; her history, ajo, assets and loans, each "Read from Stellar", in about a second | "Any lender can check her record without trusting Plus, and never sees her name." |
+| 0:42–0:52 | "Share my record with a lender." A code on her screen. **/verify**: type it; her history, savings, assets and loans, each "Read from Stellar", in about a second | "Any lender can check her record without trusting Plus, and never sees her name." |
 | 0:52–1:00 | "Cash out three thousand." A code; Mama Bisi types it on /agent and hands over the cash | "And cash whenever she needs it, from the agent on her street." |
 | Optional (+10 s) | Mama Bisi records ₦500 cash on /agent; Funmi: "Mama Bisi says you gave her ₦500. Is that right?" yes | "Cash in works the same way: nothing moves until she says yes." |
-| Optional, before the loan (+10 s) | Amaka: "I vouch for Funmi." Her PIN. Funmi's Loan screen: "Tunde and Amaka vouched for you … 100% collateral instead of 150%" | "Her ajo backs her. If the loan isn't repaid, they lose the right to vouch for six months, and nobody's money is touched." |
+| Optional, before the loan (+10 s) | Amaka: "I vouch for Funmi." Her PIN. Funmi's Loan screen: "Tunde and Amaka vouched for you … 100% collateral instead of 150%" | "People she trades with back her. If the loan isn't repaid, they lose the right to vouch for six months, and nobody's money is touched." |
 | Optional (+5 s) | Kemi's phone: "week 4 of 6" | "And Kemi, two weeks from her first loan." |
 
 No live demo login on hand? **/verify** has **Try a sample record (Funmi, demo)** while the demo
@@ -105,22 +105,21 @@ logins are on.
 - **The wallet is her account.** Funmi has no bank. A Stellar wallet is a real account she can
   hold, receive into and pay from, with no bank in between; Plus pays her network fees and
   reserves, so she never needs crypto of her own.
-- **The ajo pot nobody can edit.** Contributions go into the Plus contract, which pays each round
-  to whoever's turn it is, when it's due. No organizer can change the order, skip someone or
-  disappear with the pot, and every member's tick links to the transaction.
-- **A credit record she owns.** Every cash-in, ajo payment and advance repayment is on Stellar
+- **Savings nobody else can touch.** Her goal is a pot on the Plus contract that pays back only to
+  her; every deposit and withdrawal links to its transaction.
+- **A credit record she owns.** Every cash-in, savings deposit and advance repayment is on Stellar
   under her wallet address (never her name). She can show it to any lender; nobody can quietly
   rewrite it.
 - **Fees small enough for small money.** Measured on testnet: a payment cost 0.00002 XLM in
-  network fees and an ajo contract call about 0.001 XLM, a tiny fraction of a naira at recent XLM
-  prices, so a ₦500 cash-in or a ₦1,000 ajo payment is worth sending. Plus pays them for her.
+  network fees and a contract call (a savings deposit) about 0.001 XLM, a tiny fraction of a naira
+  at recent XLM prices, so a ₦500 cash-in or a ₦1,000 deposit is worth sending. Plus pays them for her.
 
 ### On Stellar (testnet)
 
 | What | Where | Holds |
 | ---- | ----- | ----- |
 | Her wallet | her own Stellar account (e.g. Funmi `GA6K…GW6M`) | her NGNT (and USDC); every payment, cash-in and repayment |
-| `plus` contract | [`CA4VEZZO…QJP4`](https://stellar.expert/explorer/testnet/contract/CA4VEZZOSQR3RLPN2SF4FLAB5FVPLYH3C635ZSSIEJDE4ZPADGMFQJP4) | ajo pots and rounds, family pots, the advance pool, India's attestations |
+| `plus` contract | [`CA4VEZZO…QJP4`](https://stellar.expert/explorer/testnet/contract/CA4VEZZOSQR3RLPN2SF4FLAB5FVPLYH3C635ZSSIEJDE4ZPADGMFQJP4) | savings and family pots, the advance pool, India's attestations (its earlier community-savings rounds are kept as history) |
 | `plus_credit` contract | [`CCLO7QV3…DZCC`](https://stellar.expert/explorer/testnet/contract/CCLO7QV3LC4MPC46ZBYZDGNOVEYTY62SDRV6S4KZ7O5LVAA7RMX6DZCC) | every loan agreement (amounts, repaid, status, collateral, vouches) and every asset's level, status and verification hash, under 32-byte references only |
 | `lending_ng` | partner lender's account | the loan money out and the repayments in (NGNT) |
 | `anchor_ng` | partner's anchor account | bank transfers in, bank sends out (simulated partner bank) |
@@ -148,24 +147,22 @@ step 8 reads the loan, its repayments and its collateral back from Stellar.
 consent screen, her PIN, then a one-time code (`ABCD-EFGH`, 24 hours, one lender; she can revoke
 it). The lender types it at `/verify`. Plus only turns the code into her plus_credit reference and
 wallet address; the page then reads, in the lender's browser: her loans, assets and vouches from
-`plus_credit`, her history and ajo payments from Horizon, and plus_credit's events from Stellar RPC.
-Every line links to Stellar, and the page says how long it took (about a second). On-time ajo
-payments: each within its round (no more than 1.5 rounds after her previous one into that ajo).
-Saving: weeks with an ajo payment. Her history on Stellar starts when her wallet was opened; the
+`plus_credit`, her history and savings deposits from Horizon, and plus_credit's events from Stellar
+RPC. Every line links to Stellar, and the page says how long it took (about a second). Saving: weeks
+with a deposit into her savings goal (by hand or auto-save). Her history on Stellar starts when her wallet was opened; the
 compressed demo weeks before that are off-chain and not shown.
 
-**Ajo vouches (piece 10).** A member of an ajo in good standing vouches for another member's next
-loan, by voice ("I vouch for Funmi") or with **Vouch** on the Ajo screen, with her PIN. Good
-standing: verified ID, 6+ weeks with Plus, no late or defaulted loan, and every ajo payment on
-time, read from her `contributed` events on the plus contract (each within 1.5 rounds of her
-previous one into that ajo). Each vouch (and each withdrawal) is written to `plus_credit`
+**Vouches (piece 10; rule from piece 13).** Someone in good standing vouches for a person they
+trade with, by voice ("I vouch for Funmi") or with **Vouch** on the Loan screen, with her PIN. Good
+standing: verified ID, 6+ weeks with Plus, no missed loan payments, and the two have paid each
+other at least 3 times on Stellar (completed payments that share a transaction hash). Each vouch (and each withdrawal) is written to `plus_credit`
 (`vouch`, `vouch_revoke`) as two 32-byte references. When her loan opens, the waiting vouches
 attach to it, on-chain too. With two or more, a first loan needs 100% collateral instead of 150%
 (`lending.vouch` in the market pack); the offer says who vouched and why, and the loan screen
 says "Vouched for by". If a vouched loan defaults, each voucher can't vouch for 6 months (a
 `VouchedLoanDefaulted` event per voucher) and her other waiting vouches are withdrawn. Nothing is
 ever taken from a voucher. `/verify` shows loans backed by vouches and vouches waiting. Demo:
-Tunde (an ajo member, a Plus user without a login) has already vouched for Funmi. Amaka vouches
+Tunde (a trader she pays, a Plus user without a login) has already vouched for Funmi. Amaka vouches
 live, the second vouch, and Funmi's offer drops to 100%.
 
 ### A new user: sign-up to first payment
@@ -197,7 +194,7 @@ voice or by tapping. The screen shows six steps that tick off as she (or the voi
   account is refused.
 
 **Tiers** (market pack `kyc.tiers`, modelled on Nigeria's tiered KYC; the partner sets the real
-limits). Every money tool enforces them: pay, pay by code, ajo, cash out, advances, cash-in and
+limits). Every money tool enforces them: pay, pay by code, save, cash out, advances, cash-in and
 bank transfers in (her balance limit).
 
 | Tier | Needs | Send per day | Hold | Advances |
@@ -223,7 +220,7 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
 
 - Testnet only: no real money moves. **NGNT** is a test naira asset issued by Plus; in production
   it would be naira from a licensed e-money or stablecoin partner.
-- Mama Bisi, Funmi, Iya Tunde, Amaka and the ajo members are fictional; their phone numbers are
+- Mama Bisi, Funmi, Iya Tunde, Amaka and Tunde are fictional; their phone numbers are
   fake. The cash Mama Bisi "receives" is pretend.
 - NIN checks (a mock registry: any 11 digits pass except `00000000000`), the photo check (a pass
   flag only), text messages (codes shown on screen), the partner bank behind the virtual account
@@ -252,8 +249,7 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   its sha-256, the time and a place rounded to about 1 km. Witnesses (two eligible Plus users or an
   agent) and the inspection are recorded in Postgres; the confidence score is for lenders and is
   never selectable by the app. Amaka's 20 weeks with Plus and verified ID are set by the reset.
-- Ajo rounds are 1 day (real ajo: weekly or monthly); Funmi's 8 weeks of history were run with
-  1-minute rounds.
+- Funmi's 8 weeks of history are compressed (seeded weeks plus real testnet transactions).
 - `pnpm demo:reset` tops up or sweeps balances through the test issuer between rehearsals (these
   show in her record as "demo reset (testnet)").
 - Voice for Nigeria shows "Voice coming soon" until `ELEVENLABS_AGENT_ID_NG` is set
@@ -285,13 +281,12 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   checks only; `ng` or `in` for one market.
 - `pnpm demo:reset ng`: every Nigeria demo person back to a fixed start. Funmi: ₦26,400, no loan
   open (an open one is settled by the reset, which doesn't count toward her ladder) and the ₦30,000
-  offer, Stall shade savings at ₦18,500 (on Stellar and in her history), no PIN, stall stock independently verified, an ajo round she hasn't paid (a new round with the
-  same members if she has), her landlord's bank account saved as "Landlord". Kemi: week 4 of 6, no assets (earlier ones are released). Amaka: able
+  offer, Stall shade savings at ₦18,500 (on Stellar and in her history), no PIN, stall stock independently verified, a savings deposit in every week of her history, 3+
+  payments with Tunde and Amaka on Stellar, her landlord's bank account saved as "Landlord". Kemi: week 4 of 6, no assets (earlier ones are released). Amaka: able
   to witness, Kemi's saved payee, able to vouch for Funmi. Tunde's vouch for Funmi waiting on
   plus_credit (any other waiting vouch withdrawn). Nothing waiting anywhere: no pending actions, cash-ins, unused
   cash-out codes or witness requests for Funmi, Kemi, Amaka or Mama Bisi; Mama Bisi's float
-  ₦200,000. `pnpm demo:reset in`: Selvi at ₹2,350 to spend and ₹1,415 saved, no advance, seettu
-  unpaid this round, nothing waiting for her or Meena. Never deletes anything; it only adds
+  ₦200,000. `pnpm demo:reset in`: Selvi at ₹2,350 to spend and ₹1,415 saved, no advance, nothing waiting for her or Meena. Never deletes anything; it only adds
   transactions. Prints the state the app shows and how long it took.
 - `pnpm warm`: wakes every Edge Function (`GET /functions/v1/<fn>/health` with the agent secret),
   then `agent-tools/warm` opens its database and Stellar RPC connections so a first tap answers in
@@ -299,7 +294,7 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
   the `plus-warm` cron then does the same every 5 minutes (remove it afterwards to stop).
 - **/demo** (staff login from `pnpm staff:create`): the projector view. Left, the app in a phone
   frame signed in as Funmi (`/app?as=funmi`); right, every Stellar transaction behind it (Funmi,
-  Mama Bisi, the ajo pot, the advance pool) with the seconds from her Yes and a Stellar Expert
+  Mama Bisi, her savings pot, the advance pool) with the seconds from her Yes and a Stellar Expert
   link; top, the Nigeria / India switch.
 - `pnpm demo:new-user`: a fresh test person for rehearsals through the real sign-up (next free
   test number, tier 2, wallet on Stellar; `--tier 1`, `--name`, `--fund 5000`, `--free` to only
@@ -323,8 +318,8 @@ number. Same read-back, Yes and PIN pad. Afterwards she can **Save this person**
 
 Plus is one shared core plus a **market pack** per country (`packages/markets`). A pack sets the currency, languages, custody model, payment rail, cash-out method, group-savings style, advance limits and ID check.
 
-- **India (primary):** rupees in a partner bank (simulated), UPI (simulated), Tamil and English, seettu recorded on Stellar. Users never hold crypto.
-- **Nigeria (second pack):** naira as a Stellar test asset (NGNT) plus optional USDC on the user's own account, pooled ajo held by the contract.
+- **India (primary):** rupees in a partner bank (simulated), UPI (simulated), Tamil and English, a record on Stellar. Users never hold crypto.
+- **Nigeria (second pack):** naira as a Stellar test asset (NGNT) plus optional USDC on the user's own account, savings pots held by the contract.
 
 See [docs/markets.md](docs/markets.md).
 
@@ -335,7 +330,7 @@ See [docs/markets.md](docs/markets.md).
 ├── apps/web/              Vite + React + Tailwind web app
 ├── packages/markets/      Market packs (source of truth, TypeScript, no deps)
 ├── packages/plus-client/  Generated contract bindings (@plus/client, `pnpm bindings`)
-├── contracts/plus/        Soroban contract (Rust): pots, ajo, advance pool, attestations
+├── contracts/plus/        Soroban contract (Rust): pots, advance pool, attestations (group functions retired, kept)
 ├── contracts/plus_credit/ Soroban contract (Rust): loans, assets and vouches (piece 8)
 ├── supabase/
 │   ├── config.toml
@@ -411,9 +406,9 @@ The old command still works, so we have not switched yet. When we do, change onl
 
 `pnpm --filter web dev`, then:
 
-- **http://localhost:5173/app**: the Plus app, Selvi's home. Mobile-first PWA (installable; manifest, icons, a service worker that never caches money data). Tamil labels with English underneath, a Tamil/English toggle, nothing smaller than 16px, and the big mic **பேசுங்க** on every screen. Screens: Home, Pay, Seettu, Advance, My record, Add money, Settings.
+- **http://localhost:5173/app**: the Plus app, Selvi's home. Mobile-first PWA (installable; manifest, icons, a service worker that never caches money data). Tamil labels with English underneath, a Tamil/English toggle, nothing smaller than 16px, and the big mic **பேசுங்க** on every screen. Screens: Home, Pay, Savings, Advance, My record, Add money, Settings.
 - **Front door:** `/app` signed out shows **Open a Plus account** (sign-up, see "A new user" above), **I have an account** (phone + PIN) and the demo people.
-- **Funmi (Nigeria):** on `/app`, "Continue as Funmi". The app picks its screens from the Nigeria market pack (`getMarket('ng').screens`): Home, Add money (bank transfer or agent cash), Pay (saved people or any phone number), Ajo, Advance, Cash out, My record, Settings, with English and Yoruba labels. After her Yes the confirm sheet shows "Sending on Stellar…", then the tick, the seconds it took and the Stellar Expert link. Balances come from `wallet_balances`, refreshed from Horizon after every confirmed transaction and every minute.
+- **Funmi (Nigeria):** on `/app`, "Continue as Funmi". The app picks its screens from the Nigeria market pack (`getMarket('ng').screens`): Home, Add money (bank transfer or agent cash), Pay (saved people or any phone number), Savings, Loan, Assets, Cash out, My record, Settings, with English and Yoruba labels. After her Yes the confirm sheet shows "Sending on Stellar…", then the tick, the seconds it took and the Stellar Expert link. Balances come from `wallet_balances`, refreshed from Horizon after every confirmed transaction and every minute.
 - **http://localhost:5173/agent**: the cash agent page, Mama Bisi ("Continue as Mama Bisi"). **Register a customer** (the sign-up on her screen), record cash (customer phone + amount; checks her float and the ₦500,000 daily limit; Funmi then gets "Mama Bisi says you gave her ₦500. Is that right?"; 10% goes to an open advance) and redeem a cash-out code (shows the amount, then claims the cash-out on Stellar). Own login, so it can sit next to `/app`.
 - **http://localhost:5173/helper**: the helper page, where Meena records cash a member handed her. It keeps its own login, so both pages can be open side by side.
 
@@ -442,7 +437,7 @@ Lucide line icons; gentle springs (motion), off with reduce motion. Screenshots 
 
 ### Background jobs (Supabase Cron, one-time setup)
 
-`chain-worker` (writes the `chain_outbox` to Stellar, one transaction at a time per signer), `sync-events` and `scheduler` run every minute, and `expire_stale_actions` every 5 minutes. `scheduler` refreshes Nigeria wallet balances, pays an ajo round on the contract when it is due (`group_payout`), expires agent cash-ins after 24 hours and returns cash-outs nobody redeemed in 7 days. Cron and the after-insert kick read two Vault secrets. Create them once in the SQL editor of the dev project (the second value is generated inside the database and never shown):
+`chain-worker` (writes the `chain_outbox` to Stellar, one transaction at a time per signer), `sync-events` and `scheduler` run every minute, and `expire_stale_actions` every 5 minutes. `scheduler` refreshes Nigeria wallet balances, expires agent cash-ins after 24 hours and returns cash-outs nobody redeemed in 7 days. Cron and the after-insert kick read two Vault secrets. Create them once in the SQL editor of the dev project (the second value is generated inside the database and never shown):
 
 ```sql
 select vault.create_secret('https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1', 'plus_functions_url');
@@ -472,11 +467,11 @@ This is a Testnet prototype. Where it cuts corners, it does so in ways that do n
 - `pnpm seed:db`: re-runnable demo rows in the dev Supabase project. Needs `DEMO_SELVI_PHONE` (your WhatsApp number, so you can play Selvi). Balances are built only through `sim_credit` / `sim_debit` / `sim_move_to_savings` with fixed refs, so reruns never apply money twice.
 - `pnpm staff:create`: creates the staff dashboard user (`DEMO_STAFF_EMAIL`) with `app_metadata.role = staff`, and prints how to log in.
 - `pnpm test:functions`: Deno tests for `supabase/functions/_shared` (PINs, caller ids). SQL tests for the money functions are in `supabase/tests/` (run in a rolled-back transaction).
-- `pnpm e2e` (by hand, not CI): runs the India flow against the dev project by voice session and app: state transfer, auto-save, what arrived, pay the flower wholesaler ₹300, seettu, helper cash-in confirmed, my record. Then waits for the chain outbox and checks each contract event on Stellar, printing confirm → on-chain times.
-- `pnpm e2e:ng` (by hand, not CI): the Nigeria demo through the real functions: Mama Bisi records ₦500 and Funmi says Yes, pay Iya Tunde, ajo, advance (and auto-repay from a cash-in), cash-out code redeemed by the agent, my record. Prints Yes → tick seconds and a Stellar Expert link per step. `pnpm e2e:ng --read` only reads (balances, ajo, advance, record, agent float). Step 8 (also alone with `pnpm e2e:ng --new-user`): a new person on test number +234 700 000 0301 from sign-up to first payment: a wrong NIN refused, the wallet opened, a bank transfer in, ₦500 to Funmi by phone, ₦300 by code to someone not on Plus that Mama Bisi pays out, the tier limit refusing ₦250,000, and signing in again with phone + PIN.
+- `pnpm e2e` (by hand, not CI): runs the India flow against the dev project by voice session and app: state transfer, auto-save, what arrived, pay the flower wholesaler ₹300, helper cash-in confirmed, my record. Then waits for the chain outbox and checks each contract event on Stellar, printing confirm → on-chain times.
+- `pnpm e2e:ng` (by hand, not CI): the Nigeria demo through the real functions: Mama Bisi records ₦500 and Funmi says Yes, pay Iya Tunde, pay a shop by its code, save, loan, advance (and auto-repay from a cash-in), cash-out code redeemed by the agent, my record. Prints Yes → tick seconds and a Stellar Expert link per step. `pnpm e2e:ng --read` only reads (balances, savings, advance, record, agent float). Step 8 (also alone with `pnpm e2e:ng --new-user`): a new person on test number +234 700 000 0301 from sign-up to first payment: a wrong NIN refused, the wallet opened, a bank transfer in, ₦500 to Funmi by phone, ₦300 by code to someone not on Plus that Mama Bisi pays out, the tier limit refusing ₦250,000, and signing in again with phone + PIN.
 - `pnpm e2e:assets` (by hand, not CI; run `pnpm demo:reset ng` first): a test person on +234 700 000 0303 registers a sewing machine, takes the live photo, asks Amaka and Mama Bisi, both confirm, Mama Bisi inspects it; checks that only the hash and a rounded place are stored, the photo is private, the confidence score never reaches her, and stolen/found statuses. 22 checks.
 - `pnpm e2e:loan` step 8: after the loan flow, reads the agreement, both repayments and the pledged stall stock back from `plus_credit` on Stellar (stellar CLI, `admin` identity), checks nothing personal went on-chain, then "Repay all" closes it there as Repaid and frees the stall stock.
-- `pnpm e2e:vouch` (by hand, not CI): a test person on +234 700 000 0305 with a verified stall stock shares an ajo with Amaka and Tunde; her offer needs 150%. Amaka vouches, withdraws and vouches again, Tunde vouches (a second vouch and a vouch without ajo payments are refused); plus_credit shows two waiting; her offer drops to 100% and says why. She takes the loan: on plus_credit it carries both vouchers at 100%. It defaults: both can't vouch for 6 months, no money moves from them, the loan is Default on Stellar. Then puts the demo state back.
+- `pnpm e2e:vouch` (by hand, not CI): a test person on +234 700 000 0305 with a verified stall stock pays Amaka and Tunde ₦100 three times each on Stellar; her offer needs 150%. Amaka vouches, withdraws and vouches again, Tunde vouches (a second vouch, and a vouch from someone she has never paid, are refused); plus_credit shows two waiting; her offer drops to 100% and says why. She takes the loan: on plus_credit it carries both vouchers at 100%. It defaults: both can't vouch for 6 months, no money moves from them, the loan is Default on Stellar. Then puts the demo state back.
 - `pnpm e2e:verify` (by hand, not CI): a test person on +234 700 000 0304 with a verified stall stock takes a loan and repays ₦2,000; shares her record (consent, PIN, code; the code is stored nowhere, only its keyed hash); a lender's anonymous lookup returns only her reference and wallet, and plus_credit on Stellar shows the loan, the repayment and the stall stock; a wrong code is refused, every view logged, revoking stops the code. `--keep` prints one more open code to try `/verify` by hand.
 - `pnpm e2e:bank` (by hand, not CI; run `pnpm demo:reset ng` afterwards): as Funmi, the name lookup (Ironwood Bank 0123456789 → ADEBAYO STORES, a 999… number refused), ₦2,000 to the account (her Yes is enough; a retried Yes sends nothing twice), NGNT on Stellar to `anchor_ng` and the anchor's withdrawal record, "sent to bank (partner, simulated)" in her record, and ₦8,000 refused without her PIN.
 

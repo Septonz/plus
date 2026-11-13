@@ -393,11 +393,6 @@ async function main() {
       await page.waitText("Saved");
       await page.click("Close", { within: "[role=dialog]" });
       await page.click("Home", { exact: true });
-      await page.click("Ajo");
-      await page.waitText("this round");
-      await sleep(600);
-      await page.shot("47-ajo");
-      await page.click("Close", { exact: true });
       await page.click("Savings");
       await page.waitText("Stall shade");
       await sleep(600);
@@ -467,7 +462,7 @@ async function main() {
       await page.waitText("Recent activity");
       await sleep(2500);
       await page.shot("70-india-home");
-      for (const [pass, name] of [["To spend", "72-india-add-money"], ["Savings", "73-india-savings"], ["Seettu", "74-india-seettu"], ["Advance", "75-india-advance"]]) {
+      for (const [pass, name] of [["To spend", "72-india-add-money"], ["Savings", "73-india-savings"], ["Advance", "75-india-advance"]]) {
         await page.click(pass);
         await sleep(900);
         await page.shot(name);

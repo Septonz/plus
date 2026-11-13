@@ -157,7 +157,7 @@ function AssetView({ a, run, busy, onPhoto, onBack }: { a: Row; run: (n: string,
                   return (
                     <ListRow key={key} icon={c.kind === 'agent' ? 'shield' : 'person'} iconTone={picked.has(key) ? 'accent' : 'neutral'}
                       title={String(c.name)}
-                      subtitle={!c.eligible ? 'Can witness after 6 weeks with Plus and a verified ID' : c.how === 'agent' ? 'Plus agent' : c.how === 'ajo' ? 'From your ajo' : 'Someone you pay'}
+                      subtitle={!c.eligible ? 'Can witness after 6 weeks with Plus and a verified ID' : c.how === 'agent' ? 'Plus agent' : 'Someone you trade with'}
                       selected={picked.has(key)}
                       onClick={c.eligible ? () => setPicked((p) => { const n = new Set(p); if (n.has(key)) n.delete(key); else n.add(key); return n }) : undefined}
                       trailing={picked.has(key) ? <Icon name="check" /> : undefined} />

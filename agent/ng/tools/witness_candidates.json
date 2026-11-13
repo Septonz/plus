@@ -2,7 +2,7 @@
   "tool_config": {
     "type": "webhook",
     "name": "witness_candidates",
-    "description": "Who she can ask to confirm an asset: people from her ajo, people she pays, and her Plus agent. Only eligible people (verified ID, 6+ weeks with Plus, good standing) can witness.",
+    "description": "Who she can ask to confirm an asset: people she pays or who pay her, and her Plus agent. Only eligible people (verified ID, 6+ weeks with Plus, good standing) can witness.",
     "response_timeout_secs": 10,
     "api_schema": {
       "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/witness_candidates",

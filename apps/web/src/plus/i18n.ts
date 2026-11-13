@@ -14,7 +14,6 @@ export const T = {
 
   home: { ta: 'முகப்பு', en: 'Home' },
   pay: { ta: 'பணம் அனுப்பு', en: 'Pay' },
-  seettu: { ta: 'சீட்டு', en: 'Seettu' },
   advance: { ta: 'முன்பணம்', en: 'Advance' },
   record: { ta: 'என் கணக்கு', en: 'My record' },
   addMoney: { ta: 'பணம் வருவது', en: 'Add money' },
@@ -69,7 +68,6 @@ export const T = {
 
   received: { ta: 'வந்தது', en: 'Received' },
   paidOut: { ta: 'அனுப்பியது', en: 'Paid' },
-  intoSeettu: { ta: 'சீட்டுக்கு', en: 'Into seettu' },
   confirmedOnStellar: { ta: 'Stellar-ல பதிவானவை', en: 'Entries confirmed on Stellar' },
   history: { ta: 'வரலாறு', en: 'History' },
   openStellar: { ta: 'Stellar Expert-ல பாருங்க', en: 'See it on Stellar Expert' },

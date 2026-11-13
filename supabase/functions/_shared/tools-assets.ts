@@ -20,7 +20,7 @@ function refuse(text: string, error: string, extra: Record<string, unknown> = {}
 
 const NEXT_TEXT: Record<string, string> = {
   photo: "Next: a live photo of it, on her screen (she can say \"take the photo\").",
-  witnesses: "Next: two people who know her business confirm it (people from her ajo, people she pays, or her agent).",
+  witnesses: "Next: two people who know her business confirm it (people she pays or who pay her, or her agent).",
   wait_witnesses: "Waiting for her witnesses to confirm.",
   inspection: "Next: an agent inspects it (the top level).",
   wait_inspection: "Waiting for an agent to inspect it.",
@@ -120,7 +120,7 @@ export const ngWitnessCandidates: NgTool = async ({ user, assets }) => {
   return {
     ok: true,
     text: ok.length
-      ? `She can ask: ${ok.map((c) => `${c.name} (${c.how === "agent" ? "Plus agent" : c.how === "ajo" ? "her ajo" : "someone she pays"})`).join(", ")}. Two need to confirm.`
+      ? `She can ask: ${ok.map((c) => `${c.name} (${c.how === "agent" ? "Plus agent" : "someone she trades with"})`).join(", ")}. Two need to confirm.`
       : "Nobody she knows on Plus can witness yet (they need a verified ID and 6 weeks with Plus). Her Plus agent can.",
     candidates: cs.map(candidateView),
   };
