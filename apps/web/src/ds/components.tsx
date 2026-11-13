@@ -12,7 +12,7 @@ export const softSpring = { type: 'spring', stiffness: 260, damping: 30 } as con
 // ---------------------------------------------------------------------------- text
 
 /** English (or the main language) with an optional second language in a smaller muted line beneath. */
-/** The same words once tone marks and case are set aside ("Ajo" and "Àjọ"): no subtitle needed. */
+/** The same words once tone marks and case are set aside ("Savings" and "savings"): no subtitle needed. */
 export function sameWords(a: ReactNode, b: ReactNode): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') return false
   const n = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')

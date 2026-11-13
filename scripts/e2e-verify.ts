@@ -69,7 +69,7 @@ async function main() {
   const u = await signUp(url, anonKey, { name: "Verify Test", language: "en", phone: PHONE, pin, nin: testNin() });
   const me = (await db.from("users").select("id").eq("wa_phone", PHONE).is("archived_at", null).single()).data as { id: string };
   await db.from("users").update({ member_since: new Date(Date.now() - 8 * 7 * 86_400_000).toISOString() }).eq("id", me.id);
-  await db.from("credit_history_seed").insert(Array.from({ length: 9 }, (_, i) => ({ user_id: me.id, week_index: i + 1, money_in: "1250000", qualifying_tx: 6, saved: "100000" })));
+  await db.from("credit_history_seed").insert(Array.from({ length: 9 }, (_, i) => ({ user_id: me.id, week_index: i + 1, money_in: "1250000", qualifying_tx: 6, savings: "100000" })));
   await db.from("assets").insert({ user_id: me.id, type: "stock", description: "Stall stock (tomatoes)", estimated_value: "9000000", level: "independently_verified", status: "active", confidence: 85 });
   const tool = (name: string, body: Record<string, unknown> = {}) => call(`agent-tools/${name}`, body, u.accessToken);
   const loan = await tool("prepare_loan");

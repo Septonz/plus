@@ -18,8 +18,6 @@ sends Nigeria users to the Nigeria tools by their `market_id`, so the URLs are t
 | `prepare_pay` | Prepares a payment to a saved payee, or to anyone by phone (Plus user: wallet to wallet; not on Plus: a cash code by text) | `payee` or `phone` (+ `name`), `amount` (naira) |
 | `save_payee` | Saves someone she paid by phone | `name`, `phone` |
 | `bank_details` | Her account number for bank transfers in (Partner bank, simulated) | none |
-| `group_status` | Ajo: who paid, whose turn, read from the contract | none |
-| `prepare_ajo_contribution` | Prepares her ajo part for this round | none |
 | `loan_status` | Her loan picture: progress ("week 4 of 6") and an estimate before unlock; the offer, why, and the ladder after; or what's left on an open loan | none |
 | `prepare_loan` | Prepares accepting the offer (receive, cost, total); always the PIN on screen | `amount` (naira, optional: less than the offer) |
 | `prepare_loan_repay` | Prepares a repayment from her wallet, up to what she owes | `amount` (naira, optional: all) |

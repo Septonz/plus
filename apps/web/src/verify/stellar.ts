@@ -1,6 +1,6 @@
 // /verify reads a Plus record straight from Stellar testnet: the plus_credit contract (loans,
-// assets, vouches), her wallet's history on Horizon (ajo payments into the plus contract, first
-// activity) and plus_credit's recent events. Nothing here comes from Plus's database: Plus only
+// assets, vouches), her wallet's history on Horizon (savings-goal deposits into her pot on the plus
+// contract, first activity) and plus_credit's recent events. Nothing here comes from Plus's database: Plus only
 // turned the lender's code into her two public references (her wallet and her plus_credit ref).
 
 export const EXPLORER = 'https://stellar.expert/explorer/testnet'
@@ -31,14 +31,13 @@ export type ChainLoan = {
   collateral_pct: number; vouchers: string[]; opened_at: number; updated_at: number
 }
 export type ChainAsset = { ref: string; level: number; status: number; pledged_to: string | null; registered_at: number; updated_at: number }
-export type AjoPayment = { at: number; group: number; tx: string }
+export type SavingDeposit = { at: number; tx: string }
 export type ChainEvent = { name: string; at: string; tx: string; ref: string }
 
 export type Record = {
   wallet: string
   firstActivity: number | null
-  ajo: AjoPayment[]
-  periods: Map<number, number>
+  saves: SavingDeposit[]
   loans: ChainLoan[]
   assets: ChainAsset[]
   vouches: string[]
@@ -94,9 +93,13 @@ type HorizonOp = {
   parameters?: { value: string; type: string }[]
 }
 
-/** Her wallet's history: first activity, and every ajo payment (group_contribute on the plus contract). */
+/**
+ * Her wallet's history: first activity, and every deposit into her savings goal (pot_fund on the
+ * plus contract, by her or her auto-save). Piece 13: ajo payments (community savings, retired) no
+ * longer count.
+ */
 async function wallet(S: Sdk, account: string) {
-  const ajo: AjoPayment[] = []
+  const saves: SavingDeposit[] = []
   let first: number | null = null
   let url: string | null = `${HORIZON_URL}/accounts/${account}/operations?order=asc&limit=200`
   for (let page = 0; url && page < 10; page++) {
@@ -107,19 +110,13 @@ async function wallet(S: Sdk, account: string) {
     const recs = j._embedded.records
     if (first === null && recs[0]) first = Date.parse(recs[0].created_at)
     for (const op of recs) {
-      if (op.type !== 'invoke_host_function' || op.transaction_successful === false || !op.parameters || op.parameters.length < 4) continue
-      const [c, fn, , group] = op.parameters.map((p) => S.scValToNative(S.xdr.ScVal.fromXDR(p.value, 'base64')))
-      if (String(c) === PLUS_CONTRACT && String(fn) === 'group_contribute') ajo.push({ at: Date.parse(op.created_at), group: Number(group), tx: op.transaction_hash })
+      if (op.type !== 'invoke_host_function' || op.transaction_successful === false || !op.parameters || op.parameters.length < 2) continue
+      const [c, fn] = op.parameters.slice(0, 2).map((p) => S.scValToNative(S.xdr.ScVal.fromXDR(p.value, 'base64')))
+      if (String(c) === PLUS_CONTRACT && String(fn) === 'pot_fund') saves.push({ at: Date.parse(op.created_at), tx: op.transaction_hash })
     }
     url = recs.length === 200 ? j._links.next?.href ?? null : null
   }
-  const groups = [...new Set(ajo.map((p) => p.group))]
-  const periods = new Map<number, number>()
-  await Promise.all(groups.map(async (g) => {
-    const info = await simulate(S, PLUS_CONTRACT, 'group', [S.nativeToScVal(g, { type: 'u32' })]).catch(() => null) as { period_secs?: bigint } | null
-    if (info?.period_secs) periods.set(g, Number(info.period_secs))
-  }))
-  return { first, ajo, periods }
+  return { first, saves }
 }
 
 const EVENT_NAMES: globalThis.Record<string, string> = {
@@ -160,22 +157,14 @@ export async function readRecord(borrowerRef: string, account: string): Promise<
   const [c, w] = await Promise.all([credit(S, borrowerRef), wallet(S, account)])
   const refs = new Set([borrowerRef, ...c.loans.map((l) => l.ref), ...c.assets.map((a) => a.ref)])
   const ev = await events(S, refs).catch(() => ({ list: [] as ChainEvent[], from: null }))
-  return { wallet: account, firstActivity: w.first, ajo: w.ajo, periods: w.periods, ...c, events: ev.list, eventsFrom: ev.from }
+  return { wallet: account, firstActivity: w.first, saves: w.saves, ...c, events: ev.list, eventsFrom: ev.from }
 }
 
-/** On time: within its round (no more than 1.5 rounds after her previous payment into the same ajo). */
-export function ajoSummary(r: Pick<Record, 'ajo' | 'periods' | 'firstActivity'>, now = Date.now()) {
-  let onTime = 0
-  const last = new Map<number, number>()
-  for (const p of [...r.ajo].sort((a, b) => a.at - b.at)) {
-    const prev = last.get(p.group)
-    const period = (r.periods.get(p.group) ?? 86_400) * 1000
-    if (prev === undefined || p.at - prev <= period * 1.5) onTime++
-    last.set(p.group, p.at)
-  }
+/** How steadily she saves: deposits into her savings goal, and the weeks with at least one. */
+export function savingSummary(r: Pick<Record, 'saves' | 'firstActivity'>, now = Date.now()) {
   const WEEK = 7 * 86_400_000
   const start = r.firstActivity ?? now
   const weeks = Math.max(1, Math.ceil((now - start) / WEEK))
-  const weeksPaid = new Set(r.ajo.map((p) => Math.floor((p.at - start) / WEEK))).size
-  return { payments: r.ajo.length, onTime, onTimePct: r.ajo.length ? Math.round((onTime * 100) / r.ajo.length) : null, weeks, weeksPaid }
+  const weeksSaved = new Set(r.saves.map((p) => Math.floor((p.at - start) / WEEK))).size
+  return { deposits: r.saves.length, weeks, weeksSaved }
 }

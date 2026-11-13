@@ -4,9 +4,7 @@
 //
 //   1. Expire unanswered actions (cash-ins from agents wait 24 hours, then expire).
 //   2. Refresh the wallet_balances cache from Horizon for every Nigeria wallet.
-//   3. Ajo payouts: a pooled group whose round is due gets group_payout (partner pays; the contract
-//      repays the recipient's open advance first, then sends the rest).
-//   4. Cash-outs nobody redeemed: after 7 days she claims the claimable balance back.
+//   3. Cash-outs nobody redeemed: after 7 days she claims the claimable balance back.
 // Then it kicks chain-worker.
 //
 // POST .../scheduler/warm (cron every 5 minutes): pings every demo function's /health so none of
@@ -25,14 +23,12 @@ import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { jobGate } from "../_shared/cron.ts";
 import { DEMO_FUNCTIONS, json, kickChainWorker } from "../_shared/http.ts";
-import { contractReader, refreshBalances } from "../_shared/ng-chain.ts";
-import { payoutSplit } from "../_shared/tools-ng.ts";
-import { AJO_MEMBERS, convergeAndRecord, houseKeeping, inReset, type PoolRow, SHOP, startReset, TREASURY, agentSigner } from "../_shared/guests.ts";
+import { refreshBalances } from "../_shared/ng-chain.ts";
+import { convergeAndRecord, houseKeeping, inReset, type PoolRow, SHOP, startReset, TREASURY, agentSigner } from "../_shared/guests.ts";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
-const chain = contractReader(Deno.env.get("PLUS_CONTRACT_ID") ?? "");
 const RETURN_MARGIN_MS = 60 * 60_000; // the on-chain "not before 7 days" clock starts a few seconds after the row
 
 function must<T>(r: { data: T | null; error: { message: string } | null }, what: string): T {
@@ -52,67 +48,6 @@ async function refreshNigeria() {
   const ms = await refreshBalances(db, users.map((u) => u.id));
   ms.sort((a, b) => a - b);
   return { wallets: users.length, horizon_ms_p50: ms[Math.floor(ms.length / 2)] ?? null };
-}
-
-async function ajoPayouts(now: Date) {
-  const groups = must(
-    await db.from("groups").select("id, name, onchain_id, payout_once").eq("market_id", "ng").eq("mode", "pooled").not("onchain_id", "is", null)
-      .is("retired_at", null),
-    "groups",
-  ) as { id: string; name: string; onchain_id: number; payout_once: boolean }[];
-  const queued: string[] = [];
-  // Read every pot from the chain at once (one simulate each; 20+ guest ajos read one by one took
-  // longer than pg_net's 5 s), then pay out in order.
-  const read = await Promise.all(groups.map((grp) => chain.group(grp.onchain_id)));
-  for (const [i, grp] of groups.entries()) {
-    const g = read[i];
-    // Ledger time trails the wall clock by a few seconds: wait 10 s past due so NotDue can't happen.
-    // An empty pot (nobody paid this round) is not worth a transaction: skip it rather than pay ₦0.
-    if (!g || g.pot_minor === 0n || g.next_due.getTime() + 10_000 > now.getTime()) continue;
-    const round = Math.floor(g.next_due.getTime() / 1000);
-    const recipientPub = g.members[g.turn];
-    const { data: recipient } = await db.from("users").select("id").eq("stellar_pub", recipientPub).maybeSingle();
-    let transactionId: string | null = null;
-    if (recipient && g.pot_minor > 0n) {
-      // What reaches her wallet: the pot, minus her open advance (the contract repays that first).
-      const { net } = payoutSplit(g.pot_minor, await chain.advanceOf(recipientPub));
-      if (net > 0n) {
-        const t = must(
-          await db.from("transactions").upsert({
-            user_id: recipient.id,
-            market_id: "ng",
-            kind: "incoming",
-            source: "ajo_payout",
-            amount: net.toString(),
-            currency: "NGN",
-            rail: "stellar",
-            ref: `ajo_payout:${grp.onchain_id}:${round}`,
-            status: "pending",
-          }, { onConflict: "rail,ref", ignoreDuplicates: true }).select("id"),
-          "payout transaction",
-        ) as { id: string }[];
-        transactionId = t[0]?.id ?? null;
-      }
-    }
-    must(
-      await db.rpc("chain_enqueue_on", {
-        p_signer: "partner",
-        p_kind: "contract",
-        p_ref: `group_payout:${grp.onchain_id}:${round}`,
-        p_args: {
-          fn: "group_payout",
-          args: [{ t: "u32", v: grp.onchain_id }],
-          ...(transactionId ? { transaction_id: transactionId } : {}),
-          ...(recipient ? { refresh_user_ids: [recipient.id] } : {}),
-        },
-      }),
-      "enqueue payout",
-    );
-    // A guest's finished round (piece 12) pays out once, then the scheduler stops looking at it.
-    if (grp.payout_once) must(await db.from("groups").update({ retired_at: now.toISOString() }).eq("id", grp.id), "retire round");
-    queued.push(`${grp.name} round ${round}`);
-  }
-  return queued;
 }
 
 async function returnCashOuts(now: Date) {
@@ -202,9 +137,9 @@ async function warm() {
 }
 
 /** System accounts: the bank-rail anchor and the partner lender's lending account (piece 4). */
-/** Piece 12 adds the guests' treasury, shop, ajo members and agents. */
+/** Piece 12 adds the guests' treasury, shop and agents. */
 const SYSTEM_SIGNERS = new Set([
-  "anchor_ng", "lending_ng", TREASURY, SHOP.signer, ...AJO_MEMBERS.map((m) => m.signer), ...[0, 1, 2, 3].map(agentSigner),
+  "anchor_ng", "lending_ng", TREASURY, SHOP.signer, ...[0, 1, 2, 3].map(agentSigner),
 ]);
 
 const IDLE_MS = 30 * 60_000;
@@ -297,14 +232,15 @@ Deno.serve(async (req) => {
   const now = new Date();
   const t0 = performance.now();
   const expired = await step("expire", expireActions);
-  const [balances, payouts, returns, loans] = await Promise.all([
+  // Piece 13: community savings (ajo) is retired, so no more group payouts here. The groups tables
+  // and the contract's group_* functions stay, unused, for history.
+  const [balances, returns, loans] = await Promise.all([
     step("balances", refreshNigeria),
-    step("payouts", () => ajoPayouts(now)),
     step("cash_out_returns", () => returnCashOuts(now)),
     step("loans", loanMinimums),
   ]);
   const paid = (loans as { minimums_paid?: number })?.minimums_paid ?? 0;
-  const queued = (Array.isArray(payouts) && payouts.length > 0) || (Array.isArray(returns) && returns.length > 0) || paid > 0;
+  const queued = (Array.isArray(returns) && returns.length > 0) || paid > 0;
   if (queued) await kickChainWorker();
-  return json({ ok: true, expired, balances, payouts, returns, loans, ms: Math.round(performance.now() - t0) });
+  return json({ ok: true, expired, balances, returns, loans, ms: Math.round(performance.now() - t0) });
 });

@@ -1,5 +1,5 @@
 // Selvi's India screens. Money only moves through prepare -> the confirm sheet -> confirm_action.
-// Home is a stack of passes (Wallet, Savings, Seettu, Advance); a pass opens full-screen
+// Home is a stack of passes (Wallet, Savings, Advance); a pass opens full-screen
 // (PlusApp's CardDetail). Labels: English, with Tamil beneath in a muted line in Tamil mode.
 import { useEffect, useState, type ReactNode } from 'react'
 import { getMarket } from '@plus/markets'
@@ -14,7 +14,7 @@ import { useSays } from './screen'
 import { ErrorState, LoadingList, useLang, useT } from './ui'
 import { PresenterLink } from './presenter'
 
-export type Screen = 'home' | 'pay' | 'seettu' | 'advance' | 'record' | 'add' | 'savings' | 'settings'
+export type Screen = 'home' | 'pay' | 'advance' | 'record' | 'add' | 'savings' | 'settings'
 type Nav = { go: (s: Screen) => void }
 const EXPLORER = 'https://stellar.expert/explorer/testnet'
 
@@ -28,7 +28,7 @@ function B({ k, className = '' }: { k: Key; className?: string }) {
   return <Bilingual main={b.main} sub={b.sub} className={className} />
 }
 
-/** Read a composite tool (seettu, advance, record), refetching when Realtime says something changed. */
+/** Read a composite tool (advance, record), refetching when Realtime says something changed. */
 function useToolRead<R extends ToolResult>(name: string, version: number) {
   const [data, setData] = useState<R | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -57,15 +57,6 @@ const payeeIcon = (name: string) => (/flower/.test(name) ? 'flower' : /medical/.
 // Home
 // ---------------------------------------------------------------------------
 
-type GroupStatus = ToolResult & {
-  in_group: boolean
-  name: string
-  amount_text: string
-  paid_this_period: boolean
-  next_due: string | null
-  members: { name: string; position: number; is_me: boolean; contributions_on_stellar: number; total_text: string; verified_on_stellar: boolean; last_url: string | null }[]
-}
-
 type AdvanceStatus = ToolResult & {
   eligible: boolean
   limit_text: string
@@ -75,7 +66,7 @@ type AdvanceStatus = ToolResult & {
   owed_text: string
 }
 
-export type Detail = 'add' | 'savings' | 'seettu' | 'advance'
+export type Detail = 'add' | 'savings' | 'advance'
 
 export function Home({ data, go, open, onOpen }: { data: PlusData; open: Detail | null; onOpen: (d: Detail) => void } & Nav) {
   const { lang, setLang } = useLang()
@@ -86,17 +77,15 @@ export function Home({ data, go, open, onOpen }: { data: PlusData; open: Detail 
   // Adjustments are demo:reset bookkeeping, not her money moving.
   const recent = txs.filter((x) => x.kind !== 'adjustment').slice(0, 5)
   const [busy, setBusy] = useState<string | null>(null)
-  const { data: g } = useToolRead<GroupStatus>('group_status', data.version)
   const { data: adv } = useToolRead<AdvanceStatus>('advance_status', data.version)
   const name = me?.name ?? ''
   const autoSave = (me?.auto_save_bps ?? 0) / 100
   useSays(
     `Home, in ${lang === 'ta' ? 'Tamil' : 'English'}. To spend: ${account ? money(account.balance_paise) : 'loading'}. Savings: ${account ? money(account.savings_paise) : 'loading'} (${autoSave}% auto-save). ` +
-      (g ? (g.in_group ? `Seettu ${g.name}: ${g.paid_this_period ? 'paid this month' : `not paid yet (${g.amount_text})`}. ` : '') : '') +
       (adv ? `Advance: ${adv.open ? `${adv.owed_text} owed` : adv.eligible ? `up to ${adv.limit_text}` : 'not yet'}. ` : '') +
       (cashIns.length ? `Waiting for her answer: ${cashIns.map((a) => `${String(a.params.helper_name)} says she gave ${money(String(a.params.amount))} in cash`).join('; ')}. ` : '') +
       (recent.length ? `Latest: ${recent.slice(0, 3).map((x) => `${x.kind} ${money(x.amount)}`).join(', ')}. ` : '') +
-      'Cards: money, savings, seettu, advance. Tabs: Home, Pay, Activity, Profile. A language button.',
+      'Cards: money, savings, advance. Tabs: Home, Pay, Activity, Profile. A language button.',
   )
 
   async function answer(id: string, yes: boolean) {
@@ -173,15 +162,6 @@ export function Home({ data, go, open, onOpen }: { data: PlusData; open: Detail 
           onOpen={() => onOpen('savings')}
         />
         <Pass
-          id="seettu"
-          icon="group"
-          title={b('seettu').main}
-          sub={g ? (g.in_group ? `${g.name}${lang === 'ta' ? ` · ${T.seettu.ta}` : ''}` : t('nothingYet')) : ' '}
-          value={g?.in_group ? (g.paid_this_period ? T.paidThisMonth.en : g.amount_text) : undefined}
-          hidden={open === 'seettu'}
-          onOpen={() => onOpen('seettu')}
-        />
-        <Pass
           id="advance"
           icon="advance"
           title={b('advance').main}
@@ -212,8 +192,9 @@ const KIND_LABEL: Record<string, { ta: string; en: string }> = {
   saved: { ta: 'சேமிச்சது', en: 'Saved' },
   pay: { ta: 'அனுப்பியது', en: 'Paid' },
   paid: { ta: 'அனுப்பியது', en: 'Paid' },
-  group: { ta: 'சீட்டு', en: 'Seettu' },
-  group_contribution: { ta: 'சீட்டு', en: 'Seettu' },
+  // Community savings is retired (piece 13); her earlier on-chain records still show in history.
+  group: { ta: 'குழு சேமிப்பு', en: 'Group savings (earlier)' },
+  group_contribution: { ta: 'குழு சேமிப்பு', en: 'Group savings (earlier)' }, // retired (piece 13): old history rows keep their label
 }
 const KIND_ICON: Record<string, string> = { incoming: 'in', received: 'in', saved: 'savings', pay: 'pay', paid: 'pay', group: 'group', group_contribution: 'group' }
 
@@ -326,77 +307,6 @@ export function Pay({ data }: { data: PlusData } & Nav) {
 }
 
 // ---------------------------------------------------------------------------
-// Seettu
-// ---------------------------------------------------------------------------
-
-export function Seettu({ data }: { data: PlusData } & Nav) {
-  const { lang } = useLang()
-  const t = useT()
-  const { data: g, error } = useToolRead<GroupStatus>('group_status', data.version)
-  const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState<string | null>(null)
-  const myPendingContribution = data.txs.find((x) => x.kind === 'group_contribution' && !x.chain_tx_hash)
-  useSays(g ? `Seettu. ${g.text}${g.in_group && !g.paid_this_period ? ' Button: Pay now.' : ''}` : 'Seettu, loading.')
-
-  async function payNow() {
-    setBusy(true)
-    setMsg(null)
-    const r = await tool('prepare_group_contribution').catch(() => ({ text: '', error: 'network' }) as ToolResult)
-    setBusy(false)
-    if (!r.ok) setMsg(r.error === 'already_paid' ? t('paidThisMonth') : r.text)
-    else void data.refresh()
-  }
-
-  return (
-    <Loaded data={g} error={error} rows={4}>
-      {(g) => !g.in_group ? (
-        <EmptyState icon="group" title={<B k="seettu" />}>{g.text}</EmptyState>
-      ) : (
-        <>
-          <Card className="space-y-4">
-            <div>
-              <h2 className="text-2xl font-semibold">{g.name}</h2>
-              <p className="text-base text-secondary"><B k="thisMonth" /></p>
-            </div>
-            <AmountDisplay text={g.amount_text} size="lg" />
-            {g.paid_this_period ? (
-              <Notice tone="success"><B k="paidThisMonth" /></Notice>
-            ) : (
-              <>
-                <p className="text-base text-secondary"><B k="notPaidYet" /></p>
-                <Button className="w-full" onClick={() => void payNow()} loading={busy}>
-                  {lang === 'ta' ? `${T.payNow.en} · ${T.payNow.ta}` : T.payNow.en}
-                </Button>
-              </>
-            )}
-            {msg && <Notice>{msg}</Notice>}
-          </Card>
-
-          <Section title={<B k="members" />}>
-            <ListGroup>
-              {g.members.map((m) => (
-                <ListRow
-                  key={m.position}
-                  icon="person"
-                  iconTone={m.is_me ? 'accent' : 'neutral'}
-                  title={`${m.name}${m.is_me ? ` (${T.you.en})` : ''}`}
-                  subtitle={`${m.contributions_on_stellar} ${T.contributions.en} · ${m.total_text}`}
-                  trailing={
-                    m.is_me && myPendingContribution ? <VerifiedMark pending pendingLabel={T.confirming.en} />
-                      : m.verified_on_stellar ? <VerifiedMark url={m.last_url} label="Verified" /> : <span className="text-sm text-secondary">{T.notPaidYet.en}</span>
-                  }
-                />
-              ))}
-            </ListGroup>
-            <p className="px-1 text-sm text-secondary"><B k="privacyPlain" /></p>
-          </Section>
-        </>
-      )}
-    </Loaded>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Advance
 // ---------------------------------------------------------------------------
 
@@ -464,7 +374,7 @@ export function Advance({ data }: { data: PlusData } & Nav) {
 // ---------------------------------------------------------------------------
 
 type RecordResult = ToolResult & {
-  totals: { received_text: string; saved_text: string; paid_text: string; group_text: string }
+  totals: { received_text: string; saved_text: string; paid_text: string }
   confirmed_on_stellar: number
   waiting_for_stellar: number
   history: { type: string; kind: string; amount_text: string; at: string; url: string | null }[]
@@ -487,7 +397,6 @@ export function Record({ data }: { data: PlusData } & Nav) {
                   ['received', r.totals.received_text],
                   ['saved', r.totals.saved_text],
                   ['paidOut', r.totals.paid_text],
-                  ['intoSeettu', r.totals.group_text],
                 ] as const).map(([k, v]) => (
                   <div key={k}>
                     <dt className="text-sm text-secondary"><B k={k} /></dt>

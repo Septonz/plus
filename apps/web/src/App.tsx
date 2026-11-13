@@ -45,7 +45,7 @@ function App() {
       <header className="space-y-2">
         <span className="grid size-12 place-items-center rounded-2xl bg-accent text-2xl text-on-accent shadow-lift"><Icon name="add" strokeWidth={2} /></span>
         <h1 className="pt-2 text-4xl font-semibold">Plus</h1>
-        <p className="text-lg text-secondary">A voice-first wallet for market traders: pay, save, join an ajo and borrow fairly, on Stellar.</p>
+        <p className="text-lg text-secondary">A voice-first wallet for market traders: pay, save and borrow fairly, on Stellar.</p>
       </header>
 
       <div className="space-y-3">
@@ -84,7 +84,6 @@ function App() {
         <ListGroup>
           <ListRow title="Currency" trailing={<span className="text-base text-secondary">{market.currency.code} ({market.currency.symbol})</span>} />
           <ListRow title="Languages" trailing={<span className="text-base text-secondary">{market.spokenLanguages.join(', ')}</span>} />
-          <ListRow title="Group savings" trailing={<span className="text-base text-secondary">{market.groupSavings.localName}</span>} />
           {market.lending ? (
             <ListRow
               title="Loans"

@@ -24,7 +24,7 @@ const localNg = (p: string) => (p.startsWith('+234') ? `0${p.slice(4, 7)} ${p.sl
 /** Same rule as the server (tools-ng.ts): a spoken or tapped Yes up to ₦5,000, the PIN above. A loan always takes the PIN. */
 export function ngNeedsPin(a: PendingAction): boolean {
   if (a.kind === 'loan' || a.kind === 'record_share' || a.kind === 'vouch') return true
-  if (!['pay', 'pay_code', 'group_contribution', 'cash_out', 'advance', 'loan_repay', 'bank_send', 'save', 'savings_withdraw'].includes(a.kind)) return false
+  if (!['pay', 'pay_code', 'cash_out', 'advance', 'loan_repay', 'bank_send', 'save', 'savings_withdraw'].includes(a.kind)) return false
   return BigInt(String(a.params.amount ?? 0)) > BigInt(NG.pinThreshold) * 100n
 }
 
@@ -38,8 +38,6 @@ function to(a: PendingAction, lang: string): string {
       return `To ${String(p.payee_name ?? '')}, by code`
     case 'bank_send':
       return toWho(String(p.account_name ?? ''))
-    case 'group_contribution':
-      return toWho(String(p.group_name ?? 'Ajo'))
     case 'advance':
       return 'Advance into your wallet'
     case 'loan':
@@ -61,7 +59,7 @@ function to(a: PendingAction, lang: string): string {
     case 'savings_withdraw':
       return inLang('fromSavings', lang)
     case 'vouch':
-      return `Vouch for ${String(p.borrower_name ?? 'an ajo member')}'s next loan`
+      return `Vouch for ${String(p.borrower_name ?? 'them')}'s next loan`
     default:
       return ''
   }
@@ -102,7 +100,7 @@ function costLines(a: PendingAction, lang: string): CostLine[] {
       { label: 'Extra cost', value: naira(0n) },
     ]
   }
-  if (a.kind === 'pay' || a.kind === 'pay_code' || a.kind === 'group_contribution' || a.kind === 'cash_out' || a.kind === 'loan_repay' || a.kind === 'bank_send' || a.kind === 'save' || a.kind === 'savings_withdraw') {
+  if (a.kind === 'pay' || a.kind === 'pay_code' || a.kind === 'cash_out' || a.kind === 'loan_repay' || a.kind === 'bank_send' || a.kind === 'save' || a.kind === 'savings_withdraw') {
     return [{ label: L('fee'), value: naira(0n) }, { label: L('total'), value: naira(amount ?? 0n), strong: true }]
   }
   return []

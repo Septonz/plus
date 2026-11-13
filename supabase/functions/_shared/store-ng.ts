@@ -6,7 +6,7 @@ import { contractReader, refreshBalances } from "./ng-chain.ts";
 import { verifyPin as verifyPinRow } from "./pin.ts";
 import type { Payee } from "./payees.ts";
 import type { CreditAsset, CreditLoan, CreditWeek } from "./lending.ts";
-import { type CashOut, newPayCode, type NgGroup, type NgStore, type NgTx, type PlusPeer, type RecordShare, type Vouch, type VouchCheck } from "./tools-ng.ts";
+import { type CashOut, newPayCode, type NgStore, type NgTx, type PlusPeer, type RecordShare, type Vouch, type VouchCheck } from "./tools-ng.ts";
 import type { Action, CashIn } from "./tools.ts";
 
 const ACTION_COLS = "id, user_id, kind, params, readback, status, result, expires_at, created_by, created_at";
@@ -108,32 +108,6 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
         "transactions",
       ) as NgTx[];
     },
-    async contributionTxs(onchainId) {
-      // sync-events stores contract events with decoded topics: ["contributed", <group id>, "<G...>"].
-      const rows = must(
-        await db.from("chain_events").select("tx_hash, topics").eq("type", "contributed").eq("topics->>1", String(onchainId))
-          .order("ledger", { ascending: false }).limit(200),
-        "contributionTxs",
-      ) as { tx_hash: string; topics: unknown[] }[];
-      const latest = new Map<string, string>();
-      for (const r of rows) {
-        const who = String(r.topics[2] ?? "");
-        if (who && !latest.has(who)) latest.set(who, r.tx_hash);
-      }
-      return latest;
-    },
-    async myGroup(userId) {
-      // Her newest pooled group with an on-chain id (the Bodija Market Ajo for Funmi).
-      const links = must(
-        await db.from("group_members").select("group_id, groups!inner(id, name, onchain_id, mode, created_at)").eq("user_id", userId)
-          .eq("groups.mode", "pooled").not("groups.onchain_id", "is", null),
-        "myGroup",
-      ) as unknown as { group_id: string; groups: { id: string; name: string; onchain_id: number; created_at: string } }[];
-      const g = links.map((l) => l.groups).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-      if (!g) return null;
-      const members = must(await db.from("group_members").select("name, position, user_id").eq("group_id", g.id).order("position"), "members");
-      return { id: g.id, name: g.name, onchain_id: g.onchain_id, members } as NgGroup;
-    },
     async agentWallets() {
       const rows = must(
         await db.from("helpers").select("stellar_pub").eq("market_id", "ng").eq("role", "agent").eq("active", true).not("stellar_pub", "is", null)
@@ -182,22 +156,8 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
       });
       return { given: given.map((x) => view(x, x.borrower_user_id)), received: received.map((x) => view(x, x.voucher_user_id)) };
     },
-    async ajoPeers(userId) {
-      const mine = must(await db.from("group_members").select("group_id, groups!inner(name, created_at)").eq("user_id", userId), "my ajos") as unknown as
-        { group_id: string; groups: { name: string; created_at: string } }[];
-      if (!mine.length) return [];
-      const rows = must(
-        await db.from("group_members").select("group_id, user_id, users!inner(id, name, archived_at)").in("group_id", mine.map((m) => m.group_id))
-          .not("user_id", "is", null).neq("user_id", userId).is("users.archived_at", null),
-        "ajo peers",
-      ) as unknown as { group_id: string; user_id: string; users: { name: string | null } }[];
-      // Newest ajo first; each person once.
-      const order = [...mine].sort((a, b) => b.groups.created_at.localeCompare(a.groups.created_at));
-      const out = new Map<string, { user_id: string; name: string | null; group_name: string }>();
-      for (const m of order) for (const r of rows.filter((x) => x.group_id === m.group_id)) {
-        if (!out.has(r.user_id)) out.set(r.user_id, { user_id: r.user_id, name: r.users.name, group_name: m.groups.name });
-      }
-      return [...out.values()];
+    async tradePeers(userId) {
+      return must(await db.rpc("vouch_peers", { p_user_id: userId }), "vouch_peers") as { user_id: string; name: string | null; trades: number }[];
     },
     async vouchCheck(voucherId, borrowerId) {
       return must(await db.rpc("vouch_check", { p_voucher: voucherId, p_borrower: borrowerId }), "vouch_check") as VouchCheck;

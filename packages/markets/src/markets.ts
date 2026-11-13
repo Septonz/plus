@@ -25,7 +25,6 @@ export interface Market {
   incomingSources: string[];
   inboundCorridors: string[];
   autoSave: { enabled: boolean; defaultBps: number };
-  groupSavings: { mode: "record" | "pooled"; localName: string };
   /** repayFromCashInBps: share of each cash-in that repays an open advance (Nigeria: on-chain, automatic). */
   advance: { min: number; max: number; feeBps: number; eligibleAfterWeeks: number; repayFromCashInBps: number };
   /** Loans from a partner lender (Nigeria). null: not offered in this market yet. */
@@ -41,7 +40,7 @@ export interface Market {
   record: "attested" | "native";
   /** Money moves up to this amount (major units) are confirmed by a spoken or tapped Yes; above it, the PIN, typed on the app's PIN pad (never spoken). */
   pinThreshold: number;
-  /** Most a user may pay out per day (major units), across payments and group contributions. */
+  /** Most a user may pay out per day (major units), across payments and cash-outs. */
   payDailyLimit: number;
   idCheck: "partner_kyc_mock" | "nin_mock";
   /** Tiered KYC (modelled on Nigeria's tiers; the partner sets the exact limits). Tier 0 = sign-up not finished: no money moves. */
@@ -94,8 +93,9 @@ export interface Lending {
   /** The partner lender, as she sees it. */
   lenderLabel: string;
   /**
-   * Ajo vouches (piece 10): members in good standing (verified ID, `minWeeks`+ with Plus, every
-   * ajo payment on time) vouch for another member's next loan. With `min` or more, the collateral
+   * Vouches (piece 10; piece 13 rule): someone in good standing (verified ID, `minWeeks`+ with Plus,
+   * no missed loan payments) who has paid or been paid by the borrower at least 3 times on Plus
+   * vouches for her next loan. With `min` or more, the collateral
    * her offer needs is at most `collateralPct`. A voucher whose vouched loan defaults can't vouch
    * for `banMonths` months; no money is ever taken from her.
    */
@@ -167,7 +167,6 @@ export const MARKETS: Record<MarketId, Market> = {
     incomingSources: ["state_transfer", "wages", "family_abroad", "cash"],
     inboundCorridors: ["CA"],
     autoSave: { enabled: true, defaultBps: 1000 },
-    groupSavings: { mode: "record", localName: "seettu" },
     advance: { min: 2000, max: 10000, feeBps: 150, eligibleAfterWeeks: 8, repayFromCashInBps: 1000 },
     lending: null,
     cashOutCode: null,
@@ -207,7 +206,6 @@ export const MARKETS: Record<MarketId, Market> = {
     incomingSources: ["bank", "cash", "plus_user"],
     inboundCorridors: [],
     autoSave: { enabled: true, defaultBps: 1000 },
-    groupSavings: { mode: "pooled", localName: "ajo" },
     // The 1.5% advance is retired from the app (its contract functions stay); loans replace it.
     advance: { min: 5000, max: 30000, feeBps: 150, eligibleAfterWeeks: 8, repayFromCashInBps: 1000 },
     lending: {

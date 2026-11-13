@@ -12,15 +12,16 @@
 //               5. Mama Bisi's float: exactly ₦200,000 NGNT.
 //               6. Kemi: created on first run (a real sign-up on a test number, then the demo login);
 //                  put back in week 4 of 6 with money in during 3 of those weeks and no asset.
-//               6b. Vouches (piece 10): Tunde (an ajo member, made a Plus user) has vouched for her
-//                  next loan on plus_credit; any other waiting vouch (Amaka's) is withdrawn, so Amaka
-//                  can vouch live and the offer drops from 150% to 100% collateral.
-//               7. Ajo: if she already paid this round, a new Bodija Market Ajo round starts as a new
-//                  on-chain group with the same members; everyone except Funmi pays in (4 of 5 paid).
+//               6b. Vouches (piece 10, piece 13 rule): Funmi has paid Tunde and Amaka at least 3
+//                  times each on Stellar (topped up with real ₦100 payments if not); Tunde has vouched
+//                  for her next loan on plus_credit; any other waiting vouch (Amaka's) is withdrawn, so
+//                  Amaka can vouch live and the offer drops from 150% to 100% collateral.
+//               (Piece 13: the ajo is retired; the reset no longer starts ajo rounds. Old groups and
+//                their on-chain history are kept.)
 //   in (Selvi)  1. Pending actions and helper cash-ins waiting for her Yes -> expired.
 //               2. Open advance: the partner records a settlement on Stellar.
 //               3. Simulated bank: ₹2,350 to spend, ₹1,415 saved (one adjustment row per change).
-//               4. Seettu: if she already paid this round, a new round starts (groups.round_started_at).
+//               (Piece 13: the seettu is retired; old group rows are kept as history.)
 // Then it prints the state the app shows, read through the same tools the app calls.
 //
 // Transactions: the hash is written to scripts/.demo-reset-state.json before submitting; an
@@ -60,7 +61,7 @@ const LENDING_MIN = 1_000_000n; // naira: the partner lender's lending account p
 const KEMI_PHONE = "+2347000000401"; // a test number
 const KEMI_EMAIL = "demo-kemi@example.com";
 const AMAKA_EMAIL = "demo-amaka@example.com"; // Amaka witnesses Kemi's asset (piece 5) and vouches for Funmi (piece 10)
-const TUNDE_PHONE = "+2340000000302"; // Tunde (ajo member ng_member2), a Plus user from piece 10: he has vouched for Funmi
+const TUNDE_PHONE = "+2340000000302"; // Tunde (stellar identity ng_member2), a Plus user from piece 10: he has vouched for Funmi
 const SELVI_SPEND = 235_000n; // paise
 const SELVI_SAVED = 141_500n; // paise
 
@@ -199,7 +200,6 @@ const unwrap = <T>(r: unknown): T => {
   const v = (r as { result: unknown }).result as { unwrap?: () => unknown };
   return (typeof v?.unwrap === "function" ? v.unwrap() : v) as T;
 };
-type ChainGroup = { members: { tag: string; values: [string] }[]; contributed: boolean[]; amount: bigint; turn: number; next_due: bigint; pot: bigint };
 type ChainAdvance = { owed: bigint } | undefined;
 
 // ---------------------------------------------------------------------------
@@ -282,11 +282,7 @@ async function curateFunmi(funmiId: string, NGNT: Asset) {
     }
   }
   await waitForOutbox(["anchor_ng"]); // the transfers in land before her balance is set
-  // Her last ajo payment (a real group_contribute on the plus contract) shows too.
-  const ajo = must(await db.from("transactions").select("id").eq("user_id", funmiId).eq("kind", "group_contribution").eq("status", "completed")
-    .not("chain_tx_hash", "is", null).order("created_at", { ascending: false }).limit(1).maybeSingle(), "last ajo") as { id: string } | null;
-  if (ajo) must(await db.from("transactions").update({ hidden_from_history: false, created_at: daysAgo(5, 8) }).eq("id", ajo.id), "ajo row");
-  console.log(`  recent history: ${steps.length + (ajo ? 1 : 0)} real movements over the last 10 days (older rows hidden from her lists, kept)`);
+  console.log(`  recent history: ${steps.length} real movements over the last 10 days (older rows hidden from her lists, kept)`);
 }
 
 /** India: Selvi's own real rows (each recorded on Stellar), a few kept visible over the last 10 days. */
@@ -297,7 +293,7 @@ async function curateSelvi(selviId: string) {
   const pick = (kind: string, source?: string | null, skip = 0) => rows.filter((r) => r.kind === kind && (source === undefined || r.source === source))[skip];
   const chosen = [
     [pick("incoming", "state_transfer"), 9, 10], [pick("pay", undefined, 0), 8, 12], [pick("saved", "auto_save"), 7, 18],
-    [pick("incoming", "cash"), 5, 16], [pick("pay", undefined, 1), 4, 11], [pick("group_contribution"), 3, 9], [pick("pay", undefined, 2), 1, 17],
+    [pick("incoming", "cash"), 5, 16], [pick("pay", undefined, 1), 4, 11], [pick("pay", undefined, 2), 1, 17],
   ].filter(([r]) => r) as [{ id: string }, number, number][];
   must(await db.from("transactions").update({ hidden_from_history: true }).eq("user_id", selviId).eq("hidden_from_history", false), "hide older rows");
   for (const [r, d, h] of chosen) {
@@ -516,8 +512,9 @@ async function ensureAmaka(): Promise<string> {
 }
 
 /**
- * Tunde: an ajo member (ng_member2) on Plus for 18 weeks, verified ID, every ajo payment on time on
- * Stellar, so he can vouch. No login (the demo shows Amaka vouching live).
+ * Tunde: a trader (stellar identity ng_member2) on Plus for 18 weeks, verified ID, no missed loan
+ * payments, so he can vouch for anyone he has traded with 3+ times. No login (the demo shows Amaka
+ * vouching live).
  */
 async function ensureTunde(): Promise<string> {
   const found = must(await db.from("users").select("id").eq("stellar_pub", pub("ng_member2")).is("archived_at", null).maybeSingle(), "Tunde") as { id: string } | null;
@@ -526,8 +523,6 @@ async function ensureTunde(): Promise<string> {
     ? (must(await db.from("users").update(attrs).eq("id", found.id).select("id").single(), "Tunde") as { id: string }).id
     : (must(await db.from("users").insert({ market_id: "ng", wa_phone: TUNDE_PHONE, name: "Tunde", language: "en", stellar_pub: pub("ng_member2"), auto_save_bps: 1000, ...attrs })
       .select("id").single(), "Tunde") as { id: string }).id;
-  // His place in every ajo he is in (the Bodija Market Ajo rounds) points at his Plus account.
-  must(await db.from("group_members").update({ user_id: id }).eq("member_ref", pub("ng_member2")).is("user_id", null), "Tunde's ajo places");
   return id;
 }
 
@@ -535,6 +530,30 @@ async function ensureTunde(): Promise<string> {
  * Piece 10: Tunde has vouched for Funmi's next loan (on plus_credit); Amaka hasn't yet, so she can
  * say "I vouch for Funmi" in the demo and Funmi's offer drops from 150% to 100% collateral.
  */
+/**
+ * Piece 13 rule: a voucher must have paid or been paid by the borrower at least 3 times on Stellar.
+ * Funmi pays Tunde and Amaka ₦100 each until they have 3 shared payments (real payments; both sides
+ * get a row with the same hash, dated a few weeks back and hidden from her lists). Her wallet is set
+ * back in step 4.
+ */
+async function ensureTrades(funmiId: string, NGNT: Asset, peers: [string, string, string][]) {
+  const have = new Map(((await db.rpc("vouch_peers", { p_user_id: funmiId })).data as { user_id: string; trades: number }[] ?? []).map((p) => [p.user_id, Number(p.trades)]));
+  for (const [peerId, signer, name] of peers) {
+    const n = have.get(peerId) ?? 0;
+    for (let i = n; i < 3; i++) {
+      const hash = await send(`Funmi pays ${name} ₦100 (trade ${i + 1} of 3)`,
+        await classic("funmi", [Operation.payment({ destination: pub(signer), asset: NGNT, amount: "100" })], true));
+      const at = daysAgo(20 + i * 7, 12);
+      const row = { market_id: "ng", currency: "NGN", rail: "stellar", tx_hash: hash, chain_tx_hash: hash, status: "completed", created_at: at, hidden_from_history: true };
+      must(await db.from("transactions").upsert([
+        { ...row, user_id: funmiId, kind: "pay", counterparty: name, amount: "-10000", ref: `demo_trade:${hash}` },
+        { ...row, user_id: peerId, kind: "incoming", counterparty: "Funmi", amount: "10000", ref: `demo_trade_in:${hash}` },
+      ], { onConflict: "rail,ref", ignoreDuplicates: true }), "trade rows");
+    }
+    console.log(`  ${name}: ${Math.max(n, 3)} payments with Funmi on Stellar${n < 3 ? ` (${3 - n} added)` : ""}`);
+  }
+}
+
 async function resetVouches(funmiId: string, amakaId: string, tundeId: string) {
   must(await db.from("users").update({ vouch_banned_until: null }).in("id", [amakaId, tundeId]), "vouch bans");
   const waiting = must(await db.from("vouches").select("id, voucher_user_id").eq("borrower_user_id", funmiId).eq("status", "active"), "vouches") as { id: string; voucher_user_id: string }[];
@@ -631,8 +650,8 @@ async function resetNigeria() {
   await settleLoans(funmi.id, "Funmi");
   const me = must(await db.from("users").select("member_since").eq("id", funmi.id).single(), "member_since") as { member_since: string };
   const fw = weekOf(me.member_since);
-  const seeded = await seedHistory(funmi.id, new Map(Array.from({ length: fw }, (_, i) => [i + 1, { money_in: 12_500n, tx: 6, saved: 1_000n, savings: fw - i <= 8 && (fw - i) % 4 !== 3 ? 500n : 0n }])));
-  console.log(`  week ${fw} with Plus; history seeded for ${seeded} weeks (about ₦12,500 in a week, ajo every week)`);
+  const seeded = await seedHistory(funmi.id, new Map(Array.from({ length: fw }, (_, i) => [i + 1, { money_in: 12_500n, tx: 6, saved: 0n, savings: 1_000n }])));
+  console.log(`  week ${fw} with Plus; history seeded for ${seeded} weeks (about ₦12,500 in a week, a savings deposit every week)`);
   const stock = must(await db.from("assets").select("id").eq("user_id", funmi.id).eq("description", "Stall stock (tomatoes)").maybeSingle(), "stock") as { id: string } | null;
   const asset = { user_id: funmi.id, type: "stock", description: "Stall stock (tomatoes)", estimated_value: "9000000", level: "independently_verified", status: "active", confidence: 85 };
   if (stock) must(await db.from("assets").update(asset).eq("id", stock.id), "stock");
@@ -642,6 +661,9 @@ async function resetNigeria() {
   must(await db.from("payees").upsert({ user_id: funmi.id, name: "Landlord", bank_code: "D01", account_number: "0123456789", account_name: "ADEBAYO STORES" },
     { onConflict: "user_id,name" }), "Funmi's landlord");
   console.log("  saved bank account: Landlord, ADEBAYO STORES, Ironwood Bank •••• 6789 (simulated)");
+
+  console.log("\n3b2. Payments with Tunde and Amaka (so they may vouch for her)");
+  await ensureTrades(funmi.id, NGNT, [[tunde, "ng_member2", "Tunde"], [amaka, "amaka", "Amaka"]]);
 
   console.log("\n3c. Her recent history (what Home and Activity show)");
   await curateFunmi(funmi.id, NGNT);
@@ -689,7 +711,7 @@ async function resetNigeria() {
   }
   const kn = await seedHistory(kemi.id, new Map([
     [1, { money_in: 8_000n, tx: 3, saved: 0n }],
-    [3, { money_in: 9_000n, tx: 3, saved: 500n }],
+    [3, { money_in: 9_000n, tx: 3, saved: 0n, savings: 500n }],
     [4, { money_in: 9_000n, tx: 2, saved: 0n }],
   ]));
   console.log(`  week 4 of 6; money in during 3 weeks; ${kn} weeks seeded; no verified asset yet`);
@@ -701,63 +723,17 @@ async function resetNigeria() {
   const { data: ok } = await db.rpc("asset_witness_eligible", { p_user_id: amaka });
   console.log(`  ${AMAKA_EMAIL}: tier 2, 20 weeks with Plus, ${ok ? "can witness" : "NOT eligible to witness"}; Kemi's saved payee`);
 
-  console.log("\n4e. Ajo vouches (Tunde has vouched for Funmi; Amaka vouches live)");
+  console.log("\n4e. Vouches (Tunde has vouched for Funmi; Amaka vouches live)");
   await resetVouches(funmi.id, amaka, tunde);
-
-  console.log("\n5. Ajo round");
-  const links = must(await db.from("group_members").select("group_id, groups!inner(id, name, onchain_id, mode, amount, period_secs, created_at)")
-    .eq("user_id", funmi.id).eq("groups.mode", "pooled").not("groups.onchain_id", "is", null), "groups") as unknown as
-    { groups: { id: string; name: string; onchain_id: number; amount: number; period_secs: number; created_at: string } }[];
-  const current = links.map((l) => l.groups).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-  if (!current) throw new Error("Funmi is in no ajo; run pnpm seed:db");
-  const g = unwrap<ChainGroup>(await plus("partner").group({ group_id: current.onchain_id }));
-  const members = g.members.map((m) => m.values[0]);
-  const mine = members.indexOf(pub("funmi"));
-  if (!g.contributed[mine]) {
-    console.log(`  ${current.name} (group ${current.onchain_id}): she hasn't paid this round; nothing to do`);
-  } else {
-    const names = ["amaka", "funmi", "ng_member2", "ng_member3", "ng_member4"];
-    const nameOf = (p: string) => names.find((n) => pub(n) === p);
-    if (members.some((m) => !nameOf(m))) throw new Error("ajo member without a local stellar identity");
-    const amount = BigInt(g.amount);
-    const createHash_ = await send(`Amaka starts a new ${current.name} round (group_create, 1 day)`,
-      await signed(await plus("amaka").group_create({
-        organizer: pub("amaka"),
-        members: members.map((m) => ({ tag: "Account", values: [m] })) as PlusClient.Party[],
-        asset: NGNT_SAC,
-        amount,
-        period_secs: BigInt(current.period_secs),
-        pooled: true,
-      }, { timeoutInSeconds: 60 }) as unknown as Assembled));
-    const tx = await server.getTransaction(createHash_);
-    const newId = Number(tx.status === rpc.Api.GetTransactionStatus.SUCCESS && tx.returnValue ? scValToNative(tx.returnValue) : NaN);
-    if (!Number.isInteger(newId)) throw new Error("could not read the new group id");
-    for (const m of members.filter((p) => p !== pub("funmi"))) {
-      const n = nameOf(m)!;
-      if ((await assetBalance(n, NGNT)) < amount) {
-        await send(`issuer gives ${n} ₦5,000 for the ajo`, await classic("issuer", [Operation.payment({ destination: m, asset: NGNT, amount: "5000" })]));
-      }
-      await send(`${n} pays ${naira(amount)} into the new round`, await signed(await plus(n).group_contribute({ user: m, group_id: newId }, { timeoutInSeconds: 60 }) as unknown as Assembled));
-    }
-    const fresh = unwrap<ChainGroup>(await plus("partner").group({ group_id: newId }));
-    const row = must(await db.from("groups").insert({
-      market_id: "ng", name: current.name, mode: "pooled", onchain_id: newId, amount: current.amount,
-      period_secs: current.period_secs, next_due: new Date(Number(fresh.next_due) * 1000).toISOString(),
-    }).select("id").single(), "new group") as { id: string };
-    const oldMembers = must(await db.from("group_members").select("user_id, member_ref, name, position").eq("group_id", current.id).order("position"), "members") as Record<string, unknown>[];
-    must(await db.from("group_members").insert(oldMembers.map((m) => ({ ...m, group_id: row.id }))), "new members");
-    console.log(`  new round: group ${newId}; ${current.name} (group ${current.onchain_id}) keeps its history and still pays out when due`);
-  }
 
   // Refresh the balance cache now (the scheduler does it every minute anyway).
   await fetch(`${url}/functions/v1/scheduler`, { method: "POST", headers: { "x-plus-secret": process.env.AGENT_SHARED_SECRET! }, body: "{}" });
 
   console.log("\nFunmi's starting state (read through the app's own tools)");
   const t = await asUser("demo-funmi@example.com");
-  const [bal, ajo, loan, outs] = await Promise.all([t("get_balance"), t("group_status"), t("loan_status"), t("cash_outs")]);
+  const [bal, loan, outs] = await Promise.all([t("get_balance"), t("loan_status"), t("cash_outs")]);
   const { count: waiting } = await db.from("pending_actions").select("id", { count: "exact", head: true }).eq("user_id", funmi.id).eq("status", "pending");
   console.log(`  wallet     ${bal.text}`);
-  console.log(`  ajo        ${ajo.text}`);
   console.log(`  loan       ${loan.text}`);
   console.log(`  cash-outs  ${((outs.cash_outs ?? []) as { status: string }[]).filter((c) => c.status === "issued").length} unused codes`);
   console.log(`  waiting    ${waiting ?? 0} pending actions`);
@@ -819,28 +795,11 @@ async function resetIndia() {
     { balance_paise: number; savings_paise: number };
   console.log(`  ₹${acct.balance_paise / 100} to spend, ₹${acct.savings_paise / 100} saved`);
 
-  console.log("\n4. Seettu round");
-  const link = must(await db.from("group_members").select("group_id, groups!inner(id, name, period_secs, round_started_at)").eq("user_id", selvi.id).limit(1).maybeSingle(), "seettu") as
-    { groups: { id: string; name: string; period_secs: number; round_started_at: string | null } } | null;
-  if (link) {
-    const g = link.groups;
-    const since = new Date(Math.max(Date.now() - g.period_secs * 1000, g.round_started_at ? Date.parse(g.round_started_at) : 0)).toISOString();
-    const { count } = await db.from("transactions").select("id", { count: "exact", head: true })
-      .eq("user_id", selvi.id).eq("kind", "group_contribution").eq("source", g.id).gte("created_at", since);
-    if (count) {
-      must(await db.from("groups").update({ round_started_at: new Date().toISOString() }).eq("id", g.id), "new round");
-      console.log(`  ${g.name}: new round started (her earlier contributions stay on her record)`);
-    } else {
-      console.log(`  ${g.name}: she hasn't paid this round; nothing to do`);
-    }
-  }
-
   console.log("\nSelvi's starting state (read through the app's own tools)");
   const t = await asUser("demo-selvi@example.com");
-  const [bal, seettu, advance] = await Promise.all([t("get_balance"), t("group_status"), t("advance_status")]);
+  const [bal, advance] = await Promise.all([t("get_balance"), t("advance_status")]);
   const { count: waiting } = await db.from("pending_actions").select("id", { count: "exact", head: true }).eq("user_id", selvi.id).eq("status", "pending");
   console.log(`  bank       ${bal.text}`);
-  console.log(`  seettu     ${seettu.text}`);
   console.log(`  advance    ${advance.text}`);
   console.log(`  waiting    ${waiting ?? 0} pending actions`);
   const { count: meenaWaiting } = await db.from("cash_events").select("id", { count: "exact", head: true }).eq("helper_id", meena.id).eq("status", "awaiting_user");

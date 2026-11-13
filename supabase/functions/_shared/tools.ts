@@ -117,12 +117,8 @@ export interface Store {
   /** Newest first; rows hidden from her history are left out unless includeHidden. */
   transactions(userId: string, limit: number, includeHidden?: boolean): Promise<Tx[]>;
   awaitingCashIns(userId: string): Promise<CashIn[]>;
-  myGroup(userId: string): Promise<{ group: Group; members: Member[] } | null>;
-  lastContribution(userId: string, groupId: string, sinceIso: string): Promise<Tx | null>;
   /** Contract events about this on-chain ref (attested, contribution_recorded, limit_set, advance_*). */
   chainEventsForRef(refHex: string): Promise<ChainEvent[]>;
-  /** contribution_recorded events of one on-chain group. */
-  groupRecords(onchainGroupId: number): Promise<ChainEvent[]>;
   /** Outbox rows for this ref not yet on-chain. */
   chainPending(refHex: string): Promise<number>;
   updateUser(userId: string, patch: { language?: string; trusted_contact_phone?: string | null }): Promise<void>;
@@ -241,7 +237,6 @@ export const getUser: Tool = async ({ user, store }) => {
     kyc_tier: user.kyc_tier,
     auto_save_bps: user.auto_save_bps,
     has_pin: hasPin,
-    group_savings_name: market.groupSavings.localName,
     cash_ins_waiting: cash.map((c) => ({ ...c, amount_text: show(c.amount, user.market_id) })),
     pending_actions: pending.map((a) => actionFields(a, user.market_id)),
   };
@@ -311,12 +306,12 @@ export const myRecord: Tool = async ({ user, store, explorer, contractId }) => {
     user.ref_hash ? store.chainEventsForRef(user.ref_hash) : Promise.resolve([] as ChainEvent[]),
     user.ref_hash ? store.chainPending(user.ref_hash) : Promise.resolve(0),
   ]);
-  let received = 0n, saved = 0n, paid = 0n, group = 0n;
+  let received = 0n, saved = 0n, paid = 0n;
   for (const t of txs) {
     const a = big(t.amount);
     if (t.kind === "incoming") received += a;
     else if (t.kind === "saved") saved += -a;
-    else if (t.kind === "group_contribution") group += -a;
+    else if (t.kind === "group_contribution") continue; // community savings (retired in piece 13): history only
     else if (t.kind !== "adjustment" && a < 0n) paid += -a; // demo resets are not spending
   }
   const recordEvents = events.filter((e) => e.type === "attested" || e.type === "contribution_recorded");
@@ -332,18 +327,16 @@ export const myRecord: Tool = async ({ user, store, explorer, contractId }) => {
   }));
   const recordUrl = explorer && contractId ? `${explorer}/contract/${contractId}` : null;
   return {
-    text: `Her record in Plus: ${say(received, m)} received, ${say(saved, m)} saved, ${say(paid, m)} paid, ` +
-      `${say(group, m)} into her ${getMarket(m).groupSavings.localName}. ${recordEvents.length} entries are confirmed on Stellar` +
+    text: `Her record in Plus: ${say(received, m)} received, ${say(saved, m)} saved, ${say(paid, m)} paid. ` +
+      `${recordEvents.length} entries are confirmed on Stellar` +
       (waiting > 0 ? `, ${waiting} more on the way.` : ".") + " Her name is never on the chain, only a code.",
     totals: {
       received_minor: String(received),
       saved_minor: String(saved),
       paid_minor: String(paid),
-      group_minor: String(group),
       received_text: show(received, m),
       saved_text: show(saved, m),
       paid_text: show(paid, m),
-      group_text: show(group, m),
     },
     confirmed_on_stellar: recordEvents.length,
     waiting_for_stellar: waiting,
@@ -359,62 +352,6 @@ export const myRecord: Tool = async ({ user, store, explorer, contractId }) => {
       url: t.chain_tx_hash ? link(t.chain_tx_hash) : null,
     })),
     record_url: recordUrl,
-  };
-};
-
-/** Start of the current round: one period back, or the hand-started round if that is later. */
-export function roundStart(group: Pick<Group, "period_secs" | "round_started_at">, now: Date): string {
-  const byPeriod = now.getTime() - group.period_secs * 1000;
-  const started = group.round_started_at ? new Date(group.round_started_at).getTime() : 0;
-  return new Date(Math.max(byPeriod, started)).toISOString();
-}
-
-export const groupStatus: Tool = async ({ user, store, now = new Date(), explorer }) => {
-  const m = user.market_id;
-  const mine = await store.myGroup(user.id);
-  const local = getMarket(m).groupSavings.localName;
-  if (!mine) return { text: `She is not in a ${local} yet.`, in_group: false };
-  const { group, members } = mine;
-  const periodStart = roundStart(group, now);
-  const [paid, records] = await Promise.all([
-    store.lastContribution(user.id, group.id, periodStart),
-    group.onchain_id !== null ? store.groupRecords(group.onchain_id) : Promise.resolve([] as ChainEvent[]),
-  ]);
-  const byRef = new Map<string, ChainEvent[]>();
-  for (const e of records) {
-    const ref = String(e.topics[2] ?? "");
-    byRef.set(ref, [...(byRef.get(ref) ?? []), e]);
-  }
-  const memberRows = members.map((mm) => {
-    const ev = mm.member_ref ? byRef.get(mm.member_ref) ?? [] : [];
-    const last = ev[0];
-    return {
-      name: mm.name,
-      position: mm.position,
-      is_me: mm.user_id === user.id,
-      contributions_on_stellar: ev.length,
-      total_text: show(ev.reduce((s, e) => s + chainToMinor(e.data?.amount), 0n), m),
-      verified_on_stellar: ev.length > 0,
-      last_tx_hash: last?.tx_hash ?? null,
-      last_url: last && explorer ? `${explorer}/tx/${last.tx_hash}` : null,
-    };
-  });
-  const amountText = say(group.amount, m);
-  return {
-    text: paid
-      ? `Her ${local} contribution of ${amountText} is paid for this month. ${members.length} members.`
-      : `This month's ${local} contribution is ${amountText}, not paid yet. ${members.length} members.`,
-    in_group: true,
-    group_id: group.id,
-    onchain_id: group.onchain_id,
-    name: group.name,
-    local_name: local,
-    amount_minor: String(group.amount),
-    amount_text: show(group.amount, m),
-    period_days: Math.round(group.period_secs / 86_400),
-    next_due: group.next_due,
-    paid_this_period: paid !== null,
-    members: memberRows,
   };
 };
 
@@ -533,39 +470,6 @@ export const preparePay: Tool = async ({ user, store, args, now = new Date() }) 
   };
 };
 
-export const prepareGroupContribution: Tool = async ({ user, store, now = new Date() }) => {
-  const m = user.market_id;
-  const mine = await store.myGroup(user.id);
-  const local = getMarket(m).groupSavings.localName;
-  if (!mine) return refuse(`She is not in a ${local}.`, "no_group");
-  const { group } = mine;
-  const periodStart = roundStart(group, now);
-  if (await store.lastContribution(user.id, group.id, periodStart)) {
-    return refuse(`This month's ${local} is already paid.`, "already_paid");
-  }
-  const amount = big(group.amount);
-  const acct = await store.account(user.id);
-  if (!acct || big(acct.balance_paise) < amount) {
-    return refuse(`Not enough money for the ${local}: she has ${say(acct?.balance_paise ?? 0, m)} to spend.`, "insufficient_funds");
-  }
-  const overLimit = spendAllowed(user, amount, await store.paidSince(user.id, dayStart(m, now)));
-  if (overLimit) return overLimit;
-  const a = await store.createAction({
-    user_id: user.id,
-    kind: "group_contribution",
-    params: { amount: String(amount), group_id: group.id, group_name: group.name },
-    readback: `${show(amount, m)} to your ${local}`,
-    ttl_secs: ACTION_TTL_SECS,
-  });
-  const pin = needsPin(a, m);
-  return {
-    text: `Read back: ${say(amount, m)} for this month's ${local}. ${confirmHint(pin)}`,
-    ok: true,
-    ...actionFields(a, m),
-    amount_text: show(amount, m),
-  };
-};
-
 // ---------------------------------------------------------------------------
 // Confirm / reject
 // ---------------------------------------------------------------------------
@@ -579,8 +483,6 @@ function resultText(a: Action, user: User, balance?: Account | null): string {
       switch (a.kind) {
         case "pay":
           return `Done: paid ${say(String(r.amount ?? a.params.amount), m)} to ${String(r.payee_name ?? a.params.payee_name)}.${bal}`;
-        case "group_contribution":
-          return `Done: ${say(String(r.amount ?? a.params.amount), m)} paid to her ${getMarket(m).groupSavings.localName}. It will show on Stellar in a minute.${bal}`;
         case "set_auto_save":
           return `Done: she now saves ${Number(r.bps ?? a.params.bps) / 100}% of money that arrives.`;
         case "confirm_cash_in":
@@ -706,12 +608,11 @@ export const help: Tool = async ({ user, store }) => {
   const can = [
     "check her balance, her savings and what came in",
     "pay a saved person: the flower wholesaler, the medical shop, and others",
-    "pay her seettu and see who has paid",
     "change her auto-save percentage",
     "see her advance",
     "hear her record on Stellar",
     "change the app's language (Tamil or English) and her trusted person",
-    "move to any screen: home, money, savings, seettu, advance, pay, activity, profile",
+    "move to any screen: home, money, savings, advance, pay, activity, profile",
   ];
   const first: string[] = [];
   for (const c of cash) first.push(`${c.helper_name} says she gave ${say(c.amount, m)} in cash: is that right?`);
@@ -738,11 +639,11 @@ export const VOICE_TOOLS: Record<string, Tool> = {
   what_arrived: whatArrived,
   set_auto_save: setAutoSave,
   prepare_pay: preparePay,
-  prepare_group_contribution: prepareGroupContribution,
   confirm_action: confirmAction,
   reject_action: rejectAction,
   my_record: myRecord,
-  group_status: groupStatus,
+  // Piece 13: community savings (seettu) is retired from the app and the agent; the groups tables and
+  // the contract's group record functions stay, unused, for history.
   advance_status: advanceStatus,
 };
 

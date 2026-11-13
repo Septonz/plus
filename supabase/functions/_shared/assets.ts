@@ -125,7 +125,7 @@ export interface Candidate {
   kind: "user" | "agent";
   id: string;
   name: string;
-  /** How she knows them: "ajo", "paid", "agent". */
+  /** How she knows them: "paid" (she pays them or they pay her), "agent". */
   how: string;
   eligible: boolean;
 }

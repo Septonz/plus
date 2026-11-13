@@ -3,11 +3,11 @@
 //
 // seed (idempotent; run again to finish or grow the pool):
 //   1. System wallets made inside Supabase, keys straight into Vault (scheduler/provision): the
-//      guests' treasury, the shop (Mama Put Canteen), the ajo members (Iya Sade, Baba Femi,
-//      Mama Ifeoma), the shared demo agent (guest_agent0, "Mama Bisi") and guest agents 1 to 3.
+//      guests' treasury, the shop (Mama Put Canteen), the shared demo agent (guest_agent0, "Mama
+//      Bisi") and guest agents 1 to 3. (Piece 12's ajo members are retired with the ajo in piece 13.)
 //   2. The issuer funds the treasury (the hash is written to scripts/.guests-state.json before it is
 //      submitted, and an earlier unfinished one is looked up first, never resubmitted blindly).
-//   3. The shop, the ajo members and the agents as Plus rows; agents 1 to 3 get a login (no password
+//   3. The shop and the agents as Plus rows; agents 1 to 3 get a login (no password
 //      anyone knows: the app signs in with a one-time token from agent-tools/guest_start).
 //   4. GUEST_POOL_SIZE (default 20) guest traders signed up through the real sign-up on test
 //      numbers +234 700 000 0601.., then each place asked for a reset; scheduler/guests runs the
@@ -44,11 +44,6 @@ const NAMES = [
   "Aisha", "Funke", "Jumoke", "Lami", "Omolara", "Patience", "Remi", "Shade", "Temitope", "Yemisi",
 ];
 const guestPhone = (slot: number) => `+2347000000${600 + slot}`;
-const MEMBERS = [
-  { signer: "ajo_m1", name: "Iya Sade", phone: "+2347000000691" },
-  { signer: "ajo_m2", name: "Baba Femi", phone: "+2347000000692" },
-  { signer: "ajo_m3", name: "Mama Ifeoma", phone: "+2347000000693" },
-];
 const SHOP = { signer: "guest_shop", name: "Mama Put Canteen", phone: "+2347000000690" };
 const AGENTS = [
   { slot: 0, name: "Mama Bisi", phone: "+2347000000680" }, // the shared demo agent behind every guest's pretend cash
@@ -56,7 +51,7 @@ const AGENTS = [
   { slot: 2, name: "Agent Halima", phone: "+2347000000682" },
   { slot: 3, name: "Agent Musa", phone: "+2347000000683" },
 ];
-const SIGNERS = ["guest_treasury", SHOP.signer, ...MEMBERS.map((m) => m.signer), ...AGENTS.map((a) => `guest_agent${a.slot}`)];
+const SIGNERS = ["guest_treasury", SHOP.signer, ...AGENTS.map((a) => `guest_agent${a.slot}`)];
 
 function must<T>(r: { data: T | null; error: { message: string } | null }, what: string): T {
   if (r.error) throw new Error(`${what}: ${r.error.message}`);
@@ -225,13 +220,12 @@ async function seed() {
   if (have < TREASURY_TARGET * UNIT / 2n) await issuerPays(`issuer funds the guests' treasury to ${naira(TREASURY_TARGET * UNIT)}`, pubs.guest_treasury, TREASURY_TARGET * UNIT - have, NGNT);
   else console.log(`  treasury holds ${naira(have)}`);
 
-  console.log("3. Shop, ajo members, agents");
+  console.log("3. Shop, agents");
   await upsertUser({ ...SHOP, pub: pubs[SHOP.signer], weeks: 60, payCode: true });
-  for (const m of MEMBERS) await upsertUser({ ...m, pub: pubs[m.signer], weeks: 30 });
   for (const a of AGENTS) await upsertAgent(a, pubs[`guest_agent${a.slot}`]);
   must(await db.from("guest_pool").update({ reset_requested_at: new Date().toISOString() }).eq("kind", "agent").is("reset_done_at", null), "agents reset");
   const shop = must(await db.from("users").select("pay_code").eq("wa_phone", SHOP.phone).single(), "shop") as { pay_code: string };
-  console.log(`  ✓ ${SHOP.name} pay code ${shop.pay_code.slice(0, 3)}-${shop.pay_code.slice(3)}; ${MEMBERS.map((m) => m.name).join(", ")}; ${AGENTS.map((a) => a.name).join(", ")}`);
+  console.log(`  ✓ ${SHOP.name} pay code ${shop.pay_code.slice(0, 3)}-${shop.pay_code.slice(3)}; ${AGENTS.map((a) => a.name).join(", ")}`);
 
   // The shared demo agent pays part of every guest's history: its float first.
   for (let i = 0; i < 20; i++) {

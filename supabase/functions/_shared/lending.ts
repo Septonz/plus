@@ -11,8 +11,9 @@ export interface CreditWeek {
   week: number;
   money_in: bigint;
   qualifying_tx: number;
+  /** Retired (piece 13): ajo payments that week. Still read from history, never scored. */
   saved: bigint;
-  /** Piece 11: savings deposits (her goal pot on Stellar) that week. */
+  /** Savings-goal deposits that week (her own saves and auto-save, into her pot on Stellar). */
   savings?: bigint;
 }
 
@@ -60,7 +61,7 @@ export interface CreditInput {
   weeks: CreditWeek[];
   assets: CreditAsset[];
   loans: CreditLoan[];
-  /** Piece 10: ajo members' vouches waiting for her next loan (first names only). */
+  /** Vouches waiting for her next loan (first names only). */
   vouches?: { name: string | null }[];
   now: Date;
 }
@@ -112,10 +113,9 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
   // Savings consistency looks at her last 8 weeks (or fewer, if she is newer).
   const considered = Math.max(1, Math.min(8, week));
   const recent = sofar.filter((w) => w.week > week - considered);
-  const ajoWeeks = recent.filter((w) => w.saved > 0n).length;
-  const potWeeks = recent.filter((w) => (w.savings ?? 0n) > 0n).length;
-  // A week counts when she put money aside at all: ajo or her savings goal.
-  const savedWeeks = recent.filter((w) => w.saved > 0n || (w.savings ?? 0n) > 0n).length;
+  // Piece 13: a week counts when she paid into her savings goal (a save or auto-save). Ajo payments
+  // (community savings, retired) no longer count.
+  const savedWeeks = recent.filter((w) => (w.savings ?? 0n) > 0n).length;
   const identity = input.kyc_tier >= 2;
   const open = input.loans.find((l) => OPEN_STATUSES.has(l.status)) ?? null;
   // Postgres returns a freeze "until repaid" as the string "infinity".
@@ -149,7 +149,7 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
   const top = L.ladder[stepIndex];
   // The top step repeats: from its second loan on, its collateral drops (laterCollateralPct).
   const step = repaidLoans >= L.ladder.length && top.laterCollateralPct !== undefined ? { ...top, collateralPct: top.laterCollateralPct } : top;
-  // Piece 10: enough ajo vouches lower the collateral this step needs (never raise it).
+  // Piece 10: enough vouches lower the collateral this step needs (never raise it).
   const vouches = input.vouches ?? [];
   const vouched = L.vouch !== undefined && vouches.length >= L.vouch.min && L.vouch.collateralPct < step.collateralPct;
   const collateralPct = vouched ? L.vouch!.collateralPct : step.collateralPct;
@@ -171,7 +171,7 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
   const why = [
     { key: "activity", label: "Activity", weight: L.weights.activity, points: Math.round(activity * L.weights.activity), detail: `${activeWeeks} active weeks and ${qualifying} qualifying transactions since joining Plus` },
     { key: "assets", label: "Verified assets", weight: L.weights.assets, points: Math.round(assetsPart * L.weights.assets), detail: verified.length ? `${verified[0].description}, ${levelWords(verified[0].level)}` : "None verified yet" },
-    { key: "savings", label: "Savings consistency", weight: L.weights.savings, points: Math.round(savings * L.weights.savings), detail: `Ajo paid in ${ajoWeeks} of ${considered} weeks` + (potWeeks > 0 ? ` · saved in ${potWeeks} of ${considered} weeks` : "") },
+    { key: "savings", label: "Savings consistency", weight: L.weights.savings, points: Math.round(savings * L.weights.savings), detail: `Saved in ${savedWeeks} of ${considered} weeks` },
   ];
 
   // Before unlock: an estimate, not an offer, from what she does now.
@@ -196,7 +196,7 @@ export function creditPicture(input: CreditInput, L = lendingRules()) {
       : null,
     vouch: {
       count: vouches.length,
-      names: vouches.map((v) => v.name ?? "An ajo member"),
+      names: vouches.map((v) => v.name ?? "Someone on Plus"),
       needed: L.vouch?.min ?? null,
       applied: vouched,
       collateral_pct: collateralPct,

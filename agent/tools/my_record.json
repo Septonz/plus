@@ -2,7 +2,7 @@
   "tool_config": {
     "type": "webhook",
     "name": "my_record",
-    "description": "Her record: totals received, saved, paid and put into the seettu, how many entries are confirmed on Stellar, and a link she can share.",
+    "description": "Her record: totals received, saved and paid, how many entries are confirmed on Stellar, and a link she can share.",
     "response_timeout_secs": 10,
     "api_schema": {
       "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/my_record",

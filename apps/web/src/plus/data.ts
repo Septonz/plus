@@ -25,7 +25,7 @@ export type Tx = {
 }
 export type PendingAction = {
   id: string
-  kind: 'pay' | 'group_contribution' | 'set_auto_save' | 'confirm_cash_in' | string
+  kind: 'pay' | 'set_auto_save' | 'confirm_cash_in' | string
   params: Record<string, unknown>
   readback: string
   status: string
@@ -56,7 +56,7 @@ export type PlusData = {
 export const money = (minor: number | string | bigint, market: MarketId = 'in') => formatMoney(BigInt(minor), market)
 
 export function needsPin(a: PendingAction, market: MarketId = 'in'): boolean {
-  if (a.kind !== 'pay' && a.kind !== 'group_contribution') return false
+  if (a.kind !== 'pay') return false
   return BigInt(String(a.params.amount ?? 0)) > BigInt(getMarket(market).pinThreshold) * 100n
 }
 

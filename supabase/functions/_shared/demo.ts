@@ -21,7 +21,7 @@ export const DEMO_LIMITS = { per10min: 15, perDay: 120 } as const;
 
 /** Tools that move money (or start moving it): counted for demo people. */
 export const MONEY_TOOLS: ReadonlySet<string> = new Set([
-  "prepare_pay", "prepare_ajo_contribution", "prepare_group_contribution", "prepare_advance", "prepare_cashout",
+  "prepare_pay", "prepare_advance", "prepare_cashout",
   "new_cashout_code", "confirm_action", "simulate_bank_transfer", "prepare_loan", "prepare_repay", "request_more_time",
   "record_cash_in", "redeem_code", "guest_cash_in", "guest_agent_paid",
 ]);

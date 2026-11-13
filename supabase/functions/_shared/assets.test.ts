@@ -97,7 +97,7 @@ function memStore() {
     },
     candidates: async (): Promise<Candidate[]> => [
       { kind: "user", id: "amaka", name: "Amaka Obi", how: "paid", eligible: true },
-      { kind: "user", id: "new", name: "Tobi", how: "ajo", eligible: false },
+      { kind: "user", id: "new", name: "Tobi", how: "paid", eligible: false },
       { kind: "agent", id: "bisi", name: "Mama Bisi", how: "agent", eligible: true },
     ],
     requestWitness: async (_u, id, who) => {

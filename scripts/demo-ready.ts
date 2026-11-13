@@ -275,13 +275,13 @@ async function demoPaths() {
     line(ms < 2000 && !err, label, `${ms} ms${err ? ` (${String(err)})` : ""}`);
     return r;
   };
-  for (const [label, name] of [["balance", "get_balance"], ["ajo", "group_status"], ["loan offer", "loan_status"], ["savings", "savings_status"],
+  for (const [label, name] of [["balance", "get_balance"], ["loan offer", "loan_status"], ["savings", "savings_status"],
     ["vouches", "my_vouches"], ["activity", "my_record"], ["cash-out codes", "cash_outs"]] as const) {
     await time(label, () => tool(name));
   }
   // Prepared, then cancelled: warms the prepare and confirm paths without moving money.
   for (const [label, name, body] of [["pay Iya Tunde (prepare)", "prepare_pay", { payee: "Iya Tunde", amount: 2000 }],
-    ["pay my ajo (prepare)", "prepare_ajo_contribution", {}], ["accept loan (prepare)", "prepare_loan", {}],
+    ["accept loan (prepare)", "prepare_loan", {}],
     ["cash out (prepare)", "prepare_cashout", { amount: 3000 }], ["save (prepare)", "prepare_save", { amount: 1000 }]] as const) {
     const r = await time(label, () => tool(name, body as Record<string, unknown>)) as Record<string, unknown> | undefined;
     if (r?.action_id) await tool("reject_action", { action_id: r.action_id });

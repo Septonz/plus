@@ -1,8 +1,11 @@
-// pnpm e2e:vouch: ajo vouches end to end (piece 10). TESTNET and the dev project only.
+// pnpm e2e:vouch: vouches end to end (piece 10; piece 13 rule). TESTNET and the dev project only.
 //
 //   1. A test person (+2347000000305; each run archives the previous one) with a compressed history
-//      and a verified stall stock shares an ajo with Amaka and Tunde (a Plus-only ajo row; their
-//      on-chain ajo payments are their real ones). Her offer needs 150% collateral.
+//      and a verified stall stock. A bank transfer comes in, and she pays Amaka and Tunde ₦100 three
+//      times each on Stellar: under the piece 13 rule, anyone in good standing (verified ID, 6+ weeks,
+//      no missed loan payments) can vouch for someone they have paid or been paid by 3+ times.
+//      Her offer needs 150% collateral. (She is marked a demo account for the run, so she may pay
+//      the demo people; the mark goes with her when the next run archives her.)
 //   2. Amaka vouches, withdraws, vouches again; Tunde vouches. Each one is written to plus_credit.
 //      Her offer now explains: 100% instead of 150%. Someone not in good standing is refused.
 //   3. She takes the loan with her PIN: on plus_credit the loan carries both vouchers, needs 100%,
@@ -19,6 +22,13 @@ const { db, url } = adminClient();
 const anonKey = process.env.VITE_SUPABASE_ANON_KEY!;
 const PHONE = "+2347000000305";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+async function until(ok: () => Promise<boolean>, what: string, ms = 120_000) {
+  const t0 = Date.now();
+  while (!(await ok())) {
+    if (Date.now() - t0 > ms) throw new Error(`${what}: not done after ${ms / 1000} s`);
+    await sleep(1500);
+  }
+}
 const call = plusFetch(url);
 let failures = 0;
 function check(ok: boolean, what: string, detail = "") {
@@ -63,15 +73,27 @@ async function main() {
   const funmi = must(await db.from("users").select("id").eq("name", "Funmi").eq("market_id", "ng").is("archived_at", null).single(), "Funmi") as { id: string };
   if (!tunde) throw new Error("Tunde is not a Plus user yet: run pnpm demo:reset ng first");
 
-  console.log("1. A borrower in an ajo with Amaka and Tunde");
+  console.log("1. A borrower who has paid Amaka and Tunde 3 times each");
   const u = await signUp(url, anonKey, { name: "Vouch Test", language: "en", phone: PHONE, pin, nin: testNin() });
   const me = (await db.from("users").select("id").eq("wa_phone", PHONE).is("archived_at", null).single()).data as { id: string };
   await db.from("users").update({ member_since: new Date(Date.now() - 8 * 7 * 86_400_000).toISOString() }).eq("id", me.id);
-  await db.from("credit_history_seed").insert(Array.from({ length: 9 }, (_, i) => ({ user_id: me.id, week_index: i + 1, money_in: "1250000", qualifying_tx: 6, saved: "100000" })));
+  await db.from("credit_history_seed").insert(Array.from({ length: 9 }, (_, i) => ({ user_id: me.id, week_index: i + 1, money_in: "1250000", qualifying_tx: 6, savings: "100000" })));
   const stock = must(await db.from("assets").insert({ user_id: me.id, type: "stock", description: "Stall stock (peppers)", estimated_value: "9000000", level: "independently_verified", status: "active", confidence: 85 }).select("id").single(), "stock") as { id: string };
-  const g = must(await db.from("groups").insert({ market_id: "ng", name: "Vouch Test Ajo", mode: "record", amount: 100000, period_secs: 86400 }).select("id").single(), "group") as { id: string };
-  must(await db.from("group_members").insert([[me.id, "Vouch Test"], [amaka.id, "Amaka"], [tunde.id, "Tunde"]].map(([user_id, name], position) => ({ group_id: g.id, user_id, name, position }))), "members");
   const tool = (name: string, body: Record<string, unknown> = {}) => call(`agent-tools/${name}`, body, u.accessToken);
+  must(await db.from("users").update({ demo_login: true }).eq("id", me.id), "demo mark");
+  must(await db.rpc("ng_bank_transfer_in", { p_user_id: me.id, p_amount: 500_000, p_repay: 0, p_ref: `e2e_vouch_${Date.now()}`, p_sender: "A customer" }), "money in");
+  await until(async () => ((await db.from("transactions").select("status").eq("user_id", me.id).eq("kind", "incoming")).data ?? []).some((t) => t.status === "completed"), "her ₦5,000 in");
+  const phones = must(await db.from("users").select("id, wa_phone").in("id", [amaka.id, tunde.id]), "phones") as { id: string; wa_phone: string }[];
+  for (const p of phones) {
+    for (let i = 0; i < 3; i++) {
+      const prep = await tool("prepare_pay", { phone: p.wa_phone, amount: "100" });
+      if (!prep.action_id) throw new Error(`prepare_pay: ${String(prep.text)}`);
+      const yes = await tool("confirm_action", { action_id: prep.action_id, pin });
+      await until(async () => (await db.from("transactions").select("status").eq("id", String(yes.transaction_id)).single()).data?.status === "completed", "payment on Stellar");
+    }
+  }
+  const t = must(await db.rpc("vouch_check", { p_voucher: amaka.id, p_borrower: me.id }), "check") as { ok: boolean; trades?: number; reason?: string };
+  check(t.ok && t.trades === 3, "Amaka may vouch: 3 payments between them on Stellar", String(t.trades ?? t.reason));
   const before = await tool("loan_status");
   check((before.offer as Record<string, unknown>)?.collateral_pct === 150, "her first offer needs 150% collateral", String((before.offer as Record<string, unknown>)?.amount_text));
 
@@ -83,7 +105,9 @@ async function main() {
   const dup = await db.rpc("vouch_record", { p_voucher: amaka.id, p_borrower: me.id });
   check(/vouch_already/.test(dup.error?.message ?? ""), "a second vouch from Amaka is refused");
   const self = (await db.rpc("vouch_check", { p_voucher: me.id, p_borrower: amaka.id })).data as { ok: boolean; reason: string };
-  check(!self.ok && self.reason === "no_ajo_payments", "she can't vouch herself yet (no ajo payments on Stellar)", self.reason);
+  void self;
+  const stranger = (await db.rpc("vouch_check", { p_voucher: me.id, p_borrower: funmi.id })).data as { ok: boolean; reason: string; trades: number };
+  check(!stranger.ok && stranger.reason === "few_trades", "she can't vouch for Funmi: they have never paid each other", `${stranger.reason}, ${stranger.trades}`);
   await settled([v1, v2, v3]);
   const myRef = await ref(me.id);
   const waiting = credit("vouches_for", "--borrower", myRef) as string[];
@@ -126,9 +150,11 @@ async function main() {
   console.log("5. Amaka's and Tunde's demo state back");
   must(await db.from("loans").update({ closed_by_reset: true }).eq("id", loan.id), "close test loan");
   must(await db.from("users").update({ vouch_banned_until: null }).in("id", [amaka.id, tunde.id]), "clear bans");
-  must(await db.from("group_members").delete().eq("group_id", g.id), "test ajo members");
   const { data: tv } = await db.from("vouches").select("id").eq("voucher_user_id", tunde.id).eq("borrower_user_id", funmi.id).eq("status", "active");
-  if (!tv?.length) must(await db.rpc("vouch_record", { p_voucher: tunde.id, p_borrower: funmi.id }), "Tunde vouches for Funmi again");
+  if (!tv?.length) {
+    const { error } = await db.rpc("vouch_record", { p_voucher: tunde.id, p_borrower: funmi.id });
+    if (error) console.log(`  (Tunde's vouch for Funmi: ${error.message}; pnpm demo:reset ng puts it back)`);
+  }
   const back = (await db.rpc("vouch_check", { p_voucher: amaka.id, p_borrower: funmi.id })).data as { ok: boolean };
   check(back.ok, "Amaka can vouch for Funmi again; Tunde's vouch for Funmi is waiting");
 

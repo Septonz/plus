@@ -2,7 +2,7 @@
   "tool_config": {
     "type": "webhook",
     "name": "prepare_vouch",
-    "description": "Vouch for a member of her ajo's next loan (\"I vouch for Funmi\"). Checks she is in good standing; read back that no money is ever taken from her and that she can't vouch for 6 months if the loan isn't repaid; she types her PIN on screen.",
+    "description": "Vouch for the next loan of someone she has paid, or been paid by, at least 3 times on Plus (\"I vouch for Funmi\"). Checks she is in good standing; read back that no money is ever taken from her and that she can't vouch for 6 months if the loan isn't repaid; she types her PIN on screen.",
     "response_timeout_secs": 10,
     "api_schema": {
       "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/prepare_vouch",
@@ -26,7 +26,7 @@
           },
           "name": {
             "type": "string",
-            "description": "The ajo member's name as she said it, e.g. \"Funmi\"."
+            "description": "The person's name as she said it, e.g. \"Funmi\"."
           }
         },
         "required": [

@@ -1,4 +1,6 @@
-// Plus testnet seed. Run with `pnpm seed`. `pnpm seed --fresh` redeploys the
+// Plus testnet seed. Run with `pnpm seed`. (Piece 13: the seettu and ajo groups it creates are
+// retired community savings, kept so a fresh environment has the same on-chain history; the app
+// no longer offers them.) `pnpm seed --fresh` redeploys the
 // contract first (new `plus` alias, bindings, Supabase secret, web env), so totals
 // never double.
 //

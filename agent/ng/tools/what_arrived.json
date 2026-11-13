@@ -2,7 +2,7 @@
   "tool_config": {
     "type": "webhook",
     "name": "what_arrived",
-    "description": "What money came in recently: cash-ins waiting for her answer first, then payments and ajo payouts. Read the text as given.",
+    "description": "What money came in recently: cash-ins waiting for her answer first, then payments. Read the text as given.",
     "response_timeout_secs": 10,
     "api_schema": {
       "url": "https://qoqmnjzfjhpemwleipth.supabase.co/functions/v1/agent-tools/what_arrived",

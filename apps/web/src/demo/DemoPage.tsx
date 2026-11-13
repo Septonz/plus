@@ -4,8 +4,8 @@
 //   Top: Nigeria / India switch.
 //   Left: the Plus app in a phone frame, signed in as Funmi (or Selvi): /app?as=funmi in an iframe
 //         with its own login, so both phones stay signed in and the switch is instant.
-//   Right: a live feed of the Stellar transactions behind what the phone does (Funmi, Mama Bisi, the
-//         ajo pot, the advance pool; Selvi's record in India), each with the seconds from her Yes to
+//   Right: a live feed of the Stellar transactions behind what the phone does (Funmi, Mama Bisi, her
+//         savings pot, the partner lender; Selvi's record in India), each with the seconds from her Yes to
 //         confirmed on-chain and a Stellar Expert link. Read through the staff-only demo_feed().
 // Always dark and cinematic (whatever the projector laptop's setting): the dark tokens are set on
 // the page's root element, so every design-system component below reads them.
@@ -262,24 +262,27 @@ function Phone({ src, title, hidden }: { src: string; title: string; hidden: boo
 
 // ---------------------------------------------------------------------------
 
-const ATTEST_WORDS: Record<string, string> = { pay: 'payment', incoming: 'money in', saved: 'saved', group_contribution: 'seettu', cash_out: 'cash out' }
+const ATTEST_WORDS: Record<string, string> = { pay: 'payment', incoming: 'money in', saved: 'saved', group_contribution: 'group savings (earlier)', cash_out: 'cash out' } // group_contribution: retired community savings (piece 13), history rows only
 
 function describe(r: FeedRow, market: Market): string {
   const who = r.person ?? PEOPLE[market].name
   if (r.kind === 'payment') {
     if (r.tx_kind === 'incoming' && r.tx_source === 'cash') return `Mama Bisi → ${who}: cash-in`
-    if (r.tx_kind === 'incoming' && r.tx_source === 'ajo_payout') return `Ajo payout → ${who}`
+    if (r.tx_kind === 'loan') return `Partner lender → ${who}: her loan`
+    if (r.tx_kind === 'loan_repay') return `${who} repays the partner lender`
     if (r.tx_kind === 'pay') return `${who} pays her supplier`
     return `Payment for ${who}`
   }
   if (r.kind === 'claimable_create') return `${who} cashes out: held on Stellar for an agent`
   if (r.kind === 'claimable_claim') return r.account === 'Mama Bisi' ? `Mama Bisi redeems ${who}'s cash-out code` : `Unused cash-out goes back to ${who}`
-  if (r.fn === 'group_contribute') return `${who} pays into the ajo pot`
-  if (r.fn === 'group_payout') return r.person ? `Ajo pot pays ${r.person}` : 'Ajo pot pays this round'
+  if (r.fn === 'pot_fund') return `${who} saves into her goal`
+  if (r.fn === 'pot_send') return `${who} takes money out of her savings`
+  // Community savings is retired (piece 13); older rows can still scroll past.
+  if (r.fn === 'group_contribute' || r.fn === 'group_payout') return 'Group savings (earlier)'
   if (r.fn === 'request_advance') return `Advance pool → ${who}`
   if (r.fn === 'repay') return `${who} repays the advance pool`
   if (r.kind === 'attest') return `${who}'s record: ${ATTEST_WORDS[r.tx_kind ?? ''] ?? 'entry'}`
-  if (r.kind === 'group_record') return `${who}'s seettu payment recorded`
+  if (r.kind === 'group_record') return `${who}'s group savings (earlier) recorded`
   if (r.kind === 'record_advance') return `${who}'s advance recorded`
   if (r.kind === 'record_repayment') return `${who}'s repayment recorded`
   return r.kind

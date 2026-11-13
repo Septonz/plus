@@ -1,8 +1,9 @@
 // Piece 12: guest traders and guest agents for the public test link (one each per visitor).
 //
 // A guest trader is a real Plus user (signed up through the real sign-up on a test number, wallet
-// key in Vault) with Funmi's whole story: 8 weeks of history, an ajo with members, a savings goal
-// with auto-save, verified stall stock, one vouch, a ₦30,000 loan offer and saved payees.
+// key in Vault) with Funmi's whole story: 8 weeks of history, a savings goal with auto-save (saved
+// every week), verified stall stock, a ₦30,000 loan offer and saved payees. (Piece 13: no ajo; the
+// community-savings rounds and the ajo members' vouch from piece 12 are gone.)
 //
 // Reset (on reassignment after 30 idle minutes, and nightly) has two halves:
 //   guestDbReset   instant, in the database: waiting actions expired, codes returned, loan settled
@@ -10,8 +11,7 @@
 //                  settings, the compressed history, the rate-limit log.
 //   guestConverge  on Stellar, one step per call, through the chain outbox (never signed here):
 //                  waits until the guest's own queue is clear (the piece 11 lesson), then the savings
-//                  pot, the first-time history, the pot balance, the wallet balance, a fresh ajo
-//                  round with the other members paid in, and the vouch. Each step enqueues and
+//                  pot, the first-time history, the pot balance and the wallet balance. Each step enqueues and
 //                  returns; the next call (scheduler/guests every minute, or a loop) moves on.
 // Every reset row's ref names the guest and the reset (guest<slot>:<generation>:<what>), so a call
 // repeated during the same reset never queues anything twice.
@@ -42,22 +42,13 @@ export const GUEST = {
   goal: 50_000n * N,
   goalName: "Stall shade",
   autoSaveBps: 1000,
-  ajoAmount: 2_000n * N,
-  ajoPeriodSecs: 7 * 86_400,
   weeks: 8,
   stock: { type: "stock", description: "Stall stock (tomatoes)", estimated_value: "9000000", level: "independently_verified", status: "active", confidence: 85 },
   agentFloat: 200_000n * N, // a guest agent's float
   sharedFloat: 500_000n * N, // the shared demo agent (pretend cash-ins and pay-outs for every guest)
-  memberMin: 10_000n * N, // an ajo member keeps at least this
   lendingMin: 1_000_000n * N,
 } as const;
 
-/** The other members of every guest's ajo (system wallets in Vault, users without a login). */
-export const AJO_MEMBERS = [
-  { signer: "ajo_m1", name: "Iya Sade", phone: "+2347000000691" },
-  { signer: "ajo_m2", name: "Baba Femi", phone: "+2347000000692" },
-  { signer: "ajo_m3", name: "Mama Ifeoma", phone: "+2347000000693" },
-] as const;
 export const SHOP = { signer: "guest_shop", name: "Mama Put Canteen", phone: "+2347000000690" } as const;
 export const TREASURY = "guest_treasury";
 export const agentSigner = (slot: number) => `guest_agent${slot}`;
@@ -76,6 +67,7 @@ export type PoolRow = {
   reset_done_at: string | null;
   reset_step: string | null;
   history_seeded: boolean;
+  /** Piece 12's ajo round being created (retired in piece 13; the column stays, unused). */
   ajo_create_outbox_id: number | null;
 };
 
@@ -171,14 +163,15 @@ export async function guestDbReset(db: Db, row: PoolRow, now = new Date()): Prom
   ];
   if (pubs.iya_tunde) payees.push({ user_id: id, name: "Iya Tunde (tomato wholesaler)", stellar_address: pubs.iya_tunde });
   if (pubs[SHOP.signer]) payees.push({ user_id: id, name: SHOP.name, stellar_address: pubs[SHOP.signer] });
-  if (pubs[AJO_MEMBERS[0].signer]) payees.push({ user_id: id, name: AJO_MEMBERS[0].name, stellar_address: pubs[AJO_MEMBERS[0].signer] });
   must(await db.from("payees").insert(payees), "payees");
 
-  // 6. PIN 1234, no lockout. 7. Shares revoked. 8. Vouches she gave, withdrawn.
+  // 6. PIN 1234, no lockout. 7. Shares revoked. 8. Vouches she gave, and any waiting for her, withdrawn.
   await setPin(db, id, GUEST_PIN);
   must(await db.from("record_shares").update({ revoked_at: iso }).eq("user_id", id).is("revoked_at", null), "revoke shares");
   const given = must(await db.from("vouches").select("id").eq("voucher_user_id", id).eq("status", "active"), "her vouches") as { id: string }[];
   for (const v of given) await db.rpc("vouch_withdraw", { p_voucher: id, p_vouch_id: v.id });
+  const forHer = must(await db.from("vouches").select("id, voucher_user_id").eq("borrower_user_id", id).eq("status", "active"), "vouches for her") as { id: string; voucher_user_id: string }[];
+  for (const v of forHer) await db.rpc("vouch_withdraw", { p_voucher: v.voucher_user_id, p_vouch_id: v.id });
 
   // 9. Her settings and her 8 weeks with Plus.
   must(await db.from("users").update({
@@ -219,7 +212,7 @@ async function agentDbReset(db: Db, row: PoolRow, now: Date) {
     .eq("kind", row.kind).eq("slot", row.slot), "pool");
 }
 
-/** Funmi's numbers: about ₦12,500 in a week, ajo every week, savings in the recent weeks. */
+/** Funmi's numbers: about ₦12,500 in a week and ₦1,000 into her savings goal every week. */
 async function seedCreditHistory(db: Db, userId: string, now: Date) {
   must(await db.from("credit_history_seed").delete().eq("user_id", userId), "clear seed");
   const weeks = GUEST.weeks + 1;
@@ -230,13 +223,12 @@ async function seedCreditHistory(db: Db, userId: string, now: Date) {
   const rows = Array.from({ length: weeks }, (_, i) => {
     const week = i + 1;
     const r = byWeek.get(week);
-    const recent = weeks - i <= 8 && (weeks - i) % 4 !== 3;
     return {
       user_id: userId, week_index: week,
       money_in: gap(12_500n * N, r?.money_in).toString(),
       qualifying_tx: Math.max(0, 6 - (r?.qualifying_tx ?? 0)),
-      saved: gap(1_000n * N, r?.saved).toString(),
-      savings: gap(recent ? 500n * N : 0n, r?.savings).toString(),
+      saved: "0", // ajo (retired): never seeded
+      savings: gap(1_000n * N, r?.savings).toString(),
     };
   }).filter((r) => r.money_in !== "0" || r.qualifying_tx > 0 || r.saved !== "0" || r.savings !== "0");
   void now;
@@ -358,20 +350,7 @@ export async function guestConverge(db: Db, row: PoolRow, env: { contractId: str
   // 4. Wallet back to ₦26,400.
   if (await settleTo(db, { pub, signer, target: GUEST.wallet, ref: `guest${row.slot}:${g}:wallet`, userId, treasury })) return { step: "wallet", done: false };
 
-  // 5. Ajo: a fresh round where everyone but her has paid.
-  const ajo = await ajoStep(db, row, g, u, pubs, chain, env.ngntSac);
-  if (ajo) return ajo;
-
-  // 6. One vouch (Iya Sade), once her ajo payments are on record.
-  const m1 = must(await db.from("users").select("id").eq("stellar_pub", pubs[AJO_MEMBERS[0].signer] ?? "-").maybeSingle(), "m1") as { id: string } | null;
-  if (m1) {
-    const { data: c } = await db.rpc("vouch_check", { p_voucher: m1.id, p_borrower: userId });
-    const check = c as { ok: boolean; reason?: string } | null;
-    if (check?.ok) must(await db.rpc("vouch_record", { p_voucher: m1.id, p_borrower: userId }), "vouch");
-    else if (check?.reason === "no_ajo_payments" && Date.now() / 1000 - g < 15 * 60) return { step: "vouch", done: false, note: "waiting for the ajo payments to sync" };
-  }
-
-  // 7. The savings ledger agrees with the pot; balances fresh; done.
+  // 5. The savings ledger agrees with the pot; balances fresh; done.
   const { data: ledger } = await db.rpc("ng_savings_balance", { p_user_id: userId });
   const drift = GUEST.savings - BigInt(String(ledger ?? 0));
   if (drift !== 0n) {
@@ -411,68 +390,6 @@ async function seedChainHistory(db: Db, slot: number, userId: string, pub: strin
       }, lastOwn);
     }
   }
-}
-
-type Reader = ReturnType<typeof contractReader>;
-
-async function ajoStep(db: Db, row: PoolRow, g: number, u: Guest, pubs: Record<string, string>, chain: Reader, ngntSac: string): Promise<Step | null> {
-  const members = AJO_MEMBERS.map((m) => ({ ...m, pub: pubs[m.signer] }));
-  if (members.some((m) => !m.pub)) return { step: "ajo", done: false, note: "ajo member wallets missing (pnpm guests:seed)" };
-  const order = [members[0].pub, members[1].pub, u.stellar_pub!, members[2].pub];
-  const names = [members[0].name, members[1].name, u.name ?? guestName(row.slot), members[2].name];
-
-  // A round being created: mirror it once Stellar has its id.
-  if (row.ajo_create_outbox_id) {
-    const out = must(await db.from("chain_outbox").select("status, attempts, result").eq("id", row.ajo_create_outbox_id).single(), "ajo create") as { status: string; attempts: number; result: { returned?: string | number } | null };
-    if (out.status !== "done") return out.status === "failed" && out.attempts >= 8 ? { step: "stuck", done: false, note: "group_create failed" } : { step: "ajo", done: false, note: "creating the round" };
-    const onchain = Number(out.result?.returned);
-    if (!Number.isInteger(onchain)) return { step: "ajo", done: false, note: "no group id in the result" };
-    const fresh = await chain.group(onchain);
-    if (!fresh) return { step: "ajo", done: false, note: "group not readable yet" };
-    const grp = must(await db.from("groups").upsert({
-      market_id: "ng", name: "Market Ajo", mode: "pooled", onchain_id: onchain, amount: GUEST.ajoAmount.toString(),
-      period_secs: GUEST.ajoPeriodSecs, next_due: fresh.next_due.toISOString(),
-    }, { onConflict: "onchain_id" }).select("id").single(), "group") as { id: string };
-    const memberIds = must(await db.from("users").select("id, stellar_pub").in("stellar_pub", order), "member ids") as { id: string; stellar_pub: string }[];
-    must(await db.from("group_members").upsert(order.map((p, position) => ({
-      group_id: grp.id, position, member_ref: p, name: names[position], user_id: memberIds.find((m) => m.stellar_pub === p)?.id ?? null,
-    })), { onConflict: "group_id,position" }), "members");
-    must(await db.from("guest_pool").update({ ajo_create_outbox_id: null }).eq("kind", "trader").eq("slot", row.slot), "pool");
-    return { step: "ajo", done: false, note: `round ${onchain} created` };
-  }
-
-  const links = must(await db.from("group_members").select("groups!inner(id, onchain_id, created_at, retired_at)").eq("user_id", u.id)
-    .not("groups.onchain_id", "is", null), "her groups") as unknown as { groups: { id: string; onchain_id: number; created_at: string; retired_at: string | null } }[];
-  const current = links.map((l) => l.groups).filter((x) => !x.retired_at).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-  const state = current ? await chain.group(current.onchain_id) : null;
-  const mine = state ? state.members.indexOf(u.stellar_pub!) : -1;
-  if (!current || !state || mine < 0 || state.contributed[mine] || state.next_due.getTime() < Date.now() + 86_400_000) {
-    // No round yet, or she paid this one (or it is about to pay out): a new round, same members.
-    if (current) must(await db.from("groups").update({ payout_once: true }).eq("id", current.id), "old round pays out once");
-    const id = await enqueue(db, AJO_MEMBERS[0].signer, "contract", `guest${row.slot}:${g}:ajo_create:${current?.onchain_id ?? "first"}`, {
-      fn: "group_create",
-      args: [{ t: "address", v: members[0].pub }, { t: "accounts", v: order }, { t: "address", v: ngntSac }, { t: "i128", v: stroops(GUEST.ajoAmount) },
-        { t: "u64", v: String(GUEST.ajoPeriodSecs) }, { t: "bool", v: true }],
-    });
-    must(await db.from("guest_pool").update({ ajo_create_outbox_id: id }).eq("kind", "trader").eq("slot", row.slot), "pool");
-    return { step: "ajo", done: false, note: "new round" };
-  }
-  // Everyone but her pays in (each member's own queue; topped up from the treasury when short).
-  let queued = 0;
-  for (const [i, m] of members.entries()) {
-    const idx = state.members.indexOf(m.pub);
-    if (idx < 0 || state.contributed[idx]) continue;
-    let after: number | null = null;
-    const have = await ngnt(m.pub);
-    if (have < GUEST.ajoAmount + GUEST.memberMin) {
-      after = await enqueue(db, TREASURY, "payment", `guest${row.slot}:${g}:ajo_top:${current.onchain_id}:${i}`, { to: m.pub, asset: "NGNT", amount: stroops(GUEST.memberMin * 5n) });
-    }
-    await enqueue(db, m.signer, "contract", `guest${row.slot}:${g}:ajo_pay:${current.onchain_id}:${i}`, {
-      fn: "group_contribute", args: [{ t: "address", v: m.pub }, { t: "u32", v: current.onchain_id }],
-    }, after);
-    queued++;
-  }
-  return queued ? { step: "ajo", done: false, note: `${queued} member payment(s)` } : null;
 }
 
 /** Start a reset now: the database half at once, the Stellar half by guestConverge. */

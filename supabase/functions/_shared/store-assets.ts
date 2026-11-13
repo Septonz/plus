@@ -78,10 +78,8 @@ export function supabaseAssetStore(db: SupabaseClient): AssetStore {
 
     async candidates(userId) {
       const me = must(await db.from("users").select("market_id").eq("id", userId).single(), "me") as { market_id: string };
-      const groups = (must(await db.from("group_members").select("group_id").eq("user_id", userId), "groups") as { group_id: string }[]).map((g) => g.group_id);
-      const ajo = groups.length
-        ? must(await db.from("group_members").select("user_id").in("group_id", groups).not("user_id", "is", null).neq("user_id", userId), "ajo") as { user_id: string }[]
-        : [];
+      // Piece 13: people she has paid or been paid by on Stellar (community savings groups are retired).
+      const traded = must(await db.rpc("vouch_peers", { p_user_id: userId }), "traded with") as { user_id: string }[];
       const payees = must(await db.from("payees").select("phone, stellar_address").eq("user_id", userId), "payees") as { phone: string | null; stellar_address: string | null }[];
       const phones = payees.map((p) => p.phone).filter((x): x is string => !!x);
       const addrs = payees.map((p) => p.stellar_address).filter((x): x is string => !!x);
@@ -90,8 +88,8 @@ export function supabaseAssetStore(db: SupabaseClient): AssetStore {
         ...(addrs.length ? must(await db.from("users").select("id").in("stellar_pub", addrs).is("archived_at", null).neq("id", userId), "paid") as { id: string }[] : []),
       ];
       const how = new Map<string, string>();
-      for (const a of ajo) how.set(a.user_id, "ajo");
-      for (const p of paid) if (!how.has(p.id)) how.set(p.id, "paid");
+      for (const p of paid) how.set(p.id, "paid");
+      for (const t of traded) if (!how.has(t.user_id)) how.set(t.user_id, "paid");
       const people = how.size
         ? must(await db.from("users").select("id, name").in("id", [...how.keys()]).is("archived_at", null), "people") as { id: string; name: string | null }[]
         : [];

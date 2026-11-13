@@ -11,7 +11,7 @@ const STOCK: CreditAsset = {
 
 function weeks(from: number, to: number, moneyIn: number, tx = 6, saved = 1_000) {
   const out = [];
-  for (let w = from; w <= to; w++) out.push({ week: w, money_in: N(moneyIn), qualifying_tx: tx, saved: N(saved) });
+  for (let w = from; w <= to; w++) out.push({ week: w, money_in: N(moneyIn), qualifying_tx: tx, saved: 0n, savings: N(saved) });
   return out;
 }
 
@@ -24,7 +24,7 @@ function loan(over: Partial<CreditLoan> = {}): CreditLoan {
   };
 }
 
-// Funmi: 20 weeks with Plus, about ₦12,500 a week coming in, ajo every week, stall stock verified.
+// Funmi: 20 weeks with Plus, about ₦12,500 a week coming in, saving into her goal every week, stall stock verified.
 const funmi = (over: Partial<CreditInput> = {}): CreditInput => ({
   member_since: weeksAgo(20), kyc_tier: 2, frozen_until: null, weeks: weeks(1, 21, 12_500), assets: [STOCK], loans: [], now: NOW, ...over,
 });
@@ -76,7 +76,7 @@ Deno.test("Funmi: ₦30,000 offer at 6%: ₦1,800 cost, ₦31,800 total; the low
   assertEquals(p.affordability.lending_value, N(54_000));
   assertEquals(p.affordability.affordable, N(30_000));
   assertEquals(p.why.map((w) => w.weight), [40, 35, 25]);
-  assertEquals(p.why[2].detail, "Ajo paid in 8 of 8 weeks"); // the last 8 weeks, not all 21
+  assertEquals(p.why[2].detail, "Saved in 8 of 8 weeks"); // the last 8 weeks, not all 21
   assertEquals(p.ladder.map((s) => s.max), [N(30_000), N(50_000), N(80_000)]); // the top step repeats
 });
 
@@ -127,7 +127,7 @@ Deno.test("one loan at a time; a late payment or a freeze blocks new borrowing",
   assertEquals(late.checklist.find((c) => c.key === "standing")?.done, false);
 });
 
-Deno.test("vouches: two ajo members lower a first loan's collateral from 150% to 100%; one is not enough", () => {
+Deno.test("vouches: two people she trades with lower a first loan's collateral from 150% to 100%; one is not enough", () => {
   const one = creditPicture(funmi({ vouches: [{ name: "Amaka" }] }));
   assertEquals(one.offer?.collateral_pct, 150);
   assertEquals(one.vouch.applied, false);

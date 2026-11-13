@@ -100,26 +100,6 @@ export function supabaseStore(db: SupabaseClient): Store {
         created_at: r.created_at,
       }));
     },
-    async myGroup(userId) {
-      const link = must(
-        await db.from("group_members").select("group_id, groups!inner(id, name, mode, onchain_id, amount, period_secs, next_due, market_id, round_started_at)")
-          .eq("user_id", userId).limit(1).maybeSingle(),
-        "myGroup",
-      ) as { group_id: string; groups: Record<string, unknown> } | null;
-      if (!link) return null;
-      const members = must(
-        await db.from("group_members").select("name, position, member_ref, user_id").eq("group_id", link.group_id).order("position"),
-        "members",
-      );
-      return { group: link.groups as never, members: members as never };
-    },
-    async lastContribution(userId, groupId, sinceIso) {
-      return must(
-        await db.from("transactions").select(TX_COLS).eq("user_id", userId).eq("kind", "group_contribution").eq("source", groupId)
-          .gte("created_at", sinceIso).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        "lastContribution",
-      ) as Tx | null;
-    },
     async chainEventsForRef(refHex) {
       // topics are stored decoded: ["attested", "<ref hex>"], ["contribution_recorded", group, "<ref>"],
       // ["limit_set", ["Ref", "<ref>"]].
@@ -130,13 +110,6 @@ export function supabaseStore(db: SupabaseClient): Store {
         "chainEventsForRef",
       );
       return rows as ChainEvent[];
-    },
-    async groupRecords(onchainGroupId) {
-      return must(
-        await db.from("chain_events").select("type, tx_hash, ledger, topics, data, created_at").eq("type", "contribution_recorded")
-          .eq("topics->>1", String(onchainGroupId)).order("ledger", { ascending: false }).limit(500),
-        "groupRecords",
-      ) as ChainEvent[];
     },
     async chainPending(refHex) {
       const { count, error } = await db.from("chain_outbox").select("id", { count: "exact", head: true }).neq("status", "done")
