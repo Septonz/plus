@@ -193,22 +193,22 @@ the whole app right away, with no setup and no help. Public testers never spend 
 (voice is for our presenter devices), never interfere with each other, and never touch Funmi, Kemi,
 Amaka or Mama Bisi. Branch `feat/piece-12-public-test`, one commit per item.
 
-- [ ] 1. Voice modes and a kill switch: `VOICE_MODE` off | presenter (default) | on; presenter
+- [x] 1. Voice modes and a kill switch: `VOICE_MODE` off | presenter (default) | on; presenter
   unlock by staff login or a presenter code (`VOICE_PRESENTER_CODE`, constant-time, 7-day signed
   token on the device); daily cap `VOICE_DAILY_SESSION_CAP` (40); 180-second conversations
   (agents:sync); a calm "Voice is switched on for live demos" sheet with the demo video
   (`VITE_DEMO_VIDEO_URL`) and what Funmi would say.
-- [ ] 2. Guest traders: "Try Plus now" signs in as one of 20 pre-seeded guests (`GUEST_POOL_SIZE`),
+- [x] 2. Guest traders: "Try Plus now" signs in as one of 20 pre-seeded guests (`GUEST_POOL_SIZE`),
   each with Funmi's full story; least-recently-used idle guest, same device kept for 2 hours;
   `pnpm guests:seed`, `pnpm guests:reset` (on reassignment and nightly); 10 new guest sessions per IP
   an hour; guests can't pay or reach the presenter accounts; a friendly rate-limit message.
-- [ ] 3. Everything reachable by taps: pretend cash-in from a demo agent, Mama Put Canteen pay
+- [x] 3. Everything reachable by taps: pretend cash-in from a demo agent, Mama Put Canteen pay
   code under Scan, pretend agent pay-out, guest PIN 1234 with a hint and a 1-minute lockout, sign-up
   by taps.
-- [ ] 4. A 2-minute tester guide: on the landing page and as a dismissible checklist on a guest's
+- [x] 4. A 2-minute tester guide: on the landing page and as a dismissible checklist on a guest's
   Home, ticked from the guest's own activity; nothing extra on presenter accounts.
-- [ ] 5. Landing page: Try Plus now, Try the agent app (3 guest agents), Verify a record, Watch the
+- [x] 5. Landing page: Try Plus now, Try the agent app (3 guest agents), Verify a record, Watch the
   demo, a small Presenters link (demo logins and /demo).
-- [ ] 6. Readiness: `pnpm demo:ready ng` checks the guest pool, the demo agent's float and the voice
+- [x] 6. Readiness: `pnpm demo:ready ng` checks the guest pool, the demo agent's float and the voice
   mode; `pnpm guests:status`; treasury runway.
-- [ ] 7. Docs: README "Try it now" and "For presenters"; fresh screens.
+- [x] 7. Docs: README "Try it now" and "For presenters"; fresh screens.

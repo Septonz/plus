@@ -63,6 +63,8 @@ async function main() {
   check(/₦|naira/.test(String(bal.text)) && recent.length >= 5, "her wallet and her history", `${String(bal.text).slice(0, 60)} · ${recent.length} rows`);
 
   console.log("2. Pay Mama Put Canteen");
+  const toFunmi = await tool("prepare_pay", { phone: "+2340000000501", amount: 100 });
+  check(toFunmi.error === "protected_account", "paying a presenter (Funmi) is refused", String(toFunmi.text).slice(0, 60));
   const st = await tool("guest_status");
   const shop = String(st.shop_code ?? "");
   check(/^[A-Z0-9]{6}$/.test(shop), "the test shop's pay code under Scan", `${shop.slice(0, 3)}-${shop.slice(3)}`);

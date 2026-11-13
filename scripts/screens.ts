@@ -6,7 +6,7 @@
 // number +234 700 000 0901, re-runnable), and pays ₦300 by code from Funmi. Money is simulated.
 //
 //   pnpm screens               all screens -> docs/screens/*.png (390 x 844, phone)
-//   pnpm screens funmi agent   only some groups: welcome signup newuser funmi agent india
+//   pnpm screens funmi agent   only some groups: guest welcome signup newuser funmi agent india
 //   pnpm screens --dark …      the same in dark mode (the phone's setting), saved as *-dark.png
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -234,6 +234,25 @@ async function main() {
       await sleep(3000);
       await page.shot("zz-peek-selvi");
       return;
+    }
+
+    if (on("guest")) {
+      // Piece 12: the landing page and a guest trader (public test mode), then a guest agent.
+      console.log("Public test mode");
+      await signedOut(page, "/");
+      await page.waitText("Test it in 2 minutes");
+      await page.shot("00-landing");
+      await page.click("Try Plus now", { exact: true });
+      await page.waitText("Test it in 2 minutes · ", 30_000);
+      await sleep(2500);
+      await page.top();
+      await page.shot("60-guest-home");
+      await signedOut(page, "/");
+      await page.waitText("Try the agent app");
+      await page.click("Try the agent app");
+      await page.waitText("Test agent", 30_000);
+      await sleep(1500);
+      await page.shot("61-guest-agent");
     }
 
     if (on("welcome")) {
