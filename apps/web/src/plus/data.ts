@@ -144,6 +144,12 @@ export function usePlusData(authUserId: string | null): PlusData {
     }
   }, [userId, refresh])
 
+  // Piece 13: a typed command (Type to Plus) prepared something: reload so the confirm sheet opens.
+  useEffect(() => {
+    const on = () => void refresh()
+    window.addEventListener('plus:refresh', on)
+    return () => window.removeEventListener('plus:refresh', on)
+  }, [refresh])
   return { me, account, txs, pending, payees, loading, error, refresh, version }
 }
 

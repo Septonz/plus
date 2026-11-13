@@ -451,7 +451,7 @@ const STATUS_WORD = /\b(?:see|show|check|view|know|status|how|what|wetin|when|du
 const BALANCE = new RegExp([
   "\\bbalance\\b", "\\bbal\\b",
   "\\bhow much (?:money )?(?:do |have |did )?i (?:get|have|got|dey get|still have|still get|get left|have left)\\b",
-  "\\bhow much (?:money )?(?:is |dey |remain |remains |left |dey remain )?(?:in|for|inside) my (?:account|wallet|purse)\\b",
+  "\\bhow much (?:money )?(?:is |dey |remain |remains |left |dey remain )?(?:(?:in|for|inside) )?my (?:account|wallet|purse)\\b",
   "\\bwetin (?:dey|remain|i get) (?:for |inside |in |for inside )?my (?:account|wallet|purse)\\b",
   "\\bwetin i get\\b", "\\bmy money\\b", "\\bhow much (?:is )?left\\b",
   "\\belo (?:lo|ni) (?:wa|mo ni)\\b", // check (Yoruba: "elo lo wa ninu apo mi", "elo ni mo ni")
@@ -663,4 +663,16 @@ export function parseCommand(text: string, ctx: ParseContext): Parsed {
   }
 
   return { kind: "unknown", suggestions: suggestions(ctx) };
+}
+
+/** The tools answer the voice agent about "her"; on her own screen that reads as "you". */
+export function toYou(t: string): string {
+  return t
+    .replace(/\s*Ask her to [^.]*\./g, " Check it below and tap Yes.")
+    .replace(/\s*Never (?:say|ask) [^.]*\./g, "")
+    .replace(/\bShe has\b/g, "You have").replace(/\bshe has\b/g, "you have")
+    .replace(/\bShe is\b/g, "You are").replace(/\bshe is\b/g, "you are")
+    .replace(/\bShe\b/g, "You").replace(/\bshe\b/g, "you")
+    .replace(/\bHer\b/g, "Your").replace(/\bher\b/g, "your")
+    .replace(/\bherself\b/g, "yourself").trim();
 }

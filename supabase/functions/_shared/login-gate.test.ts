@@ -21,6 +21,7 @@ const FUNCTIONS: Record<string, { first: string; body: boolean }> = {
   "helper-api": { first: "const token = bearer(req);", body: false },
   "payout-sim": { first: "const token = bearer(req);", body: false },
   "demo-control": { first: "const token = bearer(req);", body: false }, // then staff only
+  "text-command": { first: "const token = bearer(req);", body: false },
   // A sign-up in progress has no login yet: its signed onboarding token is checked instead.
   "voice-session": { first: "if (hasSessionToken(body.onboarding_token)) {", body: true },
 };

@@ -1,5 +1,5 @@
 // deno test --no-config --node-modules-dir=none supabase/functions/_shared/intent.test.ts
-import { formatAmount, type Market, parseAmount, parseCommand, type Parsed } from "./intent.ts";
+import { formatAmount, type Market, parseAmount, parseCommand, type Parsed, toYou } from "./intent.ts";
 
 function eq(actual: unknown, expected: unknown, msg = "") {
   const a = JSON.stringify(actual), e = JSON.stringify(expected);
@@ -116,6 +116,8 @@ const NG_CASES: [string, string, Record<string, unknown>][] = [
   ["how much I get", "get_balance", {}],
   ["How much money I get?", "get_balance", {}],
   ["wetin dey my account", "get_balance", {}],
+  ["How much money dey my wallet?", "get_balance", {}],
+  ["how much dey my account", "get_balance", {}],
   ["wetin remain for my wallet", "get_balance", {}],
   ["how much is in my account", "get_balance", {}],
   ["elo lo wa ninu apo mi", "get_balance", {}], // Yoruba
@@ -426,4 +428,10 @@ Deno.test("never a float, never ajo or seettu tools", () => {
 Deno.test("phrasing count", () => {
   const n = NG_CASES.length + IN_CASES.length + NAV.length;
   if (n < 60) throw new Error(`only ${n} phrasings`);
+});
+
+Deno.test("toYou: the voice agent's answers read as 'you' on her own screen", () => {
+  eq(toYou("She has 26,400 naira in her wallet."), "You have 26,400 naira in your wallet.");
+  eq(toYou("Read back: 2,000 naira to Iya Tunde. Ask her to check her screen and tap Yes, or say yes."), "Read back: 2,000 naira to Iya Tunde. Check it below and tap Yes.");
+  eq(toYou("There is nothing here; other people are fine."), "There is nothing here; other people are fine.");
 });

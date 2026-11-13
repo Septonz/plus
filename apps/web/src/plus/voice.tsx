@@ -26,6 +26,7 @@ import { DEMO_VIDEO_URL, presenterBody } from '../lib/presenter'
 import { call } from './api'
 import { clientTools, currentScreen, onScreenChange } from './screen'
 import { useT } from './ui'
+import { TypeToPlus } from './typebox'
 
 type Session = { signed_url?: string; plus_session?: string; error?: string }
 
@@ -60,9 +61,10 @@ export function VoiceOffSheet({ open, onClose, examples = [] }: { open: boolean;
       <div className="space-y-5 px-5 pt-1">
         <div className="space-y-2">
           <span className="grid size-12 place-items-center rounded-full bg-accent-soft text-2xl text-accent-ink" aria-hidden="true"><Icon name="mic" /></span>
-          <h2 className="text-2xl font-semibold">Voice is switched on for live demos.</h2>
-          <p className="text-lg text-secondary">Everything you can say, you can also tap. Watch Plus being used by voice:</p>
+          <h2 className="text-2xl font-semibold">Type to Plus</h2>
+          <p className="text-lg text-secondary">Voice is switched on for live demos. Type what you would say instead, or tap.</p>
         </div>
+        <TypeToPlus autoFocus />
         {DEMO_VIDEO_URL && (
           <a href={DEMO_VIDEO_URL} target="_blank" rel="noreferrer" className="block">
             <Button className="w-full"><Icon name="play" /> Watch the demo video</Button>
@@ -252,6 +254,7 @@ export function VoiceButton({ size = 'float', words, body, examples }: { size?: 
   const tt = useT()
   const t = (k: keyof MicWords) => words?.[k] ?? tt(k)
   const v = useVoice(body, t('micError'))
+  const [typing, setTyping] = useState(false)
   const { conversation, live, busy, configured, error, toggle } = v
   const label = configured === false ? t('micSoon') : busy ? t('micConnecting') : live ? (conversation.isSpeaking ? t('micSpeaking') : t('micListening')) : t('mic')
   const level = () => (conversation.isSpeaking ? conversation.getOutputVolume() : conversation.getInputVolume())
@@ -327,6 +330,9 @@ export function VoiceButton({ size = 'float', words, body, examples }: { size?: 
                   <span className="spin inline-block size-3.5 rounded-full border-2 border-current border-t-transparent" /> {v.doing}
                 </p>
               )}
+              {typing
+                ? <div className="mt-3"><TypeToPlus autoFocus /></div>
+                : <button type="button" onClick={() => setTyping(true)} className="mt-3 flex min-h-14 items-center gap-2 text-base font-medium text-accent-ink"><Icon name="keyboard" /> Type instead</button>}
             </div>
           </motion.div>
         )}
