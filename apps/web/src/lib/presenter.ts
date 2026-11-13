@@ -48,3 +48,26 @@ export const DEMO_VIDEO_URL: string | null = (() => {
   const v = (import.meta.env.VITE_DEMO_VIDEO_URL as string | undefined)?.trim()
   return v && /^https:\/\//.test(v) ? v : null
 })()
+
+// Piece 13, item 10: Recording mode (presenter devices only). Hides guest checklists, test-PIN hints
+// and guest notices; keeps a small testnet note on Home and every tick and Stellar link. Stored
+// here like the unlock, so the phone frames on /demo pick it up (storage events) at once.
+const REC = 'plus-recording'
+
+export function recordingMode(): boolean {
+  try {
+    return localStorage.getItem(REC) === '1' && presenterUnlock() !== null
+  } catch {
+    return false
+  }
+}
+
+export function setRecordingMode(on: boolean) {
+  try {
+    if (on) localStorage.setItem(REC, '1')
+    else localStorage.removeItem(REC)
+    window.dispatchEvent(new StorageEvent('storage', { key: REC }))
+  } catch {
+    // no storage: recording mode stays off
+  }
+}

@@ -35,6 +35,7 @@
     "demo:reset": "pnpm --filter @plus/client build && node scripts/demo-reset.ts",
     "guests:seed": "node scripts/guests.ts seed",
     "guests:reset": "node scripts/guests.ts reset",
+    "recording:reset": "node scripts/recording-reset.ts",
     "guests:status": "node scripts/guests.ts status"
   },
   "devDependencies": {
