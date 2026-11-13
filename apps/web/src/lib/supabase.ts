@@ -20,6 +20,13 @@ const storageKey = path.startsWith('/helper') ? 'plus-helper-auth'
 export const supabase: SupabaseClient | null =
   url && anonKey ? createClient(url, anonKey, { auth: { persistSession: true, storageKey } }) : null
 
+/** A client that signs in for another page (the landing page signs a guest agent in for /agent). */
+export function clientFor(page: '/app' | '/agent'): SupabaseClient | null {
+  if (!url || !anonKey) return null
+  if (page === '/app' && storageKey === 'plus-auth') return supabase
+  return createClient(url, anonKey, { auth: { persistSession: true, storageKey: page === '/agent' ? 'plus-agent-auth' : 'plus-auth', autoRefreshToken: false } })
+}
+
 // Demo logins (dev project only; created by `pnpm seed:db`). Production login is phone OTP plus PIN.
 export const DEMO_PASSWORD = import.meta.env.VITE_DEMO_LOGIN_PASSWORD as string | undefined
 export const DEMO_SELVI_EMAIL = 'demo-selvi@example.com'

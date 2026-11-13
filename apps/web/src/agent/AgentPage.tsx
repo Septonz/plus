@@ -20,6 +20,7 @@ import { naira, when } from '../ng/words'
 type Item = { id: string; name: string; amount_text: string; status: string; at: string; url: string | null }
 type Me = {
   agent: { id: string; name: string }
+  guest?: boolean
   float_text: string
   float_free_text: string
   wallet_url: string | null
@@ -88,6 +89,11 @@ function Signed() {
   const [key, setKey] = useState(() => newKey('agent'))
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ tone: Tone; text: string } | null>(null)
+  // A guest agent serves the test traders, never Funmi: no presenter number filled in for it.
+  const guestAgent = me?.guest === true
+  useEffect(() => {
+    if (guestAgent) setPhone((p) => (p === '+2340000000501' ? '' : p))
+  }, [guestAgent])
 
   const load = useCallback(async () => setMe(await call<Me>('agent-api/me')), [])
   useEffect(() => {
@@ -157,7 +163,7 @@ function Signed() {
     <div className="mx-auto max-w-md space-y-6 px-4 pb-16 pt-[max(env(safe-area-inset-top),1.25rem)]">
       <PageHeader
         title={me.agent.name}
-        sub="Plus cash agent · Bodija market"
+        sub={me.guest ? 'Test agent (guest) · Stellar testnet' : 'Plus cash agent · Bodija market'}
         right={<Button variant="secondary" size="sm" onClick={() => void supabase?.auth.signOut()}>Sign out</Button>}
       />
 
@@ -173,6 +179,7 @@ function Signed() {
         </dl>
         {me.wallet_url && <div className="mt-3"><VerifiedMark url={me.wallet_url} /></div>}
       </Card>
+      {me.guest && <Notice tone="info">Test agent. Your customers are the test traders: open “Try Plus now” in another tab and record cash for the phone number shown on its Home, or register a new customer with a test number.</Notice>}
 
       {me.earned_today_text && (
         <Card className="flex items-center justify-between gap-3">

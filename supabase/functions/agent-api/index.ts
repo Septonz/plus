@@ -48,7 +48,8 @@ const MAX_ATTEMPTS = NG.cashOutCode?.maxAttempts ?? 5;
 const show = (kobo: bigint | number) => formatMoney(BigInt(kobo), "ng");
 const assets = supabaseAssetStore(db);
 
-type Agent = { id: string; name: string; role: string; market_id: "ng"; daily_limit: number; active: boolean; stellar_pub: string | null };
+type Agent = { id: string; name: string; role: string; market_id: "ng"; daily_limit: number; active: boolean; stellar_pub: string | null;
+  demo_login?: boolean | null; guest_slot?: number | null };
 
 function must<T>(r: { data: T | null; error: { message: string } | null }, what: string): T {
   if (r.error) throw new Error(`${what}: ${r.error.message}`);
@@ -129,6 +130,8 @@ async function me(a: Agent) {
   const outById = new Map(outs.map((o) => [o.id, o]));
   return {
     agent: { id: a.id, name: a.name, role: a.role },
+    // Piece 12: a guest agent (public test mode) gets a hint about who it can serve.
+    guest: a.guest_slot !== null && a.guest_slot !== undefined,
     float_minor: String(f.float),
     float_text: show(f.float),
     float_free_text: show(free),
@@ -166,12 +169,23 @@ async function me(a: Agent) {
   };
 }
 
-type Customer = { id: string; name: string | null; stellar_pub: string | null; kyc_tier: number; market_id: "ng" };
+type Customer = { id: string; name: string | null; stellar_pub: string | null; kyc_tier: number; market_id: "ng"; demo_login: boolean | null; guest_slot: number | null };
+
+/**
+ * Piece 12: presenter customers (Funmi, Kemi) are served only by presenter agents (Mama Bisi), and
+ * guest traders only by guest agents, so a public tester never changes a presenter's money.
+ */
+function mayServe(a: { demo_login?: boolean | null; guest_slot?: number | null }, c: Customer | null): boolean {
+  if (!c) return true;
+  if (c.demo_login) return Boolean(a.demo_login);
+  if (c.guest_slot !== null) return a.guest_slot !== null && a.guest_slot !== undefined;
+  return true;
+}
 
 async function customer(phoneRaw: unknown): Promise<Customer | null> {
   const phone = typeof phoneRaw === "string" ? normalizeNgPhone(phoneRaw) : null;
   if (!phone) return null;
-  const { data } = await db.from("users").select("id, name, stellar_pub, kyc_tier, market_id").eq("market_id", "ng").eq("wa_phone", phone)
+  const { data } = await db.from("users").select("id, name, stellar_pub, kyc_tier, market_id, demo_login, guest_slot").eq("market_id", "ng").eq("wa_phone", phone)
     .is("archived_at", null).maybeSingle();
   return data as Customer | null;
 }
@@ -268,14 +282,16 @@ Deno.serve(withCors(async (req) => {
   if (authErr || !auth.user) return json({ error: "unauthorized" }, 401);
   const body = await readJson(req);
   if (body instanceof Response) return body;
-  const { data: row } = await db.from("helpers").select("id, name, role, market_id, daily_limit, active, stellar_pub, demo_login")
+  const { data: row } = await db.from("helpers").select("id, name, role, market_id, daily_limit, active, stellar_pub, demo_login, guest_slot")
     .eq("auth_user_id", auth.user.id).maybeSingle();
   if (!row || !row.active || row.role !== "agent" || row.market_id !== "ng") return json({ error: "not_an_agent" }, 403);
   const a = row as Agent;
   const off = demoOff(row);
   if (off) return off;
+  // A guest agent (piece 12): last seen now, so its place isn't handed to someone else.
+  if (a.guest_slot !== null && a.guest_slot !== undefined) EdgeRuntime.waitUntil(db.rpc("guest_touch", { p_user_id: null, p_helper_id: a.id }).then(() => null));
   if (MONEY_TOOLS.has(endpoint)) {
-    const limited = await demoRateLimited(db, row as { id: string; demo_login: boolean }, endpoint);
+    const limited = await demoRateLimited(db, a, endpoint);
     if (limited) return limited;
   }
 
@@ -288,7 +304,7 @@ Deno.serve(withCors(async (req) => {
       if (!/^[A-Za-z0-9_-]{8,80}$/.test(key)) return json({ error: "bad_request" }, 400);
       if (amount === null) return fail("invalid_amount");
       const who = await customer(body.phone);
-      if (!who?.stellar_pub) return fail("not_a_customer");
+      if (!who?.stellar_pub || !mayServe(a, who)) return fail("not_a_customer");
       // Her tier's balance limit: cash that would take her wallet over it is refused before anything is recorded.
       const full = receiveAllowed(who, await heldAndIncoming(who.id), amount);
       if (full) return json({ error: full.error, text: full.text }, 409);
@@ -321,6 +337,7 @@ Deno.serve(withCors(async (req) => {
       const phone = typeof body.phone === "string" ? normalizeNgPhone(body.phone) : null;
       if (!phone) return fail("not_a_customer");
       const who = await customer(phone);
+      if (!mayServe(a, who)) return fail("no_cash_out");
       const code = typeof body.code === "string" ? body.code.replace(/\s/g, "") : "";
       const m = await matchCode(phone, who?.id ?? null, code);
       if ("error" in m) return fail(m.error!, "attempts_left" in m ? { attempts_left: m.attempts_left } : {});

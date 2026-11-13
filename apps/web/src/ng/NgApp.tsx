@@ -10,12 +10,13 @@ import { tool, type ToolResult } from '../plus/api'
 import type { PendingAction, PlusData } from '../plus/data'
 import { settle, useScreenTools } from '../plus/screen'
 import { ENGLISH, LangContext } from '../plus/ui'
-import { VoiceButton } from '../plus/voice'
+import { VoiceButton, type VoiceExample } from '../plus/voice'
 import { Assets, requestPhoto } from './assets'
 import { Receive, Scan } from './shop'
 import { NgConfirmSheet } from './confirm'
 import { AddCash, Ajo, CashOut, Home, Loan, Pay, Record, Savings, Settings, WalletDetail, type Detail } from './screens'
 import { MIC_WORDS, naira, W, yo } from './words'
+import { GuestContext, GuestShop, useGuestFlag } from './guest'
 
 export type Wallet = { NGNT: bigint; USDC: bigint; updated_at: string | null }
 export type Go = (s: Screen) => void
@@ -98,6 +99,8 @@ export default function NgApp({ data }: { data: PlusData }) {
   const wallet = useWallet(data.me?.id, data.version)
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set())
   const [chosen, setChosen] = useState<PendingAction | null>(null)
+  const guest = useGuestFlag(data.me?.id)
+  const [scanCode, setScanCode] = useState<string | null>(null)
 
   // Her own actions (voice or taps) open the sheet by themselves; an agent's cash-in waits on Home
   // until she taps it (chosen).
@@ -119,6 +122,18 @@ export default function NgApp({ data }: { data: PlusData }) {
     }
   }, [openDetail])
   const props = { data, wallet, go, version: data.version }
+  // When voice is kept for live demos: what Funmi would say, and where to tap it instead.
+  const detail = (d: Detail) => () => { setTab('home'); openDetail(d, false) }
+  const examples: VoiceExample[] = [
+    { say: 'How much do I have?', tap: 'Home → Wallet', go: detail('wallet') },
+    { say: 'Send Iya Tunde two thousand', tap: 'Pay tab', go: () => go('pay') },
+    { say: 'Pay Mama Put Canteen', tap: 'Pay → Scan', go: detail('scan') },
+    { say: 'Pay my ajo', tap: 'Home → Ajo', go: detail('group') },
+    { say: 'Save a thousand', tap: 'Home → Savings', go: detail('savings') },
+    { say: 'Can I get a loan?', tap: 'Home → Loan', go: detail('loan') },
+    { say: 'Share my record with a lender', tap: 'Activity → Share my record', go: () => go('record') },
+    { say: 'Cash out three thousand', tap: 'Wallet → Cash out', go: detail('cash_out') },
+  ]
   const onAnswer = (a: PendingAction) => setChosen(a)
   // A cash-out code made by voice is shown on the Cash out screen only (never handed to the agent).
   const [shownCode, setShownCode] = useState<{ id: string; code: string } | null>(null)
@@ -167,6 +182,7 @@ export default function NgApp({ data }: { data: PlusData }) {
   })
 
   return (
+    <GuestContext.Provider value={guest}>
     <LangContext.Provider value={ENGLISH}>
       <main className="mx-auto max-w-md px-4 pb-32 pt-[max(env(safe-area-inset-top),1.25rem)]">
         {tab === 'home' && <Home {...props} onAnswer={onAnswer} open={open} onOpen={(d) => openDetail(d)} />}
@@ -185,14 +201,14 @@ export default function NgApp({ data }: { data: PlusData }) {
             {open === 'assets' && <Assets version={data.version} />}
             {open === 'add_cash' && <AddCash {...props} onAnswer={onAnswer} />}
             {open === 'receive' && <Receive version={data.version} />}
-            {open === 'scan' && <Scan initialCode={linkedCode} />}
+            {open === 'scan' && <><GuestShop version={data.version} onUse={setScanCode} /><Scan key={scanCode ?? 'scan'} initialCode={scanCode ?? linkedCode} /></>}
             {open === 'cash_out' && <CashOut {...props} shownCode={shownCode} onShowCode={setShownCode} />}
           </CardDetail>
         )}
       </AnimatePresence>
 
       <BottomNav<Tab>
-        center={<VoiceButton size="dock" words={MIC_WORDS} />}
+        center={<VoiceButton size="dock" words={MIC_WORDS} examples={examples} />}
         active={open ? null : tab}
         onSelect={(k) => go(k)}
         items={[
@@ -218,5 +234,6 @@ export default function NgApp({ data }: { data: PlusData }) {
         />
       )}
     </LangContext.Provider>
+    </GuestContext.Provider>
   )
 }

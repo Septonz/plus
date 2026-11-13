@@ -527,6 +527,10 @@ function NinStep({ st, doc, agent, busy, msg, onCheck, onSkip }: {
       </div>
       <Digits value={nin} length={doc.digits} group={[4, 8]} />
       <NumPad onKey={(k) => setNin((v) => applyKey(v, k, doc.digits, true))} />
+      {!agent && st.market === 'ng' && (
+        // Testnet: the mock registry accepts any 11 digits except 00000000000 (its "not found" test).
+        <button className="min-h-11 w-full text-base text-accent-ink" onClick={() => setNin('12345678901'.slice(0, doc.digits))}>Testing? Use a test NIN</button>
+      )}
       {msg && <Notice tone="danger">{msg}</Notice>}
       <Button className="w-full" loading={busy} disabled={nin.length !== doc.digits} onClick={async () => {
         const r = await onCheck(nin)

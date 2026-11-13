@@ -63,7 +63,9 @@ export type ContractArg =
   | { t: "u64"; v: string }
   | { t: "bytes32"; v: string }
   | { t: "opt_bytes32"; v: string | null }
-  | { t: "bool"; v: boolean };
+  | { t: "bool"; v: boolean }
+  /** Vec<Party::Account(address)>: an ajo's members (group_create, piece 12's guest rounds). */
+  | { t: "accounts"; v: string[] };
 
 export function scVal(a: ContractArg) {
   switch (a.t) {
@@ -86,6 +88,9 @@ export function scVal(a: ContractArg) {
       return xdr.ScVal.scvBytes(Buffer.from(a.v, "hex"));
     case "bool":
       return xdr.ScVal.scvBool(Boolean(a.v));
+    case "accounts":
+      if (!Array.isArray(a.v) || a.v.length < 2 || a.v.length > 20) throw new Error("bad members");
+      return xdr.ScVal.scvVec(a.v.map((p) => xdr.ScVal.scvVec([xdr.ScVal.scvSymbol("Account"), new Address(account(p, "member")).toScVal()])));
   }
   throw new Error(`bad contract arg type ${String((a as { t?: unknown }).t)}`);
 }

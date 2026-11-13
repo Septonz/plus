@@ -4,6 +4,46 @@ A voice-first wallet that helps people the financial system left behind save, sa
 
 Built for the Stellar Blockchain Innovation Challenge, Problem Space 1: fair financial assets and affordable financing.
 
+## Try it now
+
+**https://plus-wallet.vercel.app** → tap **Try Plus now**. No sign-up: you get a test market trader
+of your own (Adaeze, Bola, Chiamaka…) with 8 weeks of history, an ajo, a savings goal, verified
+stall stock and a ₦30,000 loan offer. The same browser keeps the same trader for 2 hours.
+
+Test it in 2 minutes:
+
+1. Check your balance and activity (Home, then the Activity tab).
+2. Pay a shop: Pay → Scan → **Mama Put Canteen** (its pay code is under Scan).
+3. Save ₦1,000 toward your goal (Home → Savings).
+4. Open the loan offer and accept it (Home → Loan). The test PIN is **1234**.
+5. Share your record (Activity → Share my record) and open it on /verify.
+6. Get a cash-out code (Home → Wallet → Cash out), then "Pretend an agent paid this out".
+
+Every action is a real **Stellar testnet** transaction: tap any "Verified on Stellar" tick to see it
+on the explorer. No real money. Voice is switched on for live demos only; everything you can say,
+you can also tap, and the demo video shows Plus being used by voice. **Try the agent app** on the
+same page makes you a test cash agent.
+
+## For presenters
+
+- **Unlock voice** on a device: sign in as staff on **/demo** (it unlocks the phone frames), or
+  open Profile → **Presenter** (the quiet link at the bottom) and type the presenter code. The
+  unlock lasts 7 days on that device; "Lock this device" ends it.
+- **Before a demo:** `pnpm demo:ready ng` resets the presenter people, warms everything and checks
+  the guest pool, the shared demo agent's float, the guests' treasury, voice mode and today's voice
+  conversations against the cap. It prints READY or exactly what is wrong.
+- **Guests:** `pnpm guests:status` (who is idle or in use, balances, resets), `pnpm guests:reset
+  [slot|all|agents]`, `pnpm guests:seed` (creates or grows the pool, tops up the treasury;
+  idempotent). Guests reset after 30 idle minutes and every night at 03:00 Lagos.
+- **Voice kill switch** (nobody gets a voice conversation, at once):
+
+  ```sh
+  npx supabase secrets set VOICE_MODE=off --project-ref qoqmnjzfjhpemwleipth
+  ```
+
+  `VOICE_MODE=presenter` (the default) puts it back for unlocked devices; `VOICE_DAILY_SESSION_CAP`
+  (default 40) caps new conversations a day for everyone together.
+
 ## Selvi's story
 
 Selvi sells flowers in Madurai and gets a ₹1,000 monthly state transfer into her bank account, saves with neighbours in a seettu, and turns to moneylenders when an emergency hits. With Plus she talks in Tamil on WhatsApp: she hears what arrived, saves a share of it automatically, pays her seettu, and gets a small advance whose full cost is said out loud before she agrees. Every rupee stays in her bank, while Stellar quietly builds a verifiable record that she can share, by consent, to earn fairer credit.

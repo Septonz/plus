@@ -20,6 +20,8 @@ export interface User {
   id: string;
   /** A named demo person (shared demo password): DEMO_LOGINS_ENABLED and the rate limit apply. */
   demo_login?: boolean;
+  /** Piece 12: a guest trader's pool place (public test mode); null for everyone else. */
+  guest_slot?: number | null;
   market_id: MarketId;
   name: string | null;
   language: string;

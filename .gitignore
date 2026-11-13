@@ -12,6 +12,7 @@ supabase/.branches
 .mcp.json
 scripts/.seed-state.json
 scripts/.demo-reset-state.json
+scripts/.guests-state.json
 /deno.lock
 docs/screens/zz-*.png
 .vercel

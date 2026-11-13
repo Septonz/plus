@@ -12,6 +12,7 @@ import { money, type PlusData, whenText } from './data'
 import { PAYEE_TA, SOURCE_KEY, T, type Key } from './i18n'
 import { useSays } from './screen'
 import { ErrorState, LoadingList, useLang, useT } from './ui'
+import { PresenterLink } from './presenter'
 
 export type Screen = 'home' | 'pay' | 'seettu' | 'advance' | 'record' | 'add' | 'savings' | 'settings'
 type Nav = { go: (s: Screen) => void }
@@ -747,6 +748,7 @@ export function Settings({ data, onSignOut }: { data: PlusData; onSignOut: () =>
         <Icon name="signOut" /> {both('signOut')}
       </Button>
       <p className="text-center text-sm text-secondary"><B k="demoNote" /></p>
+      <PresenterLink />
     </div>
   )
 }

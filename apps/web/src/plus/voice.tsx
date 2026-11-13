@@ -7,6 +7,9 @@
 // voice-session gives the agent a plus_session for that sign-up only.
 // Before showing the mic it asks voice-session/status whether her market's agent is set up; if
 // not, the mic shows "Voice coming soon" instead of failing.
+// Piece 12: voice costs ElevenLabs credits, so it is kept for live demos (VOICE_MODE). When this
+// device isn't unlocked for presenting, a tap on the mic opens a calm sheet instead: everything can
+// be tapped too, the demo video, and what she would say with where to tap it.
 //
 // Screen awareness (plus/screen.ts): the app's client tools (navigate, what_is_on_screen, demo and
 // settings buttons) go to the conversation at start, and every time her screen changes the agent
@@ -18,7 +21,8 @@
 import { useConversation } from '@elevenlabs/react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
-import { Icon, spring } from '../ds/components'
+import { Button, Icon, ListGroup, ListRow, Sheet, spring } from '../ds/components'
+import { DEMO_VIDEO_URL, presenterBody } from '../lib/presenter'
 import { call } from './api'
 import { clientTools, currentScreen, onScreenChange } from './screen'
 import { useT } from './ui'
@@ -27,18 +31,58 @@ type Session = { signed_url?: string; plus_session?: string; error?: string }
 
 export type MicWords = { mic: string; micListening: string; micSpeaking: string; micConnecting: string; micStop: string; micError: string; micSoon: string }
 
-// One status check per page load (per login or sign-up), shared by every mic button on the page.
-const statusOnce = new Map<string, Promise<boolean | null>>()
-function voiceConfigured(body?: Record<string, unknown>): Promise<boolean | null> {
-  const key = JSON.stringify(body ?? {})
+type VoiceStatus = { configured: boolean | null; available: boolean | null }
+// One status check per page load (per login, sign-up and unlock), shared by every mic button on the page.
+const statusOnce = new Map<string, Promise<VoiceStatus>>()
+function voiceStatus(body?: Record<string, unknown>): Promise<VoiceStatus> {
+  const full = { ...(body ?? {}), ...presenterBody() }
+  const key = JSON.stringify(full)
   let p = statusOnce.get(key)
   if (!p) {
-    p = call<{ configured?: boolean }>('voice-session/status', body)
-      .then((r) => (typeof r.configured === 'boolean' ? r.configured : null))
-      .catch(() => null)
+    p = call<{ configured?: boolean; available?: boolean }>('voice-session/status', full)
+      .then((r) => ({
+        configured: typeof r.configured === 'boolean' ? r.configured : null,
+        available: typeof r.available === 'boolean' ? r.available : null,
+      }))
+      .catch(() => ({ configured: null, available: null }))
     statusOnce.set(key, p)
   }
   return p
+}
+
+/** Things she could say, each with where to tap it instead (the sheet's list). */
+export type VoiceExample = { say: string; tap: string; go?: () => void }
+
+/** Voice is kept for live demos: a calm sheet, not an error. */
+export function VoiceOffSheet({ open, onClose, examples = [] }: { open: boolean; onClose: () => void; examples?: VoiceExample[] }) {
+  return (
+    <Sheet open={open} onClose={onClose} label="Voice is switched on for live demos">
+      <div className="space-y-5 px-5 pt-1">
+        <div className="space-y-2">
+          <span className="grid size-12 place-items-center rounded-full bg-accent-soft text-2xl text-accent-ink" aria-hidden="true"><Icon name="mic" /></span>
+          <h2 className="text-2xl font-semibold">Voice is switched on for live demos.</h2>
+          <p className="text-lg text-secondary">Everything you can say, you can also tap. Watch Plus being used by voice:</p>
+        </div>
+        {DEMO_VIDEO_URL && (
+          <a href={DEMO_VIDEO_URL} target="_blank" rel="noreferrer" className="block">
+            <Button className="w-full"><Icon name="play" /> Watch the demo video</Button>
+          </a>
+        )}
+        {examples.length > 0 && (
+          <div className="space-y-2">
+            <p className="px-1 text-sm font-medium text-secondary">What Funmi would say, and where to tap it</p>
+            <ListGroup>
+              {examples.map((e) => (
+                <ListRow key={e.say} icon="mic" title={`“${e.say}”`} subtitle={`→ ${e.tap}`} chevron={Boolean(e.go)}
+                  onClick={e.go ? () => { onClose(); e.go?.() } : undefined} />
+              ))}
+            </ListGroup>
+          </div>
+        )}
+        <Button variant="plain" className="w-full" onClick={onClose}>Close</Button>
+      </div>
+    </Sheet>
+  )
 }
 
 /** What the agent is doing, from the tool it just called. */
@@ -82,11 +126,17 @@ function useVoice(body: Record<string, unknown> | undefined, errorText: string) 
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const [configured, setConfigured] = useState<boolean | null>(null)
+  const [available, setAvailable] = useState<boolean | null>(null)
+  const [offSheet, setOffSheet] = useState(false)
   const [lines, setLines] = useState<Line[]>([])
   const [doing, setDoing] = useState<string | null>(null)
   useEffect(() => {
     let live = true
-    void voiceConfigured(body).then((c) => live && setConfigured(c))
+    void voiceStatus(body).then((c) => {
+      if (!live) return
+      setConfigured(c.configured)
+      setAvailable(c.available)
+    })
     return () => {
       live = false
     }
@@ -135,14 +185,24 @@ function useVoice(body: Record<string, unknown> | undefined, errorText: string) 
       conversation.endSession()
       return
     }
+    // Not unlocked for presenting (or switched off): the calm sheet, and no ElevenLabs call at all.
+    if (available === false) {
+      setOffSheet(true)
+      return
+    }
     setStarting(true)
     setLines([])
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       stream.getTracks().forEach((tr) => tr.stop())
-      const s = await call<Session>('voice-session', body)
+      const s = await call<Session>('voice-session', { ...(body ?? {}), ...presenterBody() })
       if (s.error === 'voice_not_configured') {
         setConfigured(false)
+        return
+      }
+      if (s.error === 'voice_off' || s.error === 'presenter_only' || s.error === 'voice_daily_cap') {
+        setAvailable(false)
+        setOffSheet(true)
         return
       }
       if (!s.signed_url || !s.plus_session) throw new Error(s.error ?? 'voice_unavailable')
@@ -159,7 +219,7 @@ function useVoice(body: Record<string, unknown> | undefined, errorText: string) 
       setStarting(false)
     }
   }
-  return { conversation, live, busy, configured, error, toggle, lines, doing }
+  return { conversation, live, busy, configured, error, toggle, lines, doing, offSheet, closeOffSheet: () => setOffSheet(false) }
 }
 
 /** Five bars that follow her voice (input) or the agent's (output). */
@@ -191,7 +251,7 @@ function Waveform({ level, className = '' }: { level: () => number; className?: 
 }
 
 /** `words` overrides the labels (Nigeria passes English; India uses the Tamil labels). */
-export function VoiceButton({ size = 'float', words, body }: { size?: 'float' | 'hero' | 'dock' | 'inline'; words?: MicWords; body?: Record<string, unknown> }) {
+export function VoiceButton({ size = 'float', words, body, examples }: { size?: 'float' | 'hero' | 'dock' | 'inline'; words?: MicWords; body?: Record<string, unknown>; examples?: VoiceExample[] }) {
   const tt = useT()
   const t = (k: keyof MicWords) => words?.[k] ?? tt(k)
   const v = useVoice(body, t('micError'))
@@ -199,9 +259,12 @@ export function VoiceButton({ size = 'float', words, body }: { size?: 'float' | 
   const label = configured === false ? t('micSoon') : busy ? t('micConnecting') : live ? (conversation.isSpeaking ? t('micSpeaking') : t('micListening')) : t('mic')
   const level = () => (conversation.isSpeaking ? conversation.getOutputVolume() : conversation.getInputVolume())
 
+  const sheet = <VoiceOffSheet open={v.offSheet} onClose={v.closeOffSheet} examples={examples} />
+
   if (size === 'inline') {
     return (
       <div className="flex items-center gap-3">
+        {sheet}
         <motion.button
           whileTap={{ scale: 0.94 }}
           onClick={toggle}
@@ -236,6 +299,7 @@ export function VoiceButton({ size = 'float', words, body }: { size?: 'float' | 
   const last = v.lines.slice(-4)
   return (
     <>
+      {sheet}
       <AnimatePresence>
         {(live || busy) && (
           <motion.div

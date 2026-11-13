@@ -9,6 +9,8 @@ declare const Deno: { env: { get(name: string): string | undefined } } | undefin
 
 export const MAX_FAILED_ATTEMPTS = 3;
 export const LOCK_MS = 15 * 60 * 1000;
+/** Piece 12: a guest (public test account) is locked out for 1 minute instead. */
+export const GUEST_LOCK_MS = 60 * 1000;
 const PIN_RE = /^[0-9]{4,6}$/;
 
 export interface PinCredential {
@@ -80,6 +82,7 @@ export async function checkPin(
   pin: string,
   now: Date = new Date(),
   pepperValue?: string,
+  lockMs: number = LOCK_MS,
 ): Promise<{ result: PinOutcome; update: Pick<PinCredential, "failed_attempts" | "locked_until"> | null }> {
   if (cred.locked_until && new Date(cred.locked_until).getTime() > now.getTime()) {
     return { result: { ok: false, outcome: "locked", lockedUntil: cred.locked_until }, update: null };
@@ -93,7 +96,7 @@ export async function checkPin(
   }
   const attempts = failed + 1;
   if (attempts >= MAX_FAILED_ATTEMPTS) {
-    const lockedUntil = new Date(now.getTime() + LOCK_MS).toISOString();
+    const lockedUntil = new Date(now.getTime() + lockMs).toISOString();
     return {
       result: { ok: false, outcome: "locked", lockedUntil },
       update: { failed_attempts: 0, locked_until: lockedUntil },
@@ -124,7 +127,7 @@ export async function setPin(db: Db, userId: string, pin: string): Promise<void>
  * read, so two concurrent attempts cannot both be counted from the same starting point;
  * on a conflict the attempt is re-evaluated against the fresh row.
  */
-export async function verifyPin(db: Db, userId: string, pin: string, now: Date = new Date()): Promise<PinOutcome> {
+export async function verifyPin(db: Db, userId: string, pin: string, now: Date = new Date(), lockMs: number = LOCK_MS): Promise<PinOutcome> {
   for (let i = 0; i < 3; i++) {
     const { data: cred, error } = await db
       .from("user_credentials")
@@ -134,7 +137,7 @@ export async function verifyPin(db: Db, userId: string, pin: string, now: Date =
     if (error) throw new Error(`verifyPin read failed: ${error.message}`);
     if (!cred) return { ok: false, outcome: "not_set" };
 
-    const { result, update } = await checkPin(cred as PinCredential, pin, now);
+    const { result, update } = await checkPin(cred as PinCredential, pin, now, undefined, lockMs);
     if (!update) return result;
 
     let q = db.from("user_credentials").update(update).eq("user_id", userId).eq("failed_attempts", cred.failed_attempts);

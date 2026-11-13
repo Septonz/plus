@@ -16,12 +16,18 @@
 // (the partner bank's anchor, which pays bank transfers into wallets) a wallet: a new key straight
 // into Vault, and a partner-sponsored account with an NGNT trustline queued on partner's queue.
 // Idempotent; answers the public address only. The issuer then funds it (pnpm demo:reset ng).
+//
+// POST .../scheduler/guests (cron every minute): piece 12's guest places. A place used and then idle
+// for 30 minutes (or asked for by the nightly pass) has its database reset at once, then its Stellar
+// reset moved along a step at a time (each step queues on the chain outbox and returns).
+// POST .../scheduler/guests-nightly (cron 03:00 Lagos): every place asked for a reset; housekeeping.
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { jobGate } from "../_shared/cron.ts";
 import { DEMO_FUNCTIONS, json, kickChainWorker } from "../_shared/http.ts";
 import { contractReader, refreshBalances } from "../_shared/ng-chain.ts";
 import { payoutSplit } from "../_shared/tools-ng.ts";
+import { AJO_MEMBERS, convergeAndRecord, houseKeeping, inReset, type PoolRow, SHOP, startReset, TREASURY, agentSigner } from "../_shared/guests.ts";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -50,12 +56,16 @@ async function refreshNigeria() {
 
 async function ajoPayouts(now: Date) {
   const groups = must(
-    await db.from("groups").select("id, name, onchain_id").eq("market_id", "ng").eq("mode", "pooled").not("onchain_id", "is", null),
+    await db.from("groups").select("id, name, onchain_id, payout_once").eq("market_id", "ng").eq("mode", "pooled").not("onchain_id", "is", null)
+      .is("retired_at", null),
     "groups",
-  ) as { id: string; name: string; onchain_id: number }[];
+  ) as { id: string; name: string; onchain_id: number; payout_once: boolean }[];
   const queued: string[] = [];
-  for (const grp of groups) {
-    const g = await chain.group(grp.onchain_id);
+  // Read every pot from the chain at once (one simulate each; 20+ guest ajos read one by one took
+  // longer than pg_net's 5 s), then pay out in order.
+  const read = await Promise.all(groups.map((grp) => chain.group(grp.onchain_id)));
+  for (const [i, grp] of groups.entries()) {
+    const g = read[i];
     // Ledger time trails the wall clock by a few seconds: wait 10 s past due so NotDue can't happen.
     // An empty pot (nobody paid this round) is not worth a transaction: skip it rather than pay ₦0.
     if (!g || g.pot_minor === 0n || g.next_due.getTime() + 10_000 > now.getTime()) continue;
@@ -98,6 +108,8 @@ async function ajoPayouts(now: Date) {
       }),
       "enqueue payout",
     );
+    // A guest's finished round (piece 12) pays out once, then the scheduler stops looking at it.
+    if (grp.payout_once) must(await db.from("groups").update({ retired_at: now.toISOString() }).eq("id", grp.id), "retire round");
     queued.push(`${grp.name} round ${round}`);
   }
   return queued;
@@ -152,6 +164,8 @@ async function loanMinimums() {
   return must(await db.rpc("ng_loan_minimums", { p_grace_days: l.graceDays }), "ng_loan_minimums");
 }
 
+declare const EdgeRuntime: { waitUntil(p: PromiseLike<unknown>): void };
+
 async function step<T>(name: string, fn: () => Promise<T>): Promise<T | { error: string }> {
   try {
     return await fn();
@@ -188,7 +202,49 @@ async function warm() {
 }
 
 /** System accounts: the bank-rail anchor and the partner lender's lending account (piece 4). */
-const SYSTEM_SIGNERS = new Set(["anchor_ng", "lending_ng"]);
+/** Piece 12 adds the guests' treasury, shop, ajo members and agents. */
+const SYSTEM_SIGNERS = new Set([
+  "anchor_ng", "lending_ng", TREASURY, SHOP.signer, ...AJO_MEMBERS.map((m) => m.signer), ...[0, 1, 2, 3].map(agentSigner),
+]);
+
+const IDLE_MS = 30 * 60_000;
+const chainEnv = () => ({ contractId: Deno.env.get("PLUS_CONTRACT_ID") ?? "", ngntSac: Deno.env.get("NGNT_SAC_ID") ?? "" });
+
+/** Start resets that are due, then move running ones along until about 45 seconds have passed. */
+async function guests(now: Date) {
+  const rows = must(await db.from("guest_pool").select("*"), "guest_pool") as PoolRow[];
+  const idle = (r: PoolRow) => !r.last_seen_at || now.getTime() - Date.parse(r.last_seen_at) >= IDLE_MS;
+  const started: string[] = [];
+  for (const r of rows) {
+    if (inReset(r) || !idle(r)) continue;
+    if (r.used || (r.reset_requested_at && (!r.reset_started_at || r.reset_requested_at > r.reset_started_at))) {
+      await startReset(db, r.kind, r.slot);
+      started.push(`${r.kind} ${r.slot}`);
+    }
+  }
+  const steps: Record<string, string> = {};
+  const until = Date.now() + 45_000;
+  for (let pass = 0; Date.now() < until; pass++) {
+    const running = (must(await db.from("guest_pool").select("*"), "guest_pool") as PoolRow[]).filter(inReset);
+    if (!running.length) break;
+    for (const r of running) {
+      const s = await convergeAndRecord(db, r, chainEnv());
+      steps[`${r.kind} ${r.slot}`] = s.note ? `${s.step}: ${s.note}` : s.step;
+    }
+    await kickChainWorker();
+    if (Date.now() + 8_000 > until) break;
+    await new Promise((res) => setTimeout(res, 6_000));
+  }
+  return { started, steps };
+}
+
+async function guestsNightly() {
+  const iso = new Date().toISOString();
+  must(await db.from("guest_pool").update({ reset_requested_at: iso }).not("slot", "is", null), "request resets");
+  const house = await houseKeeping(db);
+  await kickChainWorker();
+  return { requested: true, house };
+}
 
 async function provision(req: Request) {
   let signer = "";
@@ -228,6 +284,16 @@ Deno.serve(async (req) => {
   if (gate) return gate;
   if (new URL(req.url).pathname.endsWith("/warm")) return json(await warm());
   if (new URL(req.url).pathname.endsWith("/provision")) return json(await provision(req));
+  if (new URL(req.url).pathname.endsWith("/guests-nightly")) return json(await step("guests_nightly", guestsNightly));
+  if (new URL(req.url).pathname.endsWith("/guests")) {
+    // pg_net gives up after 5 s and the converge loop runs up to 45 s: cron gets an answer at once and
+    // the loop carries on in the background; scripts ask with {"wait": true} to see the steps.
+    const wait = await req.json().then((b) => b?.wait === true).catch(() => false);
+    const run = step("guests", () => guests(new Date()));
+    if (wait) return json(await run);
+    EdgeRuntime.waitUntil(run);
+    return json({ ok: true, background: true });
+  }
   const now = new Date();
   const t0 = performance.now();
   const expired = await step("expire", expireActions);

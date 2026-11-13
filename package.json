@@ -21,6 +21,7 @@
     "e2e:verify": "node scripts/e2e-verify.ts",
     "e2e:vouch": "node scripts/e2e-vouch.ts",
     "e2e:savings": "node scripts/e2e-savings.ts",
+    "e2e:guest": "node scripts/e2e-guest.ts",
     "demo:new-user": "node scripts/demo-new-user.ts",
     "screens": "node scripts/screens.ts",
     "demo:logins": "node scripts/demo-logins.ts",
@@ -31,7 +32,10 @@
     "bench:confirm": "node scripts/bench-confirm.ts",
     "warm": "node scripts/warm.ts",
     "demo:ready": "node scripts/demo-ready.ts",
-    "demo:reset": "pnpm --filter @plus/client build && node scripts/demo-reset.ts"
+    "demo:reset": "pnpm --filter @plus/client build && node scripts/demo-reset.ts",
+    "guests:seed": "node scripts/guests.ts seed",
+    "guests:reset": "node scripts/guests.ts reset",
+    "guests:status": "node scripts/guests.ts status"
   },
   "devDependencies": {
     "@plus/client": "workspace:*",

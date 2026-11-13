@@ -14,6 +14,7 @@ import type { PendingAction, Tx } from '../plus/data'
 import { useSays } from '../plus/screen'
 import { SmsBubble } from '../plus/ui'
 import { forScreen, inLang, naira, type WKey } from './words'
+import { GuestVerifyLink, TEST_PIN_HINT, useGuest } from './guest'
 
 const EXPLORER = 'https://stellar.expert/explorer/testnet'
 const NG = getMarket('ng')
@@ -110,6 +111,7 @@ function costLines(a: PendingAction, lang: string): CostLine[] {
 export function NgConfirmSheet({ action, txs, onClose, lang = 'en' }: { action: PendingAction; txs: Tx[]; onClose: () => void; lang?: string }) {
   const L = (k: WKey, fill?: { x?: string; n?: string }) => inLang(k, lang, fill)
   const pinNeeded = ngNeedsPin(action)
+  const guest = useGuest()
   const [pin, setPin] = useState('')
   const [phase, setPhase] = useState<ConfirmPhase>('ask')
   const [message, setMessage] = useState<string | null>(null)
@@ -205,7 +207,7 @@ export function NgConfirmSheet({ action, txs, onClose, lang = 'en' }: { action: 
       pin={pin}
       onPin={setPin}
       pinLabel={L('typePin')}
-      pinHint={L('pinHidden')}
+      pinHint={guest ? `${TEST_PIN_HINT} · ${L('pinHidden')}` : L('pinHidden')}
       yes={L('yes')}
       no={L('no')}
       closeLabel={L('close')}
@@ -256,6 +258,7 @@ export function ShareCodeBox({ code, expires }: { code: string; expires: string 
       <p className="text-sm font-medium text-secondary">Give this code to the lender</p>
       <p className="num mt-2 font-mono text-4xl font-light tracking-[0.12em] text-label" aria-label={code.replace('-', '').split('').join(' ')}>{code}</p>
       <p className="mt-2 text-sm text-secondary">They open <b>{window.location.host}/verify</b> and type it.{until ? ` It works until ${until}, for one lender.` : ''}</p>
+      <GuestVerifyLink code={code} />
     </div>
   )
 }

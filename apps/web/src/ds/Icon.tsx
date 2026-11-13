@@ -4,13 +4,14 @@ import {
   Activity, ArrowDownLeft, ArrowUpRight, Banknote, BadgeCheck, Camera, Check, ChevronLeft, ChevronRight, CircleAlert,
   CircleUser, Clock, Copy, Delete, ExternalLink, Flower2, Globe, HandCoins, Handshake, House, IdCard, Info, Landmark, Lock, LogOut,
   MessageSquare, Mic, Package, PiggyBank, Plus, QrCode, ReceiptText, RotateCw, ScanFace, Search, Settings, ShieldCheck,
-  Smartphone, Sparkles, Square, Star, Stethoscope, TrendingUp, TriangleAlert, User, UserPlus, Users, Wallet, X,
+  Play, Smartphone, Sparkles, Square, Star, Stethoscope, TrendingUp, TriangleAlert, User, UserPlus, Users, Wallet, X,
   type LucideIcon,
 } from 'lucide-react'
 
 const ICONS: Record<string, LucideIcon> = {
   mic: Mic,
   stop: Square,
+  play: Play,
   home: House,
   pay: ArrowUpRight,
   in: ArrowDownLeft,
