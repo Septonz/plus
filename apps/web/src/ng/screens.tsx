@@ -2,6 +2,7 @@
 // from the balance cache and the agent-tools read tools (the same tools the voice agent uses).
 // Each screen has a loading state (skeletons), an empty state and an error state with a retry.
 // Home is a stack of passes (Wallet, Savings, Loan, Assets); a pass opens full-screen (NgApp's CardDetail).
+import { useRecordingMode } from '../lib/recording'
 import { formatTime } from '../lib/time'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { getMarket } from '@plus/markets'
@@ -58,6 +59,7 @@ export type Detail = 'wallet' | 'savings' | 'loan' | 'assets' | 'add_cash' | 'ca
 
 export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Props & { onAnswer: (a: PendingAction) => void; open: Detail | null; onOpen: (d: Detail) => void }) {
   const sav = useTool('savings_status', version)
+  const recording = useRecordingMode()
   const loan = useTool('loan_status', version)
   const assets = useTool('my_assets', version)
   const owned = ((assets?.assets ?? []) as Row[]).filter((a) => a.status !== 'released')
@@ -90,6 +92,7 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
       </header>
 
       <GuestChecklist version={version} />
+      {recording && <p className="px-1 text-sm text-secondary">Stellar testnet · test money</p>}
       <Waiting data={data} onAnswer={onAnswer} />
       <WitnessRequests version={version} compact />
 

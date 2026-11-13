@@ -241,7 +241,7 @@ async function seedCreditHistory(db: Db, userId: string, now: Date) {
 
 export type Step = { step: string; done: boolean; note?: string };
 
-async function enqueue(db: Db, signer: string, kind: string, ref: string, args: Record<string, unknown>, after: number | null = null): Promise<number> {
+export async function enqueue(db: Db, signer: string, kind: string, ref: string, args: Record<string, unknown>, after: number | null = null): Promise<number> {
   return must(await db.rpc("chain_enqueue_on", { p_signer: signer, p_kind: kind, p_ref: ref, p_args: args, p_after: after }), `enqueue ${ref}`) as number;
 }
 
@@ -254,7 +254,7 @@ async function inFlight(db: Db, slot: number, signer: string | null): Promise<{ 
   return { busy: rows.filter((r) => r.status !== "failed" || r.attempts < 8).length, stuck: stuck?.ref ?? null };
 }
 
-async function hiddenTx(db: Db, userId: string, kind: string, kobo: bigint, ref: string): Promise<string | null> {
+export async function hiddenTx(db: Db, userId: string, kind: string, kobo: bigint, ref: string): Promise<string | null> {
   const r = must(await db.from("transactions").upsert({
     user_id: userId, market_id: "ng", kind, source: "guest_reset", amount: kobo.toString(), currency: "NGN", rail: "stellar", ref,
     status: "pending", hidden_from_history: true,
@@ -262,12 +262,12 @@ async function hiddenTx(db: Db, userId: string, kind: string, kobo: bigint, ref:
   return r[0]?.id ?? null;
 }
 
-async function ngnt(pub: string): Promise<bigint> {
+export async function ngnt(pub: string): Promise<bigint> {
   return (await horizonBalances(pub)).balances.NGNT ?? 0n;
 }
 
 /** Move a wallet to exactly `target` kobo: a top-up from the treasury, or the surplus back to it. */
-async function settleTo(db: Db, o: { pub: string; signer: string; target: bigint; ref: string; userId?: string; treasury: string }): Promise<boolean> {
+export async function settleTo(db: Db, o: { pub: string; signer: string; target: bigint; ref: string; userId?: string; treasury: string }): Promise<boolean> {
   const have = await ngnt(o.pub);
   if (have === o.target) return false;
   const diff = o.target - have;

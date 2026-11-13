@@ -18,7 +18,8 @@ import { Button, Icon, Notice, Segmented, Spinner, spring } from '../ds/componen
 import { supabase } from '../lib/supabase'
 import { useSession } from '../plus/auth'
 import { call } from '../plus/api'
-import { presenterUnlock, savePresenterUnlock } from '../lib/presenter'
+import { presenterUnlock, savePresenterUnlock, setRecordingMode } from '../lib/presenter'
+import { useRecordingMode } from '../lib/recording'
 
 const EXPERT = 'https://stellar.expert/explorer/testnet'
 type Market = 'ng' | 'in'
@@ -198,6 +199,7 @@ function Stage({ staff, onStaffLogin }: { staff: boolean; onStaffLogin: () => vo
         <div className="w-72">
           <Segmented label="Country" value={market} onChange={choose} options={[['ng', PEOPLE.ng.flag], ['in', PEOPLE.in.flag]]} />
         </div>
+        {staff && <RecordingControls />}
         {staff
           ? <Button variant="plain" size="sm" onClick={() => void supabase?.auth.signOut()}>Sign out</Button>
           : <Button variant="plain" size="sm" onClick={onStaffLogin}>Staff sign in</Button>}
@@ -211,6 +213,60 @@ function Stage({ staff, onStaffLogin }: { staff: boolean; onStaffLogin: () => vo
         </section>
         <Feed key={market} market={market} />
       </main>
+    </div>
+  )
+}
+
+type RecStep = { ok?: boolean; gen?: number; done?: boolean; step?: string; note?: string; error?: string; warm?: { path: string; status: number; ms: number }[] }
+
+/**
+ * Piece 13, item 10 (staff only). "Reset for recording": Funmi back to the demo start on the server
+ * (demo-control), Stellar steps followed until done, every demo function warmed, then a green
+ * "Ready to record". "Recording mode" (this presenter device and its phone frames): hides guest
+ * checklists, test-PIN hints and guest notices; keeps a small testnet note, the ticks and the links.
+ */
+function RecordingControls() {
+  const recording = useRecordingMode()
+  const [state, setState] = useState<'idle' | 'running' | 'ready' | 'error'>('idle')
+  const [note, setNote] = useState('')
+  const t0 = useRef(0)
+  const run = async () => {
+    setState('running')
+    setNote('Resetting Funmi…')
+    t0.current = Date.now()
+    try {
+      const r = await call<RecStep>('demo-control/recording-reset', {})
+      if (!r.gen) throw new Error(r.error ?? 'reset failed')
+      for (let i = 0; i < 60; i++) {
+        const s = await call<RecStep>('demo-control/recording-step', { gen: r.gen })
+        if (s.error) throw new Error(s.note || s.error)
+        if (s.done) {
+          const slow = (s.warm ?? []).filter((w) => w.status !== 200)
+          setNote(`Ready to record · ${Math.round((Date.now() - t0.current) / 1000)} s${slow.length ? ` · ${slow.length} warm-up(s) failed` : ''}`)
+          setState(slow.length ? 'error' : 'ready')
+          return
+        }
+        setNote(s.note ?? s.step ?? 'Working…')
+        await new Promise((res) => setTimeout(res, 3000))
+      }
+      throw new Error('still not done after 3 minutes')
+    } catch (e) {
+      setState('error')
+      setNote(e instanceof Error ? e.message : String(e))
+    }
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button size="sm" loading={state === 'running'} onClick={() => void run()}>Reset for recording</Button>
+      {note && (
+        <span role="status" className={`rounded-full px-3 py-1 text-sm ${state === 'ready' ? 'bg-green-600/20 text-green-300' : state === 'error' ? 'bg-red-600/20 text-red-300' : 'text-secondary'}`}>
+          {note}
+        </span>
+      )}
+      <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-secondary">
+        <input type="checkbox" className="size-5" checked={recording} onChange={(e) => setRecordingMode(e.target.checked)} />
+        Recording mode
+      </label>
     </div>
   )
 }

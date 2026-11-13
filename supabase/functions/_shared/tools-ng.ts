@@ -250,8 +250,16 @@ export const showPayCode = (c: string) => `${c.slice(0, 3)}-${c.slice(3)}`;
 export function parsePayCode(input: unknown): string | null {
   if (typeof input !== "string") return null;
   const tail = input.trim().split(/[/?#]/).filter(Boolean).pop() ?? "";
-  const c = tail.toUpperCase().replace(/[\s-]/g, "").replace(/O/g, "0").replace(/[IL]/g, "1");
+  // Pay codes never contain 0/O or 1/I/L (they look alike), so there is nothing to map them to:
+  // a code with one of them is refused, and payCodeLookalike says why.
+  const c = tail.toUpperCase().replace(/[\s-]/g, "");
   return /^[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{6}$/.test(c) ? c : null;
+}
+/** True when a typed code holds a character pay codes never use (0, O, 1, I or L). */
+export function payCodeLookalike(input: unknown): boolean {
+  if (typeof input !== "string") return false;
+  const tail = input.trim().split(/[/?#]/).filter(Boolean).pop() ?? "";
+  return /[01OIL]/i.test(tail.replace(/[\s-]/g, ""));
 }
 
 /** "ABCD-EFGH": how the code is shown and typed. */
@@ -542,6 +550,9 @@ export const ngPreparePay: NgTool = async ({ user, store, args, now = new Date()
   if (amount === null) return refuse("How much should she pay? Ask for the amount in naira.", "invalid_amount");
   // A shop's pay code (typed, said, or scanned from its QR): straight to that Plus wallet.
   const code = args.code !== undefined && args.code !== null && args.code !== "" ? parsePayCode(args.code) : undefined;
+  if (code === null && payCodeLookalike(args.code)) {
+    return refuse("Pay codes never use the letters O, I or L or the numbers 0 or 1. Ask her to read the code again from the shop's sign.", "invalid_code");
+  }
   if (code === null) return refuse("That pay code doesn't look right. It has 6 letters and numbers, like ABC-123. Ask her to read it again.", "invalid_code");
   const byCode = code ? await store.plusUserByPayCode(code) : null;
   if (code && !byCode) return refuse(`No Plus wallet has the pay code ${showPayCode(code)}. Ask her to check it.`, "unknown_code");

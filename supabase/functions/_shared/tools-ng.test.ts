@@ -14,6 +14,7 @@ import {
   ngConfirmAction,
   ngSetProfile,
   parsePayCode,
+  payCodeLookalike,
   ngPrepareSave,
   ngPrepareWithdrawSavings,
   ngSavingsStatus,
@@ -828,7 +829,13 @@ Deno.test("pay codes: typed, spoken or scanned forms all read as the same code",
   assertEquals(parsePayCode("abc-def"), "ABCDEF");
   assertEquals(parsePayCode("ABC DEF"), "ABCDEF");
   assertEquals(parsePayCode("https://plus-wallet.vercel.app/app/pay/K7Q2MX"), "K7Q2MX");
-  assertEquals(parsePayCode("K7Q-2MO"), null); // O reads as 0, which is not in the alphabet
+  // 0/O and 1/I/L never appear in a pay code: refused, and payCodeLookalike says why.
+  for (const bad of ["K7Q-2MO", "K7Q-2M0", "K7Q-2MI", "K7Q-2M1", "k7q-2ml"]) {
+    assertEquals(parsePayCode(bad), null, bad);
+    assertEquals(payCodeLookalike(bad), true, bad);
+  }
+  assertEquals(payCodeLookalike("K7Q-2MX"), false);
+  assertEquals(parsePayCode("k7q 2mx"), "K7Q2MX");
   assertEquals(parsePayCode("12345"), null);
 });
 

@@ -1,6 +1,6 @@
 # Plus
 
-A voice-first wallet that helps people the financial system left behind save, save together and borrow fairly, built on Stellar.
+A voice-first wallet that helps people the financial system left behind save and borrow fairly, built on Stellar.
 
 Built for the Stellar Blockchain Innovation Challenge, Problem Space 1: fair financial assets and affordable financing.
 
@@ -68,6 +68,12 @@ function, the cron jobs and what they answered, the chain outbox, Stellar RPC an
 first tap as Funmi, and prints a green **READY** or exactly what is wrong (about 30 s). Then open
 **/demo** (staff login) on the projector and **/agent** (Mama Bisi) on a phone.
 
+Between takes: **Reset for recording** on /demo (staff) puts Funmi back (wallet ₦26,400, Stall shade
+₦18,500, no loan, no waiting actions, payees added in a take removed), warms every function and turns
+green: **Ready to record** (a few seconds; `pnpm recording:reset` does the same from a terminal).
+**Recording mode** on /demo hides guest checklists and test-PIN hints on this device's phones; a small
+"Stellar testnet · test money" note stays on Home, and every tick and Stellar link stays.
+
 ### The demo people
 
 | Who | Login | What she shows |
@@ -81,17 +87,18 @@ first tap as Funmi, and prints a green **READY** or exactly what is wrong (about
 ### The 60-second script
 
 Funmi's phone on the projector (**/demo**), Amaka's and Mama Bisi's phones to hand, **/verify** on a
-second screen. `pnpm e2e:ng` runs these same steps by tool calls (run it after `pnpm demo:reset ng`,
-then reset again before the real thing).
+second screen. `pnpm e2e:ng` runs these same steps by tool calls, in this order (run it after a reset, then
+reset again before the real thing).
 
 | Time | On screen | Say |
 | ---- | --------- | --- |
-| 0:00–0:05 | Funmi: "How much do I have?" ₦26,400; the wallet card | "Funmi has no bank account. This wallet on Stellar is her account." |
-| 0:05–0:15 | She buys from Amaka's stall: **Scan** on Pay, Amaka's QR (Amaka's phone: Pay → **My code**), ₦2,000, Yes. The tick on both phones | "A shop is paid by scanning its code, like any QR payment, and it lands on Stellar in about four seconds." |
-| 0:15–0:22 | "Pay Iya Tunde two thousand." Plus reads it back; yes; the tick | "Her supplier is paid from her wallet in seconds, with the receipt on Stellar." |
-| 0:22–0:30 | "Save a thousand." Yes; Stall shade goes from ₦18,500 to ₦19,500 of ₦50,000 | "Her savings sit in her own pot on Stellar, apart from her spending money. 10% of every money in is saved by itself." |
-| 0:30–0:42 | "Can I get a loan?" You receive ₦30,000, cost ₦1,800, total ₦31,800, and why. She types her PIN; the money arrives | "The full cost in naira before she agrees, and why she qualifies: her activity, her verified stall stock, her saving. 10% of each money in repays it on its own." |
-| 0:42–0:52 | "Share my record with a lender." A code on her screen. **/verify**: type it; her history, savings, assets and loans, each "Read from Stellar", in about a second | "Any lender can check her record without trusting Plus, and never sees her name." |
+| 0:00–0:05 | Funmi, in Pidgin: "How much money dey my wallet?" ₦26,400; the wallet card | "Funmi has no bank account. This wallet on Stellar is her account." |
+| 0:05–0:12 | "Pay Iya Tunde two thousand." Plus reads it back; Yes; the tick | "Her supplier is paid in seconds, with the receipt on Stellar." |
+| 0:12–0:20 | A shop: **Scan** on Pay, Mama Put Canteen's QR, ₦1,500, Yes; the tick | "A shop is paid by scanning its code, like any QR payment." |
+| 0:20–0:27 | "Save a thousand." Yes; Stall shade goes from ₦18,500 to ₦19,500 of ₦50,000 | "Her savings sit in her own pot on Stellar. And 10% of every money in saves itself." |
+| 0:27–0:35 | "Can I get a loan?" ₦30,000, cost ₦1,800, total ₦31,800, and why | "The full cost before she agrees, and why: her activity, her verified stall stock, her saving every week." |
+| 0:35–0:42 | She types her PIN; the money arrives (lender approves automatically in the demo) | "The partner lender's money lands on Stellar in seconds. 10% of each money in repays it." |
+| 0:42–0:52 | "Share my record." A code on her screen. **/verify**: type it; her history, savings, assets and loans, each "Read from Stellar" | "Any lender can check her record without trusting Plus, and never sees her name." |
 | 0:52–1:00 | "Cash out three thousand." A code; Mama Bisi types it on /agent and hands over the cash | "And cash whenever she needs it, from the agent on her street." |
 | Optional (+10 s) | Mama Bisi records ₦500 cash on /agent; Funmi: "Mama Bisi says you gave her ₦500. Is that right?" yes | "Cash in works the same way: nothing moves until she says yes." |
 | Optional, before the loan (+10 s) | Amaka: "I vouch for Funmi." Her PIN. Funmi's Loan screen: "Tunde and Amaka vouched for you … 100% collateral instead of 150%" | "People she trades with back her. If the loan isn't repaid, they lose the right to vouch for six months, and nobody's money is touched." |

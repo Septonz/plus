@@ -515,3 +515,19 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/voice-session/deno.json"
 entrypoint = "./functions/voice-session/index.ts"
+
+[functions.demo-control]
+enabled = true
+# Piece 13: the staff /demo page's "Reset for recording". The gateway checks the JWT (verify_jwt =
+# true, not on the approved false list); the function then requires app_metadata.role = staff.
+verify_jwt = true
+import_map = "./functions/demo-control/deno.json"
+entrypoint = "./functions/demo-control/index.ts"
+
+[functions.text-command]
+enabled = true
+# Piece 13: Type to Plus. The gateway checks the JWT (verify_jwt = true, not on the approved false
+# list); the function then checks her login first and calls agent-tools with a minted plus_session.
+verify_jwt = true
+import_map = "./functions/text-command/deno.json"
+entrypoint = "./functions/text-command/index.ts"

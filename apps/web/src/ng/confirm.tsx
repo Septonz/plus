@@ -4,6 +4,7 @@
 // shows the tick, the seconds it took and the "Verified on Stellar" link. A cash-out shows its code
 // once. Paying a phone number that is not on Plus shows the text message they get (simulated on the
 // demo); paying a new phone number offers "Save this person" afterwards.
+import { useRecordingMode } from '../lib/recording'
 import { formatTime } from '../lib/time'
 import { useEffect, useRef, useState } from 'react'
 import { getMarket } from '@plus/markets'
@@ -110,6 +111,7 @@ export function NgConfirmSheet({ action, txs, onClose, lang = 'en' }: { action: 
   const L = (k: WKey, fill?: { x?: string; n?: string }) => inLang(k, lang, fill)
   const pinNeeded = ngNeedsPin(action)
   const guest = useGuest()
+  const recording = useRecordingMode()
   const [pin, setPin] = useState('')
   const [phase, setPhase] = useState<ConfirmPhase>('ask')
   const [message, setMessage] = useState<string | null>(null)
@@ -205,7 +207,7 @@ export function NgConfirmSheet({ action, txs, onClose, lang = 'en' }: { action: 
       pin={pin}
       onPin={setPin}
       pinLabel={L('typePin')}
-      pinHint={guest ? `${TEST_PIN_HINT} · ${L('pinHidden')}` : L('pinHidden')}
+      pinHint={guest && !recording ? `${TEST_PIN_HINT} · ${L('pinHidden')}` : L('pinHidden')}
       yes={L('yes')}
       no={L('no')}
       closeLabel={L('close')}

@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { Button, Card, Icon, Notice, Section } from '../ds/components'
 import { checklistDismissed, dismissChecklist, GUEST_STEPS, takeGuestNotice } from '../lib/guest'
 import { tool, type ToolResult } from '../plus/api'
+import { useRecordingMode } from '../lib/recording'
 
 export const GuestContext = createContext(false)
 export const useGuest = () => useContext(GuestContext)
@@ -43,7 +44,8 @@ export function GuestChecklist({ version }: { version: number }) {
   const [hidden, setHidden] = useState(checklistDismissed)
   const [notice] = useState(takeGuestNotice)
   const s = useGuestStatus(version)
-  if (!guest) return null
+  const recording = useRecordingMode()
+  if (!guest || recording) return null
   const done = new Set((s?.steps ?? []).filter((x) => x.done).map((x) => x.key))
   return (
     <>
