@@ -126,7 +126,9 @@ Deno.serve(withCors(async (req) => {
   if (path.endsWith("/status")) {
     const { data: today } = await db.rpc("voice_today");
     const t = (today ?? {}) as { sessions?: number; unlocks?: number };
-    return json({ configured, market: user.market_id, mode, available, reason, presenter: unlock !== null, today: t.sessions ?? null, cap: dailyCap(), unlocks: t.unlocks ?? null });
+    return json({ configured, market: user.market_id, mode, available, reason, presenter: unlock !== null, today: t.sessions ?? null, cap: dailyCap(), unlocks: t.unlocks ?? null,
+      // Whether a presenter code is set at all (never the code): pnpm demo:ready checks it.
+      presenter_code_set: (Deno.env.get("VOICE_PRESENTER_CODE") ?? "").trim().length >= 6 });
   }
   if (!configured) {
     console.error("voice-session: ELEVENLABS_API_KEY, the market's ELEVENLABS_AGENT_ID(_NG) or VOICE_SESSION_SECRET is not set");

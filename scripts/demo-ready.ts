@@ -9,7 +9,9 @@
 // (ran in the last 2 minutes, and their Edge Function calls answer 2xx), the chain outbox (nothing
 // stuck), Stellar RPC and Horizon (healthy, ledger fresh), the plus_credit contract (deployed, partner
 // is its writer, Funmi's assets readable, no credit write stuck), and a warmed first read as Funmi
-// under 1 second. TESTNET and the dev project only.
+// under 1 second; for Nigeria also public test mode (piece 12: the guest pool, the shared demo agent's
+// float, the guests' treasury and fee runway, voice mode and today's conversations against the cap).
+// TESTNET and the dev project only.
 import { spawnSync } from "node:child_process";
 import { Buffer } from "node:buffer";
 import * as StellarSdk from "@stellar/stellar-sdk";
@@ -79,8 +81,11 @@ async function cron() {
   }
   const h = data as Health;
   for (const j of h.jobs) {
-    const every = j.schedule.startsWith("*/") ? Number(j.schedule.slice(2).split(" ")[0]) * 60 : 60;
-    const ok = j.active && j.last_status === "succeeded" && j.last_seconds_ago !== null && j.last_seconds_ago <= every + 60;
+    // "* * * * *" every minute, "*/n ..." every n minutes; anything else (the nightly guest reset) daily.
+    const daily = !j.schedule.startsWith("*");
+    const every = j.schedule.startsWith("*/") ? Number(j.schedule.slice(2).split(" ")[0]) * 60 : daily ? 86_400 : 60;
+    const ok = j.active && ((daily && j.last_status === null) ||
+      (j.last_status === "succeeded" && j.last_seconds_ago !== null && j.last_seconds_ago <= every + 60));
     line(ok, j.name, `${j.schedule}; last ${j.last_status ?? "never"}${j.last_seconds_ago !== null ? `, ${j.last_seconds_ago} s ago` : ""}`);
     if (!ok) problems.push(`cron job ${j.name}: ${!j.active ? "inactive" : `last run ${j.last_status ?? "never"}${j.last_seconds_ago !== null ? ` ${j.last_seconds_ago} s ago` : ""}`}`);
   }
@@ -178,6 +183,78 @@ async function firstTap() {
 }
 
 /**
+ * Piece 12: public test mode. The guest pool (seeded, reset, funded), the shared demo agent's float,
+ * the guests' treasury and its runway, the partner's XLM for fees, and voice (mode, today's
+ * conversations against the cap, a presenter code or unlock to present with).
+ */
+async function publicTest() {
+  console.log("
+== Public test mode");
+  const want = Math.max(1, Math.min(30, Number(process.env.GUEST_POOL_SIZE ?? 20) || 20));
+  type Place = { kind: string; slot: number; user_id: string | null; helper_id: string | null; reset_started_at: string | null; reset_done_at: string | null; reset_requested_at: string | null; reset_error: string | null };
+  const { data: rows, error } = await db.from("guest_pool").select("kind, slot, user_id, helper_id, reset_started_at, reset_done_at, reset_requested_at, reset_error");
+  if (error) {
+    problems.push(`guest_pool: ${error.message} (npx supabase db push --remote --yes)`);
+    return line(false, "guest pool");
+  }
+  const places = (rows ?? []) as Place[];
+  const traders = places.filter((p) => p.kind === "trader" && p.user_id);
+  const ready = (p: Place) => Boolean(p.reset_done_at) && (!p.reset_started_at || p.reset_done_at! >= p.reset_started_at);
+  const readyN = traders.filter(ready).length;
+  const broken = places.filter((p) => p.reset_error);
+  line(traders.length >= want, "guest traders seeded", `${traders.length} of ${want}`);
+  if (traders.length < want) problems.push(`only ${traders.length} of ${want} guest traders: pnpm guests:seed`);
+  line(readyN === traders.length && broken.length === 0, "guest resets", `${readyN} ready${broken.length ? `, ${broken.length} with errors (${broken.map((p) => `${p.kind} ${p.slot}: ${p.reset_error}`).join("; ").slice(0, 160)})` : ""}`);
+  if (broken.length) problems.push(`guest resets failing: pnpm guests:status`);
+  else if (readyN < traders.length) warnings.push(`${traders.length - readyN} guest(s) still resetting (the scheduler finishes them within minutes; pnpm guests:status)`);
+  const agents = places.filter((p) => p.kind === "agent" && p.helper_id);
+  line(agents.length >= 4, "guest agents", `${agents.length} (the shared demo agent and 3 for "Try the agent app")`);
+  if (agents.length < 4) problems.push("guest agents missing: pnpm guests:seed");
+
+  const { data: wallets } = await db.from("system_wallets").select("signer, pub").in("signer", ["guest_treasury", "guest_agent0", "partner"]);
+  const pub = (s: string) => (wallets ?? []).find((w) => w.signer === s)?.pub as string | undefined;
+  const bal = async (p: string | undefined) => {
+    if (!p) return null;
+    const a = await fetch(`${HORIZON_URL}/accounts/${p}`).then((r) => r.ok ? r.json() : null, () => null) as { balances: { asset_type: string; asset_code?: string; balance: string }[] } | null;
+    if (!a) return null;
+    return { ngnt: Number(a.balances.find((b) => b.asset_code === "NGNT")?.balance ?? 0), xlm: Number(a.balances.find((b) => b.asset_type === "native")?.balance ?? 0) };
+  };
+  const [agent0, treasury, partner] = await Promise.all([bal(pub("guest_agent0")), bal(pub("guest_treasury")), bal(pub("partner"))]);
+  const floatOk = (agent0?.ngnt ?? 0) >= 100_000;
+  line(floatOk, "shared demo agent's float", agent0 ? `₦${agent0.ngnt.toLocaleString("en-NG")}` : "no wallet");
+  if (!floatOk) problems.push("the shared demo agent's float is under ₦100,000: pnpm guests:reset agents");
+  // Worst case a night: every guest took the ₦30,000 loan and moved ₦10,000 more, all made good from the treasury.
+  const nightly = want * 40_000;
+  const days = treasury ? Math.floor(treasury.ngnt / nightly) : 0;
+  line(days >= 14, "guests' treasury", treasury ? `₦${Math.round(treasury.ngnt).toLocaleString("en-NG")}: about ${days} days at ₦${nightly.toLocaleString("en-NG")} a night` : "no wallet");
+  if (days < 14) problems.push("the guests' treasury has under 2 weeks of runway: pnpm guests:seed tops it up");
+  // Fees: Plus fee-bumps every guest transaction from the partner account. ~20 transactions a reset,
+  // up to 3 resets a guest a day, at most ~0.02 XLM each (Soroban calls cost more than payments).
+  const xlmDay = want * 3 * 20 * 0.02;
+  const xlmDays = partner ? Math.floor(partner.xlm / xlmDay) : 0;
+  line(xlmDays >= 14, "partner XLM for fees", partner ? `${Math.round(partner.xlm).toLocaleString("en")} XLM: about ${xlmDays} days at ${xlmDay} XLM a day` : "no wallet");
+  if (xlmDays < 14) problems.push("the partner account has under 2 weeks of XLM for guest fees: send it testnet XLM");
+
+  const c = createClient(url, process.env.VITE_SUPABASE_ANON_KEY!, { auth: { persistSession: false } });
+  const { data: s } = await c.auth.signInWithPassword({ email: "demo-funmi@example.com", password: process.env.VITE_DEMO_LOGIN_PASSWORD! });
+  const v = s?.session
+    ? await fetch(`${url}/functions/v1/voice-session/status`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${s.session.access_token}` }, body: "{}" })
+      .then((r) => r.json(), () => null) as { mode?: string; today?: number; cap?: number; unlocks?: number; presenter_code_set?: boolean; configured?: boolean } | null
+    : null;
+  if (!v?.mode) {
+    problems.push("voice-session/status did not answer");
+    return line(false, "voice");
+  }
+  line(v.mode !== "on", "voice mode", `${v.mode}${v.mode === "on" ? " (public testers can spend ElevenLabs credits: set VOICE_MODE=presenter)" : ""}`);
+  if (v.mode === "on") problems.push("VOICE_MODE is on: public testers would spend ElevenLabs credits (npx supabase secrets set VOICE_MODE=presenter --project-ref qoqmnjzfjhpemwleipth)");
+  line((v.today ?? 0) < (v.cap ?? 0), "voice conversations today", `${v.today ?? 0} of ${v.cap ?? "?"} (VOICE_DAILY_SESSION_CAP)`);
+  if ((v.today ?? 0) >= (v.cap ?? 0)) warnings.push("today's voice cap is used up: new conversations are refused until midnight (Lagos)");
+  const canPresent = v.mode === "off" || Boolean(v.presenter_code_set) || (v.unlocks ?? 0) > 0;
+  line(canPresent, "presenter unlock", `${v.presenter_code_set ? "code set" : "no VOICE_PRESENTER_CODE"}, ${v.unlocks ?? 0} device(s) unlocked (staff login on /demo works too)`);
+  if (!canPresent) problems.push("no way to unlock voice for a presenter: set VOICE_PRESENTER_CODE (npx supabase secrets set VOICE_PRESENTER_CODE=... --project-ref qoqmnjzfjhpemwleipth) or sign in on /demo as staff");
+}
+
+/**
  * Piece 11: every path of the 60-second demo, timed (and so warmed). Reads as Funmi; money paths
  * are prepared and then cancelled (nothing moves), and "Yes to tick" is a tiny XLM payment from
  * the partner to itself through the same outbox and worker her payments use.
@@ -239,6 +316,7 @@ async function main() {
   await credit();
   await firstTap();
   await demoPaths();
+  if (markets.includes("ng")) await publicTest();
 
   const secs = Math.round((Date.now() - t0) / 1000);
   if (timings.length) {
