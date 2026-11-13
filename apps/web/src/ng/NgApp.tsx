@@ -16,6 +16,7 @@ import { Receive, Scan } from './shop'
 import { NgConfirmSheet } from './confirm'
 import { AddCash, Ajo, CashOut, Home, Loan, Pay, Record, Savings, Settings, WalletDetail, type Detail } from './screens'
 import { MIC_WORDS, naira, W, yo } from './words'
+import { GuestContext, GuestShop, useGuestFlag } from './guest'
 
 export type Wallet = { NGNT: bigint; USDC: bigint; updated_at: string | null }
 export type Go = (s: Screen) => void
@@ -98,6 +99,8 @@ export default function NgApp({ data }: { data: PlusData }) {
   const wallet = useWallet(data.me?.id, data.version)
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set())
   const [chosen, setChosen] = useState<PendingAction | null>(null)
+  const guest = useGuestFlag(data.me?.id)
+  const [scanCode, setScanCode] = useState<string | null>(null)
 
   // Her own actions (voice or taps) open the sheet by themselves; an agent's cash-in waits on Home
   // until she taps it (chosen).
@@ -179,6 +182,7 @@ export default function NgApp({ data }: { data: PlusData }) {
   })
 
   return (
+    <GuestContext.Provider value={guest}>
     <LangContext.Provider value={ENGLISH}>
       <main className="mx-auto max-w-md px-4 pb-32 pt-[max(env(safe-area-inset-top),1.25rem)]">
         {tab === 'home' && <Home {...props} onAnswer={onAnswer} open={open} onOpen={(d) => openDetail(d)} />}
@@ -197,7 +201,7 @@ export default function NgApp({ data }: { data: PlusData }) {
             {open === 'assets' && <Assets version={data.version} />}
             {open === 'add_cash' && <AddCash {...props} onAnswer={onAnswer} />}
             {open === 'receive' && <Receive version={data.version} />}
-            {open === 'scan' && <Scan initialCode={linkedCode} />}
+            {open === 'scan' && <><GuestShop version={data.version} onUse={setScanCode} /><Scan key={scanCode ?? 'scan'} initialCode={scanCode ?? linkedCode} /></>}
             {open === 'cash_out' && <CashOut {...props} shownCode={shownCode} onShowCode={setShownCode} />}
           </CardDetail>
         )}
@@ -230,5 +234,6 @@ export default function NgApp({ data }: { data: PlusData }) {
         />
       )}
     </LangContext.Provider>
+    </GuestContext.Provider>
   )
 }

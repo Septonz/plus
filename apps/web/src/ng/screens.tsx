@@ -17,6 +17,7 @@ import { WitnessRequests } from './assets'
 import { PresenterLink } from '../plus/presenter'
 import { StellarDetails } from './shop'
 import { CodeBox } from './confirm'
+import { GuestCashIn, GuestChecklist, GuestPaidOut, GuestSeen, useGuest } from './guest'
 import { useTool, type Go, type Wallet } from './NgApp'
 import { forScreen, naira, W, when, yo } from './words'
 
@@ -92,6 +93,7 @@ export function Home({ data, wallet, go, version, onAnswer, open, onOpen }: Prop
         </button>
       </header>
 
+      <GuestChecklist version={version} />
       <Waiting data={data} onAnswer={onAnswer} />
       <WitnessRequests version={version} compact />
 
@@ -208,6 +210,7 @@ export function AddCash({ data, version, onAnswer }: Props & { onAnswer: (a: Pen
   return (
     <>
       <Waiting data={data} onAnswer={onAnswer} />
+      <GuestCashIn onDone={() => void data.refresh()} />
       <Section title={W.bankTransfer.en}>
         <Loaded r={bank} rows={1}>
           {(b) => b.ok === false ? (
@@ -900,6 +903,7 @@ export function CashOut({ version, shownCode, onShowCode }: Props & { shownCode:
               {W.newCode.en}
             </Button>
           )}
+          <GuestPaidOut cashOutId={String(c.id)} onDone={() => setShown(null)} />
         </Card>
       ))}
       <Section title="How much cash do you need?">
@@ -1015,6 +1019,7 @@ export function Record({ version }: Props) {
         const recent = (r.recent ?? []) as Row[]
         return (
           <div className="space-y-6">
+            <GuestSeen what="activity" version={version} />
             <Card>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-5">
                 {([['Came in', totals.received_text], ['Paid', totals.paid_text], ['Into ajo', totals.ajo_text], ['Agent cash-ins', r.cash_ins]] as const).map(([k, v]) => (
@@ -1049,7 +1054,8 @@ export function Settings({ data, version, onSignOut }: Props & { onSignOut: () =
   const [saved, setSaved] = useState(false)
   const [lang, setLang] = useState<string | null>(null)
   const limits = (me?.limits ?? null) as { tier: number; daily_text: string; balance_text: string; advances: boolean } | null
-  const name = data.me?.name ?? ''
+  const guest = useGuest()
+  const name = `${data.me?.name ?? ''}${guest ? ' (guest)' : ''}`
   const language = lang ?? String(me?.language ?? data.me?.language ?? 'en')
   useSays(
     `Profile: ${name}${limits ? `, level ${limits.tier}. Limits: send ${limits.daily_text} a day, hold up to ${limits.balance_text}` : ''}. ` +
