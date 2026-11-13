@@ -89,6 +89,11 @@ function Signed() {
   const [key, setKey] = useState(() => newKey('agent'))
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ tone: Tone; text: string } | null>(null)
+  // A guest agent serves the test traders, never Funmi: no presenter number filled in for it.
+  const guestAgent = me?.guest === true
+  useEffect(() => {
+    if (guestAgent) setPhone((p) => (p === '+2340000000501' ? '' : p))
+  }, [guestAgent])
 
   const load = useCallback(async () => setMe(await call<Me>('agent-api/me')), [])
   useEffect(() => {

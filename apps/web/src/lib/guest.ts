@@ -2,7 +2,7 @@
 // agent-tools/guest_start for a guest account (the same one again for 2 hours on this device),
 // then sign in with the one-time token it returns. The device id is random and only identifies
 // this browser to the guest pool; nothing else is stored.
-import { supabase } from './supabase'
+import { clientFor, supabase } from './supabase'
 import { tool } from '../plus/api'
 
 const DEVICE_KEY = 'plus-device'
@@ -28,8 +28,11 @@ export async function startGuest(kind: 'trader' | 'agent'): Promise<string | nul
   if (!supabase) return 'This test link is not set up yet.'
   const r = await tool<GuestStart>('guest_start', { kind, device_id: deviceId() }).catch((): GuestStart => ({ ok: false, text: 'No connection. Try again.' }))
   if (!r.ok || !r.sign_in_token) return r.text ?? 'The test accounts are busy. Try again in a minute.'
-  await supabase.auth.signOut().catch(() => undefined)
-  const { error } = await supabase.auth.verifyOtp({ token_hash: r.sign_in_token, type: 'magiclink' })
+  // Each page keeps its own session (lib/supabase): sign in where the guest is going.
+  const auth = clientFor(kind === 'trader' ? '/app' : '/agent')
+  if (!auth) return 'This test link is not set up yet.'
+  await auth.auth.signOut({ scope: 'local' }).catch(() => undefined)
+  const { error } = await auth.auth.verifyOtp({ token_hash: r.sign_in_token, type: 'magiclink' })
   if (error) return 'That didn’t work. Try again.'
   try {
     if (r.notice) sessionStorage.setItem(NOTICE_KEY, r.notice)
