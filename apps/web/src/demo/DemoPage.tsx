@@ -1,4 +1,6 @@
-// /demo: the staff view for the projector. Staff login (app_metadata.role = staff).
+// /demo: the projector view, open to anyone. A staff login (app_metadata.role = staff) is optional:
+// it unlocks voice for presenting and shows every account in the feed; without it the feed shows the
+// demo accounts only (demo_feed filters) and the phones have no voice (no ElevenLabs credits spent).
 //   Top: Nigeria / India switch.
 //   Left: the Plus app in a phone frame, signed in as Funmi (or Selvi): /app?as=funmi in an iframe
 //         with its own login, so both phones stay signed in and the switch is instant.
@@ -80,17 +82,19 @@ function Dark({ children, className = '' }: { children: ReactNode; className?: s
 
 export default function DemoPage() {
   const { session, ready } = useSession()
+  const [login, setLogin] = useState(false)
   if (!ready) return <Dark>{null}</Dark>
-  if (!session) return <StaffLogin />
-  if (session.user.app_metadata?.role !== 'staff') return <NotStaff session={session} />
-  return <Stage />
+  const staff = session?.user.app_metadata?.role === 'staff'
+  if (login && !session) return <StaffLogin onCancel={() => setLogin(false)} />
+  if (login && session && !staff) return <NotStaff session={session} />
+  return <Stage staff={staff} onStaffLogin={() => setLogin(true)} />
 }
 
 // ---------------------------------------------------------------------------
 
 const field = 'mt-1.5 block min-h-14 w-full rounded-control border border-hairline bg-surface-2 px-4 text-lg text-label focus:border-accent focus:outline-none'
 
-function StaffLogin() {
+function StaffLogin({ onCancel }: { onCancel: () => void }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -122,6 +126,7 @@ function StaffLogin() {
         </label>
         {error && <Notice tone="danger">{error}</Notice>}
         <Button type="submit" className="w-full" loading={busy}>{busy ? 'Signing in…' : 'Sign in'}</Button>
+        <Button type="button" variant="plain" className="w-full" onClick={onCancel}>Back to the demo view</Button>
       </form>
     </Dark>
   )
@@ -147,10 +152,10 @@ const PEOPLE: Record<Market, { name: string; story: string; flag: string }> = {
  * Piece 12: the staff login unlocks voice on this device for presenting (7 days, no code). The phones
  * below share this browser's storage, so they wait for it and pick it up on load.
  */
-function usePresenterUnlock(): boolean {
-  const [ready, setReady] = useState(() => presenterUnlock() !== null)
+function usePresenterUnlock(staff: boolean): boolean {
+  const [ready, setReady] = useState(() => !staff || presenterUnlock() !== null)
   useEffect(() => {
-    if (ready) return
+    if (ready || !staff) return
     let live = true
     void call<{ ok?: boolean; presenter_token?: string; expires_at?: string }>('voice-session/unlock', {})
       .then((r) => {
@@ -161,12 +166,12 @@ function usePresenterUnlock(): boolean {
     return () => {
       live = false
     }
-  }, [ready])
+  }, [ready, staff])
   return ready
 }
 
-function Stage() {
-  const unlocked = usePresenterUnlock()
+function Stage({ staff, onStaffLogin }: { staff: boolean; onStaffLogin: () => void }) {
+  const unlocked = usePresenterUnlock(staff)
   const [market, setMarket] = useState<Market>('ng')
   const [mounted, setMounted] = useState<Set<Market>>(() => new Set(['ng']))
   const choose = (m: Market) => {
@@ -193,7 +198,9 @@ function Stage() {
         <div className="w-72">
           <Segmented label="Country" value={market} onChange={choose} options={[['ng', PEOPLE.ng.flag], ['in', PEOPLE.in.flag]]} />
         </div>
-        <Button variant="plain" size="sm" onClick={() => void supabase?.auth.signOut()}>Sign out</Button>
+        {staff
+          ? <Button variant="plain" size="sm" onClick={() => void supabase?.auth.signOut()}>Sign out</Button>
+          : <Button variant="plain" size="sm" onClick={onStaffLogin}>Staff sign in</Button>}
       </header>
 
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-10 p-8 lg:grid-cols-[auto_1fr]">
