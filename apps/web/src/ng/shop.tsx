@@ -65,7 +65,7 @@ export function Scan({ initialCode, onPaid }: { initialCode?: string | null; onP
   const [msg, setMsg] = useState<string | null>(null)
   const video = useRef<HTMLVideoElement>(null)
   const clean = code.toUpperCase().replace(/[^A-Z0-9]/g, '')
-  const ready = clean.length === 6
+  const ready = clean.length === 6 && !/[01OIL]/.test(clean)
   useSays(`Scan to pay. ${scanning ? 'The camera is open: she points it at the shop’s QR.' : 'A Scan button opens the camera; or she types the 6-character pay code.'}` +
     (ready ? ` Code ${clean.slice(0, 3)}-${clean.slice(3)} entered; amount ${amount ? naira(BigInt(amount) * 100n) : 'not typed yet'}; then Next.` : ''))
 
@@ -135,6 +135,7 @@ export function Scan({ initialCode, onPaid }: { initialCode?: string | null; onP
           )}
           {camError && <Notice tone="warning">{camError}</Notice>}
           <TextField label="Or type the pay code" value={code} onChange={(v) => setCode(v.toUpperCase().slice(0, 7))} placeholder="ABC-234" autoComplete="off" />
+          {/[01OIL]/.test(clean) && <Notice tone="warning">Pay codes never use O, I, L, 0 or 1. Check the code on the shop's sign.</Notice>}
         </Card>
       )}
       {ready && (

@@ -16,3 +16,6 @@ scripts/.guests-state.json
 /deno.lock
 docs/screens/zz-*.png
 .vercel
+
+# Reference material from another project (never shipped)
+reference/
