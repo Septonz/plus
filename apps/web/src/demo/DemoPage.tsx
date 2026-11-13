@@ -15,6 +15,8 @@ import { formatMoney } from '@plus/markets'
 import { Button, Icon, Notice, Segmented, Spinner, spring } from '../ds/components'
 import { supabase } from '../lib/supabase'
 import { useSession } from '../plus/auth'
+import { call } from '../plus/api'
+import { presenterUnlock, savePresenterUnlock } from '../lib/presenter'
 
 const EXPERT = 'https://stellar.expert/explorer/testnet'
 type Market = 'ng' | 'in'
@@ -141,7 +143,30 @@ const PEOPLE: Record<Market, { name: string; story: string; flag: string }> = {
   in: { name: 'Selvi', story: 'Flower seller, Madurai · bank account · her record is on Stellar', flag: 'India' },
 }
 
+/**
+ * Piece 12: the staff login unlocks voice on this device for presenting (7 days, no code). The phones
+ * below share this browser's storage, so they wait for it and pick it up on load.
+ */
+function usePresenterUnlock(): boolean {
+  const [ready, setReady] = useState(() => presenterUnlock() !== null)
+  useEffect(() => {
+    if (ready) return
+    let live = true
+    void call<{ ok?: boolean; presenter_token?: string; expires_at?: string }>('voice-session/unlock', {})
+      .then((r) => {
+        if (r.ok && r.presenter_token && r.expires_at) savePresenterUnlock({ token: r.presenter_token, expires_at: r.expires_at })
+      })
+      .catch(() => null)
+      .finally(() => live && setReady(true))
+    return () => {
+      live = false
+    }
+  }, [ready])
+  return ready
+}
+
 function Stage() {
+  const unlocked = usePresenterUnlock()
   const [market, setMarket] = useState<Market>('ng')
   const [mounted, setMounted] = useState<Set<Market>>(() => new Set(['ng']))
   const choose = (m: Market) => {
@@ -173,7 +198,7 @@ function Stage() {
 
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-10 p-8 lg:grid-cols-[auto_1fr]">
         <section aria-label={`${PEOPLE[market].name}'s phone`} className="flex h-[80vh] min-h-0 justify-center lg:h-auto">
-          {(['ng', 'in'] as const).map((m) => mounted.has(m) && (
+          {(['ng', 'in'] as const).map((m) => unlocked && mounted.has(m) && (
             <Phone key={m} src={`/app?as=${m === 'ng' ? 'funmi' : 'selvi'}`} title={`${PEOPLE[m].name}'s Plus app`} hidden={m !== market} />
           ))}
         </section>

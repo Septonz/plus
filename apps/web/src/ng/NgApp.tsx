@@ -10,7 +10,7 @@ import { tool, type ToolResult } from '../plus/api'
 import type { PendingAction, PlusData } from '../plus/data'
 import { settle, useScreenTools } from '../plus/screen'
 import { ENGLISH, LangContext } from '../plus/ui'
-import { VoiceButton } from '../plus/voice'
+import { VoiceButton, type VoiceExample } from '../plus/voice'
 import { Assets, requestPhoto } from './assets'
 import { Receive, Scan } from './shop'
 import { NgConfirmSheet } from './confirm'
@@ -119,6 +119,18 @@ export default function NgApp({ data }: { data: PlusData }) {
     }
   }, [openDetail])
   const props = { data, wallet, go, version: data.version }
+  // When voice is kept for live demos: what Funmi would say, and where to tap it instead.
+  const detail = (d: Detail) => () => { setTab('home'); openDetail(d, false) }
+  const examples: VoiceExample[] = [
+    { say: 'How much do I have?', tap: 'Home → Wallet', go: detail('wallet') },
+    { say: 'Send Iya Tunde two thousand', tap: 'Pay tab', go: () => go('pay') },
+    { say: 'Pay Mama Put Canteen', tap: 'Pay → Scan', go: detail('scan') },
+    { say: 'Pay my ajo', tap: 'Home → Ajo', go: detail('group') },
+    { say: 'Save a thousand', tap: 'Home → Savings', go: detail('savings') },
+    { say: 'Can I get a loan?', tap: 'Home → Loan', go: detail('loan') },
+    { say: 'Share my record with a lender', tap: 'Activity → Share my record', go: () => go('record') },
+    { say: 'Cash out three thousand', tap: 'Wallet → Cash out', go: detail('cash_out') },
+  ]
   const onAnswer = (a: PendingAction) => setChosen(a)
   // A cash-out code made by voice is shown on the Cash out screen only (never handed to the agent).
   const [shownCode, setShownCode] = useState<{ id: string; code: string } | null>(null)
@@ -192,7 +204,7 @@ export default function NgApp({ data }: { data: PlusData }) {
       </AnimatePresence>
 
       <BottomNav<Tab>
-        center={<VoiceButton size="dock" words={MIC_WORDS} />}
+        center={<VoiceButton size="dock" words={MIC_WORDS} examples={examples} />}
         active={open ? null : tab}
         onSelect={(k) => go(k)}
         items={[

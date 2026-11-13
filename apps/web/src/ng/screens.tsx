@@ -14,6 +14,7 @@ import type { PendingAction, PlusData } from '../plus/data'
 import { useSays } from '../plus/screen'
 import { CopyButton, ErrorState, LoadingList, TextField } from '../plus/ui'
 import { WitnessRequests } from './assets'
+import { PresenterLink } from '../plus/presenter'
 import { StellarDetails } from './shop'
 import { CodeBox } from './confirm'
 import { useTool, type Go, type Wallet } from './NgApp'
@@ -1117,6 +1118,7 @@ export function Settings({ data, version, onSignOut }: Props & { onSignOut: () =
       {msg && <Notice tone="danger">{msg}</Notice>}
       <Button variant="destructive" className="w-full" onClick={onSignOut}><Icon name="signOut" /> {W.signOut.en}</Button>
       <p className="text-center text-sm text-secondary">Demo · test money only</p>
+      <PresenterLink />
     </div>
   )
 }

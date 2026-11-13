@@ -7,7 +7,7 @@
 //
 // For each agent: system prompt and first message from prompt.md; authentication on (signed URLs
 // only, which only voice-session can get); the plus_session dynamic variable; a 10-second silence
-// timeout before the agent speaks again; every webhook tool in its folder, with the x-plus-secret
+// timeout before the agent speaks again; a 180-second maximum conversation (piece 12); every webhook tool in its folder, with the x-plus-secret
 // header bound to the workspace secret PLUS_AGENT_SECRET (created from AGENT_SHARED_SECRET).
 // Tools are matched by name among the ones already attached to that agent: updated in place,
 // created when new, deleted when their file is gone.
@@ -29,6 +29,8 @@ const ROTATE = process.argv.includes("--rotate-secret");
 const SECRET_NAME = "PLUS_AGENT_SECRET";
 const SECRET_PLACEHOLDER = "<ELEVENLABS_SECRET_ID_FOR_PLUS_AGENT_SECRET>";
 const SILENCE_SECS = 10;
+/** Piece 12: every conversation ends after 3 minutes (the credit budget's second safety net). */
+const MAX_CONVERSATION_SECS = 180;
 /** A warm, young, conversational Nigerian English voice from the ElevenLabs voice library. */
 const NG_VOICE = { name: "Patience Blooms - Friendly", voiceId: "YHEouMKSiM7WzRONGZ4w" };
 
@@ -175,6 +177,7 @@ async function syncAgent(spec: Spec, sid: string): Promise<string> {
         },
       },
       turn: { turn_timeout: SILENCE_SECS },
+      conversation: { max_duration_seconds: MAX_CONVERSATION_SECS },
       ...(spec.voiceId ? { tts: { voice_id: spec.voiceId, model_id: "eleven_v4_turbo" } } : {}),
       language_presets: Object.fromEntries(
         Object.entries(spec.presets).map(([lang, first]) => [lang, { overrides: { agent: { language: lang, first_message: first } } }]),
@@ -182,10 +185,14 @@ async function syncAgent(spec: Spec, sid: string): Promise<string> {
     },
     platform_settings: { auth: { enable_auth: true } },
   };
-  if (DRY) console.log("  would update: prompt, first message, tools, plus_session, auth on, silence 10 s");
+  if (DRY) console.log(`  would update: prompt, first message, tools, plus_session, auth on, silence 10 s, max ${MAX_CONVERSATION_SECS} s`);
   else {
     await el("PATCH", `/v1/convai/agents/${id}`, patch);
+    // Read the limit back: the API ignores fields it doesn't know, so only the stored value counts.
+    const after = await el<{ conversation_config?: { conversation?: { max_duration_seconds?: number } } }>("GET", `/v1/convai/agents/${id}`);
+    const max = after.conversation_config?.conversation?.max_duration_seconds;
     console.log(`  updated: prompt, first message, ${toolIds.length} tools, plus_session, auth on, silence ${SILENCE_SECS} s`);
+    console.log(max === MAX_CONVERSATION_SECS ? `  max conversation length: ${max} s (read back)` : `  max conversation length NOT set (read back: ${max ?? "none"}); set it in the ElevenLabs dashboard`);
   }
   return id;
 }

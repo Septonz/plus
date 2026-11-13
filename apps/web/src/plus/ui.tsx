@@ -113,8 +113,9 @@ export function SuccessTick({ size = 'lg' }: { size?: 'md' | 'lg' }) {
 }
 
 export function TextField({
-  label, value, onChange, placeholder, hint, inputMode, autoComplete = 'off', autoFocus, maxLength,
+  label, value, onChange, placeholder, hint, inputMode, autoComplete = 'off', autoFocus, maxLength, type = 'text',
 }: {
+  type?: 'text' | 'password'
   label: ReactNode
   value: string
   onChange: (v: string) => void
@@ -136,6 +137,7 @@ export function TextField({
         autoComplete={autoComplete}
         autoFocus={autoFocus}
         maxLength={maxLength}
+        type={type}
         className="mt-1.5 block min-h-14 w-full rounded-control border border-hairline bg-surface-2 px-4 text-xl text-label transition-colors focus:border-accent focus:bg-surface focus:outline-none"
       />
       {hint && <span className="mt-1.5 block text-sm text-secondary">{hint}</span>}
