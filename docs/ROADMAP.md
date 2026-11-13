@@ -212,3 +212,27 @@ Amaka or Mama Bisi. Branch `feat/piece-12-public-test`, one commit per item.
 - [x] 6. Readiness: `pnpm demo:ready ng` checks the guest pool, the demo agent's float and the voice
   mode; `pnpm guests:status`; treasury runway.
 - [x] 7. Docs: README "Try it now" and "For presenters"; fresh screens.
+
+## Piece 13: Simple demo (no community savings; the best of test-Plus)
+
+A simple app with no group savings, so a clean demo video can be recorded and presented live without
+hassle. We bring 7 ideas from the teammate's "test-Plus" prototype (FastAPI + SQLite) across into our
+own stack; we do not merge codebases. Branch `feat/piece-13-simple-demo`, one commit per item.
+
+- [ ] 1. Remove the ajo and the seettu from the product (app, voice tools and prompts, scheduler
+  payouts, scoring, vouches, /verify, /demo, resets, guest seeds, e2e, README, screens). Tables and the
+  contract's `group_*` functions stay, unused, for history.
+- [ ] 2. "Type to Plus": a typed command box (no LLM, no ElevenLabs) through `text-command` and a
+  deterministic parser (English, Pidgin, Yoruba marked `// check`); the guests' "talk to Plus".
+- [ ] 3. Verified assets as one unit of a freezable Stellar Classic asset (`PA…`, auth required,
+  revocable, clawback enabled); freeze when lost or its loan is frozen; clawback admin-only on /demo.
+- [ ] 4. A lender portal (/partner): approve, counter, decline; the borrower accepts the latest terms
+  with her PIN; auto-approval stays the demo default, with a staff toggle.
+- [ ] 5. Loan escrow on-chain: create, fund, disburse, repay, cancel, close; Yes-to-tick ≈ 5 s.
+- [ ] 6. Kiosk mode (/kiosk): five big tasks, 90 s warning, 120 s sign-out, staff PIN.
+- [ ] 7. Accessibility: 56 px targets, Read Aloud (speechSynthesis), focus, honest English fallback.
+- [ ] 8. Docs: ARCHITECTURE, STELLAR, SECURITY, DATA_MODEL, API.
+- [ ] 9. Simplify the trader app (Home: Wallet, Savings, Loan, Assets); checked at 375×812 and 360×740.
+- [ ] 10. Presenter tools: "Reset for recording" and "Recording mode" on /demo.
+- [ ] 11. The 60-second script, locked and tested end to end (e2e:ng twice after a reset).
+- [ ] 12. Final check: demo:ready READY with per-step timings; a guest walkthrough with 0 voice sessions.
