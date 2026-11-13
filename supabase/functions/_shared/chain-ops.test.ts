@@ -95,3 +95,14 @@ Deno.test("plus_credit calls go to the credit contract, never to plus", () => {
   assertThrows(() => operationFor({ kind: "contract", args: { contract: "other", fn: "f", args: [] } }, { plus: CONTRACT, credit: CREDIT }));
   assertThrows(() => operationFor({ kind: "contract", args: { contract: "credit", fn: "f", args: [{ t: "opt_bytes32", v: "xyz" }] } }, { plus: CONTRACT, credit: CREDIT }));
 });
+
+Deno.test("ajo members: a Vec of Party::Account, as group_create takes them", () => {
+  const v = scVal({ t: "accounts", v: [A, B] } as ContractArg);
+  const native = StellarSdk.scValToNative(v) as unknown[][];
+  assertEquals(native.length, 2);
+  assertEquals(native[0][0], "Account");
+  assertEquals(native[0][1], A);
+  assertEquals(native[1][1], B);
+  assertThrows(() => scVal({ t: "accounts", v: [A] } as ContractArg));
+  assertThrows(() => scVal({ t: "accounts", v: [A, "not-an-address"] } as ContractArg));
+});

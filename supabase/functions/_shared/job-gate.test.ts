@@ -12,7 +12,7 @@ Deno.env.set("AGENT_SHARED_SECRET", SECRET);
 
 /** The routes each function serves (path after /functions/v1/<fn>); "" is the function root. */
 const ROUTES: Record<string, string[]> = {
-  scheduler: ["", "/health", "/warm", "/provision"],
+  scheduler: ["", "/health", "/warm", "/provision", "/guests", "/guests-nightly"],
   "sync-events": ["", "/health"],
   "chain-worker": ["", "/health"],
 };

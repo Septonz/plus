@@ -10,7 +10,7 @@ import { collateralWords, type CreditAsset, type CreditLoan, creditPicture, type
 import { formatMoney, formatSpokenMoney, getMarket } from "./markets.ts";
 import type { ChainAdvance, ContractReader } from "./ng-types.ts";
 import { matchPayee, parseMajorAmount, type Payee } from "./payees.ts";
-import type { PinOutcome } from "./pin.ts";
+import { GUEST_LOCK_MS, type PinOutcome } from "./pin.ts";
 import { LANGUAGE_NAMES, matchLanguage, normalizePhone } from "./onboarding.ts";
 import { accountNumber, banks, lookupAccountName, maskAccount, parseBank, spokenAccount } from "./banks.ts";
 import type { AssetStore } from "./assets.ts";
@@ -40,7 +40,22 @@ export interface PlusPeer {
   market_id: "in" | "ng";
   kyc_tier: number;
   stellar_pub: string | null;
+  /** Piece 12: presenter accounts and guest accounts only take money from their own kind. */
+  demo_login?: boolean | null;
+  guest_slot?: number | null;
 }
+
+/**
+ * Piece 12: nothing a public tester does reaches a presenter (Funmi, Kemi, Amaka) or another guest.
+ * A presenter account takes payments only from presenter accounts; a guest takes none (her money
+ * comes from the reset and the pretend cash-ins).
+ */
+export function protectedPeer(user: User, peer: PlusPeer | null): boolean {
+  if (!peer || peer.id === user.id) return false;
+  if (peer.guest_slot) return true;
+  return Boolean(peer.demo_login) && !user.demo_login;
+}
+const PROTECTED_TEXT = "That account is one of the Plus demo accounts and can't be paid from here. Try the shop, Mama Put Canteen.";
 
 export interface NgGroup {
   id: string;
@@ -77,7 +92,7 @@ export interface NgStore {
   /** NGNT she can spend now: cache minus outgoing money still on its way (ng_available). */
   available(userId: string): Promise<bigint>;
   hasPin(userId: string): Promise<boolean>;
-  verifyPin(userId: string, pin: string): Promise<PinOutcome>;
+  verifyPin(userId: string, pin: string, lockMs?: number): Promise<PinOutcome>;
   payees(userId: string): Promise<Payee[]>;
   /** Kobo sent out today or since sinceIso (payments, ajo, cash-outs; failed ones excluded). */
   paidSince(userId: string, sinceIso: string): Promise<bigint>;
@@ -333,6 +348,8 @@ export const ngGetUser: NgTool = async ({ user, store }) => {
     bank_label: getMarket(M).virtualAccount?.bankLabel ?? null,
     cash_ins_waiting: cash.map((c) => ({ ...c, amount_text: show(c.amount) })),
     pending_actions: pending.map(actionFields),
+    // Piece 12: a guest (public test account) sees the test helpers and the test PIN hint.
+    guest: Boolean(user.guest_slot),
   };
 };
 
@@ -633,6 +650,7 @@ export const ngPreparePay: NgTool = async ({ user, store, args, now = new Date()
 
   const peer = byCode ?? (phone ? await store.plusUserByPhone(phone) : null);
   if (peer && peer.id === user.id) return refuse(byCode ? "That is her own pay code." : "That is her own number.", byCode ? "own_code" : "own_number");
+  if (protectedPeer(user, peer)) return refuse(PROTECTED_TEXT, "protected_account");
   const blocked = await spendCheck(store, user, amount, now);
   if (blocked) return blocked;
 
@@ -716,6 +734,7 @@ export const ngSavePayee: NgTool = async ({ user, store, args }) => {
   if (name.length < 2) return refuse("What name should we save them under?", "invalid_name");
   const peer = await store.plusUserByPhone(phone);
   if (peer?.id === user.id) return refuse("That is her own number.", "own_number");
+  if (protectedPeer(user, peer)) return refuse(PROTECTED_TEXT, "protected_account");
   const p = await store.savePayee(user.id, { name, phone, stellar_address: peer?.market_id === "ng" ? peer.stellar_pub : null });
   return { text: `Saved ${p.name}. Next time she can just say "pay ${p.name}".`, ok: true, payee: { id: p.id, name: p.name, phone } };
 };
@@ -966,10 +985,11 @@ export const ngConfirmAction: NgTool = async ({ user, store, args, channel, code
         return { text: "This amount needs her PIN. Ask her to type it on the screen; you can't confirm it by voice.", ok: false, error: "pin_required_on_screen", ...actionFields(a) };
       }
       if (pin === undefined) return refuse("Type your PIN to confirm.", "pin_required", actionFields(a));
-      const check = await store.verifyPin(user.id, pin);
+      // Guests (piece 12) are locked out for 1 minute, not 15: a tester shouldn't be stuck.
+      const check = await store.verifyPin(user.id, pin, user.guest_slot ? GUEST_LOCK_MS : undefined);
       if (!check.ok) {
         if (check.outcome === "not_set") return refuse("Set a PIN in Settings first.", "pin_not_set");
-        if (check.outcome === "locked") return refuse("Too many wrong PINs. Try again in 15 minutes.", "pin_locked", { locked_until: check.lockedUntil });
+        if (check.outcome === "locked") return refuse(`Too many wrong PINs. Try again in ${user.guest_slot ? "1 minute" : "15 minutes"}.`, "pin_locked", { locked_until: check.lockedUntil });
         return refuse(`Wrong PIN. ${check.attemptsLeft} ${check.attemptsLeft === 1 ? "try" : "tries"} left.`, "pin_wrong", { attempts_left: check.attemptsLeft });
       }
     }

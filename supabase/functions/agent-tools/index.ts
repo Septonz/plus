@@ -29,6 +29,7 @@ import { finishCheck, normalizePhone, OB_TOOLS, type ObChannel, type ObSession }
 import { signInToken, supabaseOnboardingStore } from "../_shared/store-onboarding.ts";
 import { mintSession } from "../_shared/session.ts";
 import { verifyPin } from "../_shared/pin.ts";
+import { GUEST_TOOLS, guestStart, guestTool } from "./guest.ts";
 
 // Provided by the Supabase Edge Runtime.
 declare const EdgeRuntime: { waitUntil(p: PromiseLike<unknown>): void };
@@ -41,7 +42,7 @@ const PASSPHRASE = Deno.env.get("STELLAR_NETWORK_PASSPHRASE") ?? "Test SDF Netwo
 const EXPLORER = `https://stellar.expert/explorer/${PASSPHRASE.startsWith("Public") ? "public" : "testnet"}`;
 const CONTRACT_ID = Deno.env.get("PLUS_CONTRACT_ID") ?? "";
 const NGNT_SAC = Deno.env.get("NGNT_SAC_ID") ?? "";
-const USER_COLS = "id, market_id, name, language, kyc_tier, stellar_pub, auto_save_bps, ref_hash, trusted_contact_phone, member_since, virtual_account, demo_login";
+const USER_COLS = "id, market_id, name, language, kyc_tier, stellar_pub, auto_save_bps, ref_hash, trusted_contact_phone, member_since, virtual_account, demo_login, guest_slot";
 
 const store: Store = supabaseStore(db);
 // Nigeria: the wallet is the account; money moves through the chain outbox.
@@ -260,6 +261,8 @@ Deno.serve(withCors(async (req) => {
       return json(await startOnboarding(req, args));
     }
     if (tool === "sign_in") return json(await signIn(args));
+    // Public (piece 12): "Try Plus now" / "Try the agent app" hands this device a guest place.
+    if (tool === "guest_start") return await guestStart(db, req, args);
     // Public: whether the front door shows the demo people (DEMO_LOGINS_ENABLED).
     if (tool === "demo_logins") return json({ enabled: demoLoginsEnabled() });
     // Public, demo only: /verify's "Try a sample record" (a fresh 24-hour share of Funmi's record).
@@ -279,6 +282,10 @@ Deno.serve(withCors(async (req) => {
       return json({ ...r, latency_ms: Math.round(performance.now() - started) }, r.error === "unknown_tool" ? 404 : 200);
     }
     channel = who.channel;
+    // A guest (piece 12): last seen now, so her place isn't handed to someone else while she tests.
+    if (who.user?.guest_slot) EdgeRuntime.waitUntil(db.rpc("guest_touch", { p_user_id: who.user.id, p_helper_id: null }).then(() => null));
+    // A test account keeps PIN 1234 for the next tester.
+    if (who.user?.guest_slot && tool === "set_pin") return json({ ok: false, error: "guest_pin", text: "Test accounts keep the test PIN, 1234." });
     // Demo people: refused when the showcase is off, and their money actions are rate-limited.
     const off = demoOff(who.user);
     if (off) return off;
@@ -286,28 +293,36 @@ Deno.serve(withCors(async (req) => {
       const limited = await demoRateLimited(db, who.user, tool);
       if (limited) return limited;
     }
-    const probe = tool === "_time_record_of" && channel === "voice";
-    const ng = who.user?.market_id === "ng";
-    // Nigeria has its own tools; the app's settings tools (PIN, language) are shared.
-    const ngHandler: NgTool | undefined = ng ? (channel === "app" ? NG_APP_TOOLS : NG_VOICE_TOOLS)[tool] : undefined;
-    const handler: Tool | undefined = ngHandler ? undefined
-      : ng && !(tool === "set_pin" || tool === "update_settings") ? undefined
-      : (channel === "app" ? APP_TOOLS : VOICE_TOOLS)[tool];
-    if (!handler && !ngHandler && !probe && who.user) return json({ error: "unknown_tool", tool }, 404);
-    if (!who.user && !(channel === "app" ? APP_TOOLS : VOICE_TOOLS)[tool]) return json({ error: "unknown_tool", tool }, 404);
-
-    if (!who.user) {
-      result = { text: "I don't recognise this number yet. Offer to set up Plus for them.", known: false };
-    } else {
+    // The guest-only test helpers (app only). Logged to tool_calls like any tool (the checklist reads it).
+    if (GUEST_TOOLS.has(tool)) {
+      if (!who.user?.guest_slot || channel !== "app") return json({ error: "unknown_tool", tool }, 404);
       userId = who.user.id;
-      const base = { user: who.user, channel, args, explorer: EXPLORER, contractId: CONTRACT_ID };
-      result = probe
-        ? await timeRecordOf(who.user)
-        : ngHandler
-        ? await ngHandler({ ...base, store: ngStore, assets: assetStore, ngntSac: NGNT_SAC, codeSecret: Deno.env.get("CASHOUT_CODE_SECRET") ?? "" })
-        : await handler!({ ...base, store });
-      // A confirmed action may have queued on-chain records: start the worker now.
-      if (tool === "confirm_action" && result.ok) EdgeRuntime.waitUntil(kickChainWorker());
+      result = await guestTool(db, tool, who.user, args);
+      if (tool === "guest_cash_in" && result.ok) EdgeRuntime.waitUntil(kickChainWorker());
+    } else {
+      const probe = tool === "_time_record_of" && channel === "voice";
+      const ng = who.user?.market_id === "ng";
+      // Nigeria has its own tools; the app's settings tools (PIN, language) are shared.
+      const ngHandler: NgTool | undefined = ng ? (channel === "app" ? NG_APP_TOOLS : NG_VOICE_TOOLS)[tool] : undefined;
+      const handler: Tool | undefined = ngHandler ? undefined
+        : ng && !(tool === "set_pin" || tool === "update_settings") ? undefined
+        : (channel === "app" ? APP_TOOLS : VOICE_TOOLS)[tool];
+      if (!handler && !ngHandler && !probe && who.user) return json({ error: "unknown_tool", tool }, 404);
+      if (!who.user && !(channel === "app" ? APP_TOOLS : VOICE_TOOLS)[tool]) return json({ error: "unknown_tool", tool }, 404);
+
+      if (!who.user) {
+        result = { text: "I don't recognise this number yet. Offer to set up Plus for them.", known: false };
+      } else {
+        userId = who.user.id;
+        const base = { user: who.user, channel, args, explorer: EXPLORER, contractId: CONTRACT_ID };
+        result = probe
+          ? await timeRecordOf(who.user)
+          : ngHandler
+          ? await ngHandler({ ...base, store: ngStore, assets: assetStore, ngntSac: NGNT_SAC, codeSecret: Deno.env.get("CASHOUT_CODE_SECRET") ?? "" })
+          : await handler!({ ...base, store });
+        // A confirmed action may have queued on-chain records: start the worker now.
+        if (tool === "confirm_action" && result.ok) EdgeRuntime.waitUntil(kickChainWorker());
+      }
     }
   } catch (err) {
     status = 500;

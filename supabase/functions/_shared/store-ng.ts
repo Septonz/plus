@@ -41,7 +41,7 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
       if (error) throw new Error(`hasPin: ${error.message}`);
       return (count ?? 0) > 0;
     },
-    verifyPin: (userId, pin) => verifyPinRow(db, userId, pin),
+    verifyPin: (userId, pin, lockMs) => verifyPinRow(db, userId, pin, new Date(), lockMs),
     async payees(userId) {
       return must(await db.from("payees").select("id, name, stellar_address, phone, bank_code, account_number, account_name").eq("user_id", userId).order("name"), "payees");
     },
@@ -225,13 +225,13 @@ export function supabaseNgStore(db: SupabaseClient, contractId: string): NgStore
     },
     async plusUserByPayCode(code) {
       return must(
-        await db.from("users").select("id, name, market_id, kyc_tier, stellar_pub").eq("pay_code", code).is("archived_at", null).maybeSingle(),
+        await db.from("users").select("id, name, market_id, kyc_tier, stellar_pub, demo_login, guest_slot").eq("pay_code", code).is("archived_at", null).maybeSingle(),
         "plusUserByPayCode",
       ) as PlusPeer | null;
     },
     async plusUserByPhone(phone) {
       const r = must(
-        await db.from("users").select("id, name, market_id, kyc_tier, stellar_pub").eq("wa_phone", phone).is("archived_at", null).maybeSingle(),
+        await db.from("users").select("id, name, market_id, kyc_tier, stellar_pub, demo_login, guest_slot").eq("wa_phone", phone).is("archived_at", null).maybeSingle(),
         "plusUserByPhone",
       );
       return r as PlusPeer | null;
