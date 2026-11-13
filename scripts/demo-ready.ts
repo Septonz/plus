@@ -188,8 +188,7 @@ async function firstTap() {
  * conversations against the cap, a presenter code or unlock to present with).
  */
 async function publicTest() {
-  console.log("
-== Public test mode");
+  console.log("\n== Public test mode");
   const want = Math.max(1, Math.min(30, Number(process.env.GUEST_POOL_SIZE ?? 20) || 20));
   type Place = { kind: string; slot: number; user_id: string | null; helper_id: string | null; reset_started_at: string | null; reset_done_at: string | null; reset_requested_at: string | null; reset_error: string | null };
   const { data: rows, error } = await db.from("guest_pool").select("kind, slot, user_id, helper_id, reset_started_at, reset_done_at, reset_requested_at, reset_error");

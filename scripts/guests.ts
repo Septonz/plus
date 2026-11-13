@@ -238,7 +238,7 @@ async function seed() {
     const p = must(await db.from("guest_pool").select("*").eq("kind", "agent").eq("slot", 0).single(), "agent 0") as Place;
     if (ready(p)) break;
     console.log(`  shared demo agent: ${p.reset_step ?? "requested"}`);
-    await call("scheduler/guests");
+    await call("scheduler/guests", { wait: true });
   }
   console.log(`4. ${POOL} guest traders`);
   for (let slot = 1; slot <= POOL; slot++) {
@@ -256,7 +256,7 @@ async function drive(limitMs = 20 * 60_000) {
   console.log("5. Resets (scheduler/guests: the database at once, Stellar a step at a time)");
   const t0 = Date.now();
   for (;;) {
-    const r = await call("scheduler/guests") as { steps?: Record<string, string>; started?: string[]; error?: string };
+    const r = await call("scheduler/guests", { wait: true }) as { steps?: Record<string, string>; started?: string[]; error?: string };
     if (r.error) console.log(`  ! ${r.error}`);
     const places = must(await db.from("guest_pool").select("*").order("kind").order("slot"), "pool") as Place[];
     const left = places.filter((p) => !ready(p));

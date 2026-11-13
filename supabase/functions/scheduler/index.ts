@@ -61,8 +61,11 @@ async function ajoPayouts(now: Date) {
     "groups",
   ) as { id: string; name: string; onchain_id: number; payout_once: boolean }[];
   const queued: string[] = [];
-  for (const grp of groups) {
-    const g = await chain.group(grp.onchain_id);
+  // Read every pot from the chain at once (one simulate each; 20+ guest ajos read one by one took
+  // longer than pg_net's 5 s), then pay out in order.
+  const read = await Promise.all(groups.map((grp) => chain.group(grp.onchain_id)));
+  for (const [i, grp] of groups.entries()) {
+    const g = read[i];
     // Ledger time trails the wall clock by a few seconds: wait 10 s past due so NotDue can't happen.
     // An empty pot (nobody paid this round) is not worth a transaction: skip it rather than pay ₦0.
     if (!g || g.pot_minor === 0n || g.next_due.getTime() + 10_000 > now.getTime()) continue;
@@ -160,6 +163,8 @@ async function loanMinimums() {
   if (!l) return { skipped: true };
   return must(await db.rpc("ng_loan_minimums", { p_grace_days: l.graceDays }), "ng_loan_minimums");
 }
+
+declare const EdgeRuntime: { waitUntil(p: PromiseLike<unknown>): void };
 
 async function step<T>(name: string, fn: () => Promise<T>): Promise<T | { error: string }> {
   try {
@@ -280,7 +285,15 @@ Deno.serve(async (req) => {
   if (new URL(req.url).pathname.endsWith("/warm")) return json(await warm());
   if (new URL(req.url).pathname.endsWith("/provision")) return json(await provision(req));
   if (new URL(req.url).pathname.endsWith("/guests-nightly")) return json(await step("guests_nightly", guestsNightly));
-  if (new URL(req.url).pathname.endsWith("/guests")) return json(await step("guests", () => guests(new Date())));
+  if (new URL(req.url).pathname.endsWith("/guests")) {
+    // pg_net gives up after 5 s and the converge loop runs up to 45 s: cron gets an answer at once and
+    // the loop carries on in the background; scripts ask with {"wait": true} to see the steps.
+    const wait = await req.json().then((b) => b?.wait === true).catch(() => false);
+    const run = step("guests", () => guests(new Date()));
+    if (wait) return json(await run);
+    EdgeRuntime.waitUntil(run);
+    return json({ ok: true, background: true });
+  }
   const now = new Date();
   const t0 = performance.now();
   const expired = await step("expire", expireActions);
